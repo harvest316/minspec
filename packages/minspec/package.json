@@ -34,6 +34,22 @@
         "command": "minspec.refreshTree",
         "title": "MinSpec: Refresh Spec Tree",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "minspec.declareScope",
+        "title": "MinSpec: Declare Session Scope"
+      },
+      {
+        "command": "minspec.park",
+        "title": "MinSpec: Park Topic"
+      },
+      {
+        "command": "minspec.injectContext",
+        "title": "MinSpec: Inject Active Spec Context"
+      },
+      {
+        "command": "minspec.removeContext",
+        "title": "MinSpec: Remove Active Spec Context"
       }
     ],
     "views": {
