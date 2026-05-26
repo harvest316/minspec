@@ -1,5 +1,5 @@
 {
-  "name": "@aiclarity/minspec",
+  "name": "minspec",
   "displayName": "MinSpec",
   "description": "Complexity-adaptive specification-driven development. Classifies changes into tiers and applies proportional ceremony — a one-line fix needs one sentence of spec, an architecture rewrite gets the full treatment.",
   "version": "0.1.0",
@@ -252,10 +252,12 @@
     ]
   },
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
-    "watch": "npm run build -- --watch",
-    "package": "vsce package --no-dependencies",
-    "test": "vitest run"
+    "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify",
+    "build:prod": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify --sourcemap=external",
+    "watch": "npm run build -- --watch --sourcemap",
+    "package": "npm run build:prod && vsce package --no-dependencies",
+    "test": "vitest run",
+    "bench": "vitest bench"
   },
   "dependencies": {
     "handlebars": "^4.7.9",
