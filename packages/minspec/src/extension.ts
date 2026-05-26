@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { initCommand, initRefreshCommand } from './commands/init';
 import { classifyCommand } from './commands/classify';
 import { statusCommand } from './commands/status';
@@ -7,6 +8,8 @@ import { declareScopeCommand } from './commands/session';
 import { parkCommand } from './commands/park';
 import { SpecTreeProvider } from './views/spec-tree-provider';
 import { MinSpecStatusBar } from './views/status-bar';
+import { SpecPanel } from './views/spec-panel';
+import { loadConfig, applyVSCodeOverrides } from './lib/config';
 import { loadSession, saveSession, addToScope, isFileInScope } from './lib/session';
 import { detectTools, getToolFilePath, type DetectedTools } from './lib/tool-detector';
 import { injectContextToFile, removeContextFromFile, type ActiveSpecContext } from './lib/context-injector';
@@ -14,6 +17,9 @@ import { parkTopic, createParkingLotEntry } from './lib/parking-lot';
 
 export function activate(context: vscode.ExtensionContext): void {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+
+  // Active spec panel
+  const specPanel = new SpecPanel(context.extensionUri);
 
   // Sidebar tree view
   const specTreeProvider = new SpecTreeProvider(workspaceRoot);
@@ -36,6 +42,23 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('minspec.park', parkCommand),
     vscode.commands.registerCommand('minspec.injectContext', () => injectContextCommand(workspaceRoot)),
     vscode.commands.registerCommand('minspec.removeContext', () => removeContextCommand(workspaceRoot)),
+    vscode.commands.registerCommand('minspec.showSpecPanel', async (specFilePath?: string) => {
+      if (!workspaceRoot) {
+        vscode.window.showErrorMessage('MinSpec: No workspace folder open.');
+        return;
+      }
+      if (!specFilePath) {
+        specFilePath = await findActiveSpec(workspaceRoot);
+        if (!specFilePath) {
+          vscode.window.showInformationMessage(
+            'MinSpec: No spec files found. Run "MinSpec: Initialize SDD Structure" first.',
+          );
+          return;
+        }
+      }
+      specPanel.show(specFilePath);
+    }),
+    { dispose: () => specPanel.dispose() },
     statusBar,
   );
 
@@ -50,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const onSpecsChanged = () => {
     specTreeProvider.refresh();
+    specPanel.refresh();
   };
 
   watcher.onDidChange(onSpecsChanged);
@@ -206,6 +230,56 @@ async function showDriftWarning(
     saveSession(workspaceRoot, updatedSession);
     vscode.window.showInformationMessage(`MinSpec: Added "${relativePath}" to session scope.`);
   }
+}
+
+/**
+ * Find the most likely active spec file in the workspace.
+ * Prefers specs with implementing/specifying status.
+ */
+async function findActiveSpec(rootDir: string): Promise<string | null> {
+  const config = loadConfig(rootDir);
+  const vscodeConfig = vscode.workspace.getConfiguration('minspec');
+  const finalConfig = applyVSCodeOverrides(config, {
+    specsDir: vscodeConfig.get('specsDir'),
+  });
+
+  const specsDir = path.join(rootDir, finalConfig.specsDir);
+  if (!fs.existsSync(specsDir)) return null;
+
+  const specFiles: string[] = [];
+  const walk = (dir: string) => {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.name.endsWith('.md')) {
+          specFiles.push(fullPath);
+        }
+      }
+    } catch {
+      // Ignore unreadable directories
+    }
+  };
+  walk(specsDir);
+
+  if (specFiles.length === 0) return null;
+
+  const { parseSpec } = await import('./lib/spec');
+  for (const filePath of specFiles) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const spec = parseSpec(content);
+      if (spec.frontmatter.status === 'implementing' || spec.frontmatter.status === 'specifying') {
+        return filePath;
+      }
+    } catch {
+      // Ignore unparseable files
+    }
+  }
+
+  return specFiles[0];
 }
 
 export function deactivate(): void {}

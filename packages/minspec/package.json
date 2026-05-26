@@ -50,6 +50,10 @@
       {
         "command": "minspec.removeContext",
         "title": "MinSpec: Remove Active Spec Context"
+      },
+      {
+        "command": "minspec.showSpecPanel",
+        "title": "MinSpec: Show Active Spec Panel"
       }
     ],
     "views": {
