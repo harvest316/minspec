@@ -23,15 +23,15 @@ product: minspec
 - [ ] Implement `minspec.init` command — creates `.minspec/` directory structure
 
 ### 1.2 Config System
-- [ ] Define `.minspec/config.json` schema (tier thresholds, phase mappings, spec directory)
-- [ ] Implement config loader with defaults + user overrides
-- [ ] VS Code settings integration (Settings UI entries for key config)
+- [x] Define `.minspec/config.json` schema (tier thresholds, phase mappings, spec directory)
+- [x] Implement config loader with defaults + user overrides
+- [x] VS Code settings integration (Settings UI entries for key config)
 
 ### 1.3 Spec File Format
-- [ ] Define spec markdown schema (YAML frontmatter + phase sections)
-- [ ] Implement spec parser (frontmatter extraction, phase detection, task list parsing)
-- [ ] Implement spec writer (preserve user content, update frontmatter)
-- [ ] Spec Kit compatibility tests (round-trip: write with MinSpec, read with Spec Kit, and vice versa)
+- [x] Define spec markdown schema (YAML frontmatter + phase sections)
+- [x] Implement spec parser (frontmatter extraction, phase detection, task list parsing)
+- [x] Implement spec writer (preserve user content, update frontmatter)
+- [x] Spec Kit compatibility tests (round-trip: write with MinSpec, read with Spec Kit, and vice versa)
 
 ---
 
