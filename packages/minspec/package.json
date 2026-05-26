@@ -72,6 +72,9 @@
     "package": "vsce package --no-dependencies",
     "test": "vitest run"
   },
+  "dependencies": {
+    "simple-git": "^3.27.0"
+  },
   "devDependencies": {
     "@vscode/vsce": "^3.0.0"
   }
