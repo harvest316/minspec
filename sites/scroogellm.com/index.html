@@ -952,17 +952,26 @@
         <pre class="mermaid">
 graph TD
     subgraph localhost["🖥 Your Machine (localhost only)"]
-        A["VS Code / AI Tool"] --> B
+        A["VS Code / AI Tool"] --> proxy
         subgraph proxy["ScroogeLLM Proxy"]
             direction LR
-            B["compress"] --> C["anonymize"] --> D["cache"]
-            D --> E["route"] --> F["log"] --> G["audit"]
+            subgraph row1[" "]
+                direction LR
+                B["compress"] --> C["anonymize"] --> D["cache"]
+            end
+            subgraph row2[" "]
+                direction LR
+                E["route"] --> F["log"] --> G["audit"]
+            end
+            row1 --> row2
         end
     end
-    G --> H["☁️ LLM Provider API\n(OpenAI, Anthropic, etc.)"]
+    proxy --> H["☁️ LLM Provider API\n(OpenAI, Anthropic, etc.)"]
 
     style localhost fill:#0d1117,stroke:#1a3a2a,color:#8b9a8b
     style proxy fill:#0a1f0a,stroke:#22c55e,color:#4ade80
+    style row1 fill:transparent,stroke:none
+    style row2 fill:transparent,stroke:none
     style A fill:#1a1a2e,stroke:#6c9cfc,color:#a0b4e0
     style B fill:#132613,stroke:#22c55e,color:#4ade80
     style C fill:#132613,stroke:#22c55e,color:#4ade80
