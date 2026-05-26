@@ -1,0 +1,24 @@
+name: Feature Request
+description: New capability or improvement
+title: "[feat] "
+labels: ["feat", "inbox"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants to check
+      description: Which CLAUDE.md invariants does this touch? Could it violate any?

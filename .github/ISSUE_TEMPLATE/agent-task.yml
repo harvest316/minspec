@@ -1,0 +1,64 @@
+name: Agent Task
+description: Well-scoped task ready for agent dispatch
+title: "[agent] "
+labels: ["agent-ready", "inbox"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill every section. Incomplete contracts will cause agent escalations.
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: One-sentence scope
+      description: What exactly must be done. If implementation diverges from this, agent should stop.
+      placeholder: "Add X to Y so that Z"
+    validations:
+      required: true
+
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract
+      description: TypeScript interface or Zod schema the output must satisfy
+      render: typescript
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests to pass
+      description: File path(s) to invariant + feature tests the agent must make green
+      placeholder: "packages/minspec/tests/classifier.test.ts"
+    validations:
+      required: true
+
+  - type: textarea
+    id: allowlist
+    attributes:
+      label: File allowlist
+      description: Explicit list of files the agent may modify
+      placeholder: |
+        - packages/minspec/src/classifier.ts
+        - packages/shared/src/contracts/complexity.ts
+    validations:
+      required: true
+
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants touched
+      description: Which of the 12 CLAUDE.md invariants does this task touch? List by number.
+      placeholder: "Invariants 1, 5 (no AI dep, user override)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How to verify this is done
+    validations:
+      required: true
