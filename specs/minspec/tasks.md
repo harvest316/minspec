@@ -18,7 +18,7 @@ product: minspec
 ### 1.1 Extension Scaffold
 - [x] Initialize VS Code extension with TypeScript + esbuild
 - [x] Configure Vitest with VS Code extension test harness
-- [ ] Set up CI (GitHub Actions: lint, test, package)
+- [x] Set up CI (GitHub Actions: lint, test, package)
 - [x] Create extension manifest (`package.json`) with activation events, commands, views
 - [x] Implement `minspec.init` command — creates `.minspec/` directory structure
 
@@ -182,9 +182,9 @@ product: minspec
 - [x] Marketplace description from Section 7 of competitive landscape report
 
 ### 9.3 Quality
-- [ ] Extension size audit (<5MB target)
-- [ ] Performance benchmarks (classification <500ms, tree view <200ms)
-- [ ] Accessibility audit (keyboard navigation, screen reader support)
+- [x] Extension size audit (<5MB target)
+- [x] Performance benchmarks (classification <500ms, tree view <200ms)
+- [x] Accessibility audit (keyboard navigation, screen reader support)
 - [ ] Test coverage report (T0 invariant tests: 100%, T1 contract tests: 100%, T2 feature tests: 1-2 per feature)
 
 ---
