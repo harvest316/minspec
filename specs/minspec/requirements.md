@@ -1,3 +1,10 @@
+---
+id: SPEC-001
+type: requirements
+status: implementing
+product: minspec
+---
+
 # MinSpec — Requirements Specification
 
 **Date:** 2026-05-26

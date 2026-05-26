@@ -1,3 +1,10 @@
+---
+id: SPEC-002
+type: design
+status: implementing
+product: minspec
+---
+
 # MinSpec — Design Document
 
 **Date:** 2026-05-26

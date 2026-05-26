@@ -1,3 +1,10 @@
+---
+id: SPEC-003
+type: tasks
+status: implementing
+product: minspec
+---
+
 # MinSpec — Task Breakdown
 
 **Date:** 2026-05-26
