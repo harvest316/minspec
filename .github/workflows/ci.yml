@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,13 +25,8 @@ jobs:
       - name: Validate frontmatter
         run: npm run validate
 
-      - name: Test
-        run: npm test
-
-  package:
+  test:
     runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
@@ -42,14 +37,45 @@ jobs:
 
       - run: npm ci
 
-      - name: Build shared
-        run: npm run build --workspace=packages/shared
+      - name: Test
+        run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build MinSpec
+        working-directory: packages/minspec
+        run: npm run build
+
+  package:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
 
       - name: Package MinSpec
-        run: npm run package --workspace=packages/minspec
+        working-directory: packages/minspec
+        run: npx vsce package --no-dependencies
 
       - uses: actions/upload-artifact@v4
         with:
-          name: vsix-packages
+          name: minspec-vsix
           path: packages/minspec/*.vsix
-          if-no-files-found: ignore
+          if-no-files-found: error
