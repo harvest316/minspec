@@ -25,6 +25,11 @@
       {
         "command": "minspec.status",
         "title": "MinSpec: Show SDD Status"
+      },
+      {
+        "command": "minspec.refreshTree",
+        "title": "MinSpec: Refresh Spec Tree",
+        "icon": "$(refresh)"
       }
     ],
     "views": {
@@ -32,6 +37,22 @@
         {
           "id": "minspecStatus",
           "name": "MinSpec"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "minspec.refreshTree",
+          "when": "view == minspecStatus",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "minspec.classify",
+          "when": "viewItem == specNode",
+          "group": "1_tier"
         }
       ]
     },
