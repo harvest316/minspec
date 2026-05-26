@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { initCommand } from './commands/init';
+import { initCommand, initRefreshCommand } from './commands/init';
 import { classifyCommand } from './commands/classify';
 import { statusCommand } from './commands/status';
 import { SpecTreeProvider } from './views/spec-tree-provider';
@@ -21,6 +21,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Commands
   context.subscriptions.push(
     vscode.commands.registerCommand('minspec.init', initCommand),
+    vscode.commands.registerCommand('minspec.initRefresh', initRefreshCommand),
     vscode.commands.registerCommand('minspec.classify', classifyCommand),
     vscode.commands.registerCommand('minspec.status', statusCommand),
     vscode.commands.registerCommand('minspec.refreshTree', () => specTreeProvider.refresh()),

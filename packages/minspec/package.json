@@ -19,6 +19,10 @@
         "title": "MinSpec: Initialize SDD Structure"
       },
       {
+        "command": "minspec.initRefresh",
+        "title": "MinSpec: Refresh Harness Files"
+      },
+      {
         "command": "minspec.classify",
         "title": "MinSpec: Classify Task Complexity"
       },
@@ -94,6 +98,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "handlebars": "^4.7.9",
     "simple-git": "^3.27.0"
   },
   "devDependencies": {
