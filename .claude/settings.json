@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "bash scripts/hooks/session-start.sh"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "command": "bash scripts/hooks/scope-check.sh"
+      }
+    ],
+    "PostCompact": [
+      {
+        "command": "bash scripts/hooks/post-compact.sh"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "command": "bash scripts/hooks/session-end.sh"
+      }
+    ]
+  }
+}
