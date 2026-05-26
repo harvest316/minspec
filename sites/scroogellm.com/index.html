@@ -953,11 +953,9 @@ graph TD
     subgraph localhost["🖥 Your Machine (localhost only)"]
         A["VS Code / AI Tool"] --> B
         subgraph proxy["ScroogeLLM Proxy"]
-            B["compress"] --> C["anonymize"]
-            C --> D["cache"]
-            D --> E["route"]
-            E --> F["log"]
-            F --> G["audit"]
+            direction LR
+            B["compress"] --> C["anonymize"] --> D["cache"]
+            D --> E["route"] --> F["log"] --> G["audit"]
         end
     end
     G --> H["☁️ LLM Provider API\n(OpenAI, Anthropic, etc.)"]
