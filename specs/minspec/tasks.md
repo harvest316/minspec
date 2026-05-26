@@ -38,39 +38,39 @@ product: minspec
 ## Phase 2: Classification Engine (Week 2-3)
 
 ### 2.1 Git Analyzer
-- [ ] Integrate `simple-git` — detect repo, get diff, get file list
-- [ ] Implement file-level signals: file count, line count, file types, new files, cross-directory changes
-- [ ] Implement dependency signals: package.json changes, new dependencies
+- [x] Integrate `simple-git` — detect repo, get diff, get file list
+- [x] Implement file-level signals: file count, line count, file types, new files, cross-directory changes
+- [x] Implement dependency signals: package.json changes, new dependencies
 
 ### 2.2 AST Analyzer (Optional)
-- [ ] Integrate `web-tree-sitter` with lazy loading
-- [ ] Implement JS/TS signals: new exports, new classes, removed exports
-- [ ] Implement schema signals: Prisma/SQL/Zod file changes
-- [ ] Graceful fallback when parser unavailable
+- [x] Regex-based heuristics (tree-sitter-ready interface for future swap)
+- [x] Implement JS/TS signals: new exports, new classes, removed exports
+- [x] Implement schema signals: Prisma/SQL/Zod file changes
+- [x] Graceful fallback when parser unavailable
 
 ### 2.3 Classifier Core
-- [ ] Implement signal → tier scoring algorithm
-- [ ] Implement confidence calculation
-- [ ] Implement phase selection based on tier (FR-2 mapping table)
-- [ ] User override support with calibration storage
-- [ ] **T0 tests:** Classification of known diffs produces correct tiers
+- [x] Implement signal → tier scoring algorithm
+- [x] Implement confidence calculation
+- [x] Implement phase selection based on tier (FR-2 mapping table)
+- [x] User override support with calibration storage
+- [x] **T0 tests:** Classification of known diffs produces correct tiers
 
 ---
 
 ## Phase 3: Lifecycle Manager (Week 3-4)
 
 ### 3.1 State Machine
-- [ ] Implement spec lifecycle state machine (new → specify → ... → done/archived)
-- [ ] Phase transitions: forward, skip, back (with validation)
-- [ ] Status tracking in spec frontmatter
-- [ ] **T0 tests:** State transitions respect invariants (no skipping without record, back-transition warns)
+- [x] Implement spec lifecycle state machine (new → specify → ... → done/archived)
+- [x] Phase transitions: forward, skip, back (with validation)
+- [x] Status tracking in spec frontmatter
+- [x] **T0 tests:** State transitions respect invariants (no skipping without record, back-transition warns)
 
 ### 3.2 Spec CRUD
-- [ ] Create spec command (prompts for title, auto-classifies, generates skeleton)
-- [ ] List specs (by status, by tier)
-- [ ] Update spec (phase transitions, content edits)
-- [ ] Archive spec
-- [ ] Delete spec (with confirmation)
+- [x] Create spec command (auto-ID, slug filename, tier-based phase sections)
+- [x] List specs (by status, by tier)
+- [x] Update spec (phase transitions, content edits)
+- [x] Archive spec
+- [x] Delete spec (with confirmation)
 
 ---
 
