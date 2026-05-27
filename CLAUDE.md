@@ -56,9 +56,8 @@ ScroogeLLM has not started Specify phase. Future sessions only.
 |---|---|
 | Specs | `specs/<product>/*.md` |
 | Decisions | `docs/decisions/DR-NNN.md` |
-| Domain docs | `docs/domain/*.md` |
 | Research | `docs/research/` |
-| Contracts | `packages/shared/src/contracts/` |
+| Websites | `sites/minspec.dev/`, `sites/scroogellm.com/` |
 | Hooks | `scripts/hooks/` |
 
 ## Deploy Reference
@@ -78,6 +77,7 @@ cd packages/minspec && npx vsce publish
 ```bash
 npm test              # all packages
 npm run lint          # all packages
+npm run build         # all packages
 npm run validate      # frontmatter validation
 ```
 
@@ -85,7 +85,6 @@ npm run validate      # frontmatter validation
 
 1. No secrets (API keys, tokens, high-entropy strings)
 2. `specs/**/*.md` must have `id: SPEC-NNN` frontmatter
-3. `docs/domain/*.md` must have `type: domain` frontmatter
 
 ## Decision Register
 
