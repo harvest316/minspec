@@ -226,6 +226,10 @@ The classifier is a deterministic, multi-signal heuristic engine -- not ML. It a
 
 Contributions are welcome. See the [GitHub repository](https://github.com/harvest316/MinSpecPro) for issues and pull requests.
 
+## Privacy
+
+MinSpec collects **zero data**. No telemetry, no analytics, no network calls, no accounts. All data stays on your local filesystem. [Privacy Policy](https://aiclarity.com.au/privacy)
+
 ## License
 
 MIT
