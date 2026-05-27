@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig, applyVSCodeOverrides } from './config';
+import { slugify } from './spec-manager';
+export { slugify };
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -127,24 +129,6 @@ export function generateAdrContent(id: string, title: string, date: string): str
     '<!-- What becomes easier or harder because of this change? -->',
     '',
   ].join('\n');
-}
-
-/**
- * Convert a title to a file-safe slug for ADR filenames.
- * Lowercase, non-alphanumeric → hyphens, collapsed, trimmed, max 50 chars.
- */
-export function slugify(title: string): string {
-  let slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  if (slug.length > 50) {
-    slug = slug.slice(0, 50).replace(/-$/, '');
-  }
-
-  return slug;
 }
 
 // ─── CRUD ───────────────────────────────────────────────────────────────────

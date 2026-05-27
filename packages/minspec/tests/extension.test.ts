@@ -253,6 +253,10 @@ function makeMockContext(overrides: Partial<Record<string, any>> = {}) {
       get: vi.fn(() => false),
       update: vi.fn(),
     },
+    workspaceState: {
+      get: vi.fn(() => false),
+      update: vi.fn(),
+    },
     ...overrides,
   } as unknown as vscode.ExtensionContext;
 }
@@ -592,20 +596,20 @@ describe('activate()', () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
 
     const ctx = makeMockContext();
-    (ctx.globalState.get as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    (ctx.workspaceState.get as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
     activate(ctx);
 
     expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
   });
 
-  it('sets globalState flag when showing first-run prompt', () => {
+  it('sets workspaceState flag when showing first-run prompt', () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
 
     const ctx = makeMockContext();
     activate(ctx);
 
-    expect(ctx.globalState.update).toHaveBeenCalledWith(
+    expect(ctx.workspaceState.update).toHaveBeenCalledWith(
       'minspec.firstRun',
       true,
     );

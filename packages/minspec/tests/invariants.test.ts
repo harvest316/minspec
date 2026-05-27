@@ -104,8 +104,9 @@ describe('Invariant 2: No backend — no network calls', () => {
     return results;
   }
 
-  // Files allowed to use child_process (parking-lot, backlog use `gh` CLI)
+  // Files allowed to use child_process (github, parking-lot, backlog use `gh` CLI)
   const CHILD_PROCESS_ALLOWLIST = new Set([
+    'lib/github.ts',
     'lib/parking-lot.ts',
     'lib/backlog.ts',
     'lib/git-analyzer.ts',

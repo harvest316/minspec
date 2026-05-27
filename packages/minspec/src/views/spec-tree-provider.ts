@@ -5,17 +5,8 @@ import { loadConfig } from '../lib/config';
 import { parseSpec } from '../lib/spec';
 import type { SpecFrontmatter, SpecStatus } from '../lib/spec';
 import type { Phase } from '../lib/config';
-
-// --- Spec listing (filesystem scan) ---
-
-export interface SpecSummary {
-  readonly id: string;
-  readonly title: string;
-  readonly tier: string;
-  readonly status: SpecStatus;
-  readonly currentPhase: Phase | null;
-  readonly filePath: string;
-}
+import type { SpecSummary } from '../lib/spec-manager';
+export type { SpecSummary };
 
 /**
  * Scan the specs directory and return summaries for all spec files.

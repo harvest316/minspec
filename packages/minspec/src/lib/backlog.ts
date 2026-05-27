@@ -1,5 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { isGhAvailable, getRepoFromRemote } from './github';
+export { isGhAvailable, getRepoFromRemote };
 
 const execFileAsync = promisify(execFile);
 
@@ -162,41 +164,6 @@ interface GhIssueJson {
   state: string;
   createdAt: string;
   updatedAt: string;
-}
-
-/**
- * Check if the `gh` CLI is available.
- */
-export async function isGhAvailable(): Promise<boolean> {
-  try {
-    await execFileAsync('gh', ['auth', 'status'], {
-      timeout: 5000,
-      env: { ...process.env },
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Get the GitHub repo (owner/name) from the git remote.
- */
-export async function getRepoFromRemote(rootDir: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync('git', ['remote', 'get-url', 'origin'], {
-      cwd: rootDir,
-      timeout: 5000,
-    });
-    const url = stdout.trim();
-    const sshMatch = url.match(/github\.com[:/]([^/]+\/[^/.]+)/);
-    if (sshMatch) return sshMatch[1];
-    const httpsMatch = url.match(/github\.com\/([^/]+\/[^/.]+)/);
-    if (httpsMatch) return httpsMatch[1];
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 /**

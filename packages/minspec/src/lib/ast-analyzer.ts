@@ -1,14 +1,5 @@
-import type { Tier } from './config';
-
-// --- Public interfaces ---
-
-/** A single classification signal emitted by the analyzer */
-export interface ClassificationSignal {
-  name: string;
-  value: number | boolean;
-  weight: number;
-  tierContribution: Tier;
-}
+import type { ClassificationSignal } from './classifier';
+export type { ClassificationSignal };
 
 /** Input file for analysis */
 export interface AnalyzableFile {

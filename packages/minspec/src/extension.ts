@@ -12,7 +12,7 @@ import { scoreWsjfCommand, triageIssueCommand } from './commands/backlog';
 import { SpecTreeProvider } from './views/spec-tree-provider';
 import { AdrTreeProvider } from './views/adr-tree-provider';
 import { BacklogTreeProvider } from './views/backlog-view';
-import { MinSpecStatusBar } from './views/status-bar';
+import { MinSpecStatusBar, fromFrontmatter } from './views/status-bar';
 import { SpecPanel } from './views/spec-panel';
 import { loadConfig, applyVSCodeOverrides } from './lib/config';
 import { loadSession, saveSession, addToScope, isFileInScope } from './lib/session';
@@ -131,9 +131,22 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  const onSpecsChanged = () => {
+  const onSpecsChanged = async () => {
     specTreeProvider.refresh();
     specPanel.refresh();
+    const activeSpecPath = await findActiveSpec(workspaceRoot);
+    if (activeSpecPath) {
+      try {
+        const content = fs.readFileSync(activeSpecPath, 'utf-8');
+        const { parseSpec: parse } = await import('./lib/spec');
+        const parsed = parse(content);
+        statusBar.update(fromFrontmatter(parsed.frontmatter));
+      } catch {
+        statusBar.update(null);
+      }
+    } else {
+      statusBar.update(null);
+    }
   };
 
   watcher.onDidChange(onSpecsChanged);
@@ -193,10 +206,10 @@ export function activate(context: vscode.ExtensionContext): void {
   if (workspaceRoot) {
     const minspecDir = path.join(workspaceRoot, '.minspec');
     const hasMinspec = fs.existsSync(minspecDir);
-    const hasSeenFirstRun = context.globalState.get<boolean>('minspec.firstRun', false);
+    const hasSeenFirstRun = context.workspaceState.get<boolean>('minspec.firstRun', false);
 
     if (!hasMinspec && !hasSeenFirstRun) {
-      context.globalState.update('minspec.firstRun', true);
+      context.workspaceState.update('minspec.firstRun', true);
       vscode.window
         .showInformationMessage(
           'Welcome to MinSpec! Would you like to initialize SDD for this project?',

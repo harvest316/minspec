@@ -3,21 +3,8 @@ import { simpleGit } from 'simple-git';
 import * as path from 'path';
 
 import type { Tier } from './config';
-
-/**
- * A single classification signal extracted from git diff analysis.
- * These signals feed into the classification engine to determine task tier.
- */
-export interface ClassificationSignal {
-  /** Signal identifier, e.g. "files_changed", "new_exports", "schema_change" */
-  name: string;
-  /** Numeric or boolean value of the signal */
-  value: number | boolean;
-  /** How strongly this signal influences classification (0-1) */
-  weight: number;
-  /** Which tier this signal's value suggests */
-  tierContribution: Tier;
-}
+import type { ClassificationSignal } from './classifier';
+export type { ClassificationSignal };
 
 /** Options for the git analyzer */
 export interface GitAnalyzerOptions {
@@ -201,7 +188,7 @@ export async function analyzeGitDiff(
         .filter(line => line.startsWith('+') && !line.startsWith('+++'));
       hasNewDependencies = addedLines.some(line =>
         /^\+\s*"[^"]+"\s*:\s*"[^"]*"/.test(line) &&
-        diffOutput.includes('"dependencies"') || diffOutput.includes('"devDependencies"'),
+        (diffOutput.includes('"dependencies"') || diffOutput.includes('"devDependencies"')),
       );
     } catch {
       // If diff parsing fails, just use the boolean change signal
