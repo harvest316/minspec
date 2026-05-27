@@ -192,11 +192,11 @@ product: minspec
 ## Post-Launch: ScroogeLLM Bridge (Week 11+)
 
 ### 10.1 Bridge Nudge
-- [ ] Detect LLM API usage patterns (if observable without proxy)
-- [ ] Surface savings estimate: "ScroogeLLM could save ~$X/month"
-- [ ] "Install ScroogeLLM" action button
+- [x] Detect LLM API usage patterns (if observable without proxy)
+- [x] Surface savings estimate: "ScroogeLLM could save ~$X/month"
+- [x] "Install ScroogeLLM" action button
 
 ### 10.2 Conformance Preparation
-- [ ] Export traceability mappings in format ScroogeLLM can consume
-- [ ] Define conformance API contract between extensions
-- [ ] `minspec.conformance.enabled` setting (activates when ScroogeLLM detected)
+- [x] Export traceability mappings in format ScroogeLLM can consume
+- [x] Define conformance API contract between extensions
+- [x] `minspec.conformance.enabled` setting (activates when ScroogeLLM detected)
