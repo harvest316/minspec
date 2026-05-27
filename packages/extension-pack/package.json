@@ -8,6 +8,21 @@
   "engines": {
     "vscode": "^1.90.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harvest316/MinSpecPro"
+  },
+  "homepage": "https://minspec.dev",
+  "keywords": [
+    "sdd",
+    "specification",
+    "spec-driven",
+    "llm",
+    "cost",
+    "proxy",
+    "minspec",
+    "scroogellm"
+  ],
   "categories": ["Extension Packs"],
   "extensionPack": [
     "aiclarity.minspec",

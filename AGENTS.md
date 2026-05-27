@@ -4,7 +4,7 @@ Cross-tool agent instructions. Valid for: Claude Code, Cursor, Copilot Workspace
 
 ## Project Identity
 
-- Repo: `harvest316/minspec`
+- Repo: `harvest316/MinSpecPro`
 - Publisher: `aiclarity`
 - Two VS Code extensions in `packages/minspec` and `packages/scroogellm`
 - Shared code in `packages/shared`
@@ -56,7 +56,7 @@ docs/domain/            Bounded context knowledge docs
 docs/research/          Market research
 packages/minspec/       VS Code extension A
 packages/scroogellm/    VS Code extension B
-packages/shared/        Classification engine + contracts
+packages/shared/        Planned shared code (scaffold only — classifier currently in packages/minspec/src/lib/)
 packages/extension-pack/MinSpec Pro
 scripts/hooks/          Claude Code session hooks
 ```
@@ -65,7 +65,7 @@ scripts/hooks/          Claude Code session hooks
 
 MinSpec is in SDD Implement phase. Work from `specs/minspec/tasks.md`.
 
-Tasks are organized in phases. Complete Phase 1 (scaffold) before Phase 2 (classifier).
+All nine implementation phases (Foundation through Polish & Launch) are complete. Remaining work is post-launch ScroogeLLM bridge integration (Phase 10).
 
 ## Testing
 

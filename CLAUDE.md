@@ -95,6 +95,6 @@ All architectural decisions → `docs/decisions/DR-NNN.md`. See `docs/decisions/
 
 | Topic | GitHub repo |
 |---|---|
-| MinSpec extension / SDD tool | `harvest316/minspec` |
-| ScroogeLLM extension / proxy | `harvest316/minspec` (same monorepo) |
+| MinSpec extension / SDD tool | `harvest316/MinSpecPro` |
+| ScroogeLLM extension / proxy | `harvest316/MinSpecPro` (same monorepo) |
 | Shared infra / cross-project | `harvest316/mmo-platform` |

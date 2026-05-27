@@ -13,13 +13,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/harvest316/minspec"
+    "url": "https://github.com/harvest316/MinSpecPro"
   },
+  "bugs": {
+    "url": "https://github.com/harvest316/MinSpecPro/issues"
+  },
+  "preview": true,
+  "homepage": "https://minspec.dev",
+  "qna": "marketplace",
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Programming Languages",
     "Other"
   ],
   "keywords": [
@@ -190,7 +195,7 @@
         "minspec.thresholds.t2Max": {
           "type": "number",
           "default": 7,
-          "description": "Maximum complexity score for T2 (small) classification"
+          "description": "Maximum complexity score for T2 (standard) classification"
         },
         "minspec.thresholds.t3Max": {
           "type": "number",

@@ -2,14 +2,14 @@
 
 > Just enough spec. Never too much.
 
-[![CI](https://github.com/harvest316/minspec/actions/workflows/ci.yml/badge.svg)](https://github.com/harvest316/minspec/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/harvest316/minspec/badges/tests.json)](https://github.com/harvest316/minspec/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/harvest316/minspec/badges/coverage.json)](https://github.com/harvest316/minspec/actions/workflows/ci.yml)
+[![CI](https://github.com/harvest316/MinSpecPro/actions/workflows/ci.yml/badge.svg)](https://github.com/harvest316/MinSpecPro/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/harvest316/MinSpecPro/badges/tests.json)](https://github.com/harvest316/MinSpecPro/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/harvest316/MinSpecPro/badges/coverage.json)](https://github.com/harvest316/MinSpecPro/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![VS Code](https://img.shields.io/badge/VS%20Code-1.85+-blue.svg)](https://code.visualstudio.com/)
+[![VS Code](https://img.shields.io/badge/VS%20Code-1.90+-blue.svg)](https://code.visualstudio.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg)](https://www.typescriptlang.org/)
-[![No AI Required](https://img.shields.io/badge/AI-not%20required-lightgrey.svg)](https://github.com/harvest316/minspec)
-[![Zero Network](https://img.shields.io/badge/network-zero%20calls-lightgrey.svg)](https://github.com/harvest316/minspec)
+[![No AI Required](https://img.shields.io/badge/AI-not%20required-lightgrey.svg)](https://github.com/harvest316/MinSpecPro)
+[![Zero Network](https://img.shields.io/badge/network-zero%20calls-lightgrey.svg)](https://github.com/harvest316/MinSpecPro)
 
 ## Why This Exists
 
@@ -25,7 +25,7 @@ MinSpec fixes this. It classifies each change by complexity and applies proporti
 4. Run **MinSpec: Classify Task Complexity** to classify your current changes.
 5. Write your spec -- MinSpec tells you how much (or how little) you need.
 
-<!-- screenshot: quick-start-flow -->
+![MinSpec Sidebar](media/screenshots/sidebar.png)
 
 ## Features
 
@@ -33,25 +33,25 @@ MinSpec fixes this. It classifies each change by complexity and applies proporti
 
 MinSpec analyzes your git diff and classifies each change into one of four tiers. The classifier examines file count, line count, new exports, schema changes, dependency additions, and more -- then recommends the right level of specification ceremony.
 
-<!-- screenshot: classifier-result -->
+![Complexity Classification](media/screenshots/classification.png)
 
 ### Adaptive Phase Lifecycle
 
 Each spec moves through a lifecycle of phases: **Specify, Clarify, Plan, Tasks, Implement**. MinSpec skips phases that do not add value for the current tier. A T1 trivial change jumps straight from a one-liner spec to implementation. A T3 complex change goes through the full pipeline.
 
-<!-- screenshot: phase-stepper -->
+![Phase Stepper](media/screenshots/spec-panel.png)
 
 ### Sidebar Tree View
 
 All specs in your project appear in the Explorer sidebar, grouped by status (active, done, archived) with tier badges (T1-T4). Click any spec to open it. Right-click for actions like reclassification and phase transitions.
 
-<!-- screenshot: sidebar-tree -->
+![Sidebar Tree View](media/screenshots/sidebar.png)
 
 ### Active Spec Panel
 
 A webview panel displays the current spec as a vertical stepper. Completed phases collapse. The active phase expands with its content. Tasks appear as an interactive checklist you can toggle directly.
 
-<!-- screenshot: active-spec-panel -->
+![Active Spec Panel](media/screenshots/spec-panel.png)
 
 ### Harness Generator
 
@@ -81,6 +81,18 @@ MinSpec detects which AI coding tools you use and injects your active spec conte
 | GitHub Copilot | `AGENTS.md` |
 
 No AI tool is required. MinSpec works perfectly without any of them -- your specs are plain markdown files that any tool can read.
+
+### CodeLens Traceability
+
+Inline CodeLens annotations appear above functions and classes, showing which spec requirement each piece of code implements. Click a CodeLens annotation to jump to the spec. Click a spec requirement to jump to the code. Create mappings manually or let MinSpec suggest them from task file paths.
+
+![CodeLens Annotations](media/screenshots/codelens.png)
+
+### Architecture Decision Records
+
+MinSpec manages Architecture Decision Records (ADRs) in `docs/decisions/DR-NNN.md`. When you classify a change as T4 (Architectural), MinSpec prompts you to create an ADR. The sidebar shows all decisions in a dedicated tree view.
+
+![ADR Tree View](media/screenshots/adr-tree.png)
 
 ### Session Discipline
 
@@ -127,7 +139,8 @@ All settings are under the `minspec.*` namespace in VS Code Settings.
 | `minspec.decisionsDir` | `string` | `"docs/decisions"` | Directory for Architecture Decision Records, relative to workspace root |
 | `minspec.thresholds.t1Max` | `number` | `3` | Maximum complexity score for T1 (trivial) classification |
 | `minspec.thresholds.t2Max` | `number` | `7` | Maximum complexity score for T2 (standard) classification |
-| `minspec.thresholds.t3Max` | `number` | `14` | Maximum complexity score for T3 (medium) classification |
+| `minspec.thresholds.t3Max` | `number` | `14` | Maximum complexity score for T3 (complex) classification |
+| `minspec.codelens.enabled` | `boolean` | `true` | Enable/disable CodeLens annotations showing spec requirement mappings |
 
 Tier thresholds are tunable per project. Scores above `t3Max` classify as T4 (architectural).
 
@@ -147,6 +160,14 @@ Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "MinSpec" to 
 | **MinSpec: Inject Active Spec Context** | Write the active spec's context into detected AI tool config files |
 | **MinSpec: Remove Active Spec Context** | Remove injected spec context from AI tool config files |
 | **MinSpec: Show Active Spec Panel** | Open the webview panel displaying the current spec's phase stepper and task checklist |
+| **MinSpec: Generate Example Spec** | Create a sample spec file for demo and learning purposes |
+| **MinSpec: Create Architecture Decision Record** | Create a new DR-NNN.md file from the ADR template with sequential numbering |
+| **MinSpec: Score Issue (WSJF)** | Calculate a Weighted Shortest Job First score for backlog prioritization |
+| **MinSpec: Quick Triage Inbox Issue** | Triage an inbox-labelled GitHub Issue with priority and labels |
+| **MinSpec: Refresh Backlog** | Manually refresh the sidebar backlog view from GitHub Issues |
+| **MinSpec: Go to Spec Requirement** | Navigate from code to the linked spec requirement |
+| **MinSpec: Go to Code Location** | Navigate from a spec requirement to its implementing code |
+| **MinSpec: Link Code to Spec Requirement** | Create a traceability mapping between a code location and a spec requirement |
 
 ## Spec File Format
 
@@ -203,7 +224,7 @@ The classifier is a deterministic, multi-signal heuristic engine -- not ML. It a
 
 ## Contributing
 
-Contributions are welcome. See the [GitHub repository](https://github.com/harvest316/minspec) for issues and pull requests.
+Contributions are welcome. See the [GitHub repository](https://github.com/harvest316/MinSpecPro) for issues and pull requests.
 
 ## License
 

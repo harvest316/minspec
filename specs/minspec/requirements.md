@@ -8,7 +8,7 @@ product: minspec
 # MinSpec — Requirements Specification
 
 **Date:** 2026-05-26
-**Status:** Draft
+**Status:** Implementing
 **Scope:** VS Code extension providing intelligent spec-driven development with complexity-adaptive ceremony.
 
 ---
