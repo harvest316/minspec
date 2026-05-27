@@ -26,5 +26,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AI tool context injection**: Detects installed AI coding tools (Claude Code, Cursor, Cline, Aider, Windsurf, Copilot) and injects/removes active spec context into their configuration files.
 - **Session discipline**: Scope declaration prompt, session state persistence in `.minspec/session.json`, file save monitoring for drift detection, and drift warning UI (park / add to scope / dismiss).
 - **Parking lot**: Out-of-scope topics are filed as GitHub Issues via `gh` CLI with auto-labels and session context. Falls back to `.minspec/parking-lot.md` when `gh` is unavailable.
-- **Ten commands**: init, refresh harness, classify, show status, refresh tree, declare scope, park topic, inject context, remove context, show spec panel.
-- **Five configuration settings**: `specsDir`, `decisionsDir`, `thresholds.t1Max`, `thresholds.t2Max`, `thresholds.t3Max`.
+- **Eighteen commands**: init, refresh harness, classify, show status, refresh tree, declare scope, park topic, inject context, remove context, show spec panel, generate example spec, create ADR, score issue (WSJF), quick triage inbox issue, refresh backlog, go to spec, go to code, link code to spec.
+- **Six configuration settings**: `specsDir`, `decisionsDir`, `thresholds.t1Max`, `thresholds.t2Max`, `thresholds.t3Max`, `codelens.enabled`.

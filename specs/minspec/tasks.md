@@ -8,7 +8,7 @@ product: minspec
 # MinSpec — Task Breakdown
 
 **Date:** 2026-05-26
-**Status:** Draft
+**Status:** Implementing
 **Design:** [design.md](design.md)
 
 ---

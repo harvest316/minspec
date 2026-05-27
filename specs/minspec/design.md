@@ -8,7 +8,7 @@ product: minspec
 # MinSpec — Design Document
 
 **Date:** 2026-05-26
-**Status:** Draft
+**Status:** Implementing
 **Requirements:** [requirements.md](requirements.md)
 
 ---
