@@ -7,6 +7,32 @@
   <meta name="description" content="MinSpec is a VS Code extension that adapts SDD ceremony to change complexity. T1 tasks need one sentence. T4 needs full architecture docs. No AI dependency, no backend, no lock-in.">
   <meta name="theme-color" content="#0f1117">
   <link rel="canonical" href="https://minspec.dev">
+  <meta name="robots" content="index, follow">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:title" content="MinSpec — Adaptive SDD for VS Code">
+  <meta property="og:description" content="Free VS Code extension for specification-driven development. Adaptive ceremony: trivial changes need one sentence, complex changes get full specs.">
+  <meta property="og:url" content="https://minspec.dev">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MinSpec">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="MinSpec — Adaptive SDD for VS Code">
+  <meta name="twitter:description" content="Free VS Code extension for specification-driven development. Adaptive ceremony: trivial changes need one sentence, complex changes get full specs.">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "MinSpec",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Windows, macOS, Linux",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Adaptive specification-driven development for VS Code. Proportional ceremony that scales with change complexity.",
+    "url": "https://minspec.dev"
+  }
+  </script>
   <style>
     :root {
       --bg: #0f1117;
@@ -15,7 +41,7 @@
       --border: #2a2d3a;
       --text: #e2e4eb;
       --text-muted: #8b8fa3;
-      --text-dim: #5c6072;
+      --text-dim: #8b8fa3;
       --accent: #6c9cfc;
       --accent-bright: #8db4ff;
       --accent-dim: #4a7ad4;
@@ -526,6 +552,39 @@
       }
     }
 
+    /* --- Skip Link --- */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--accent);
+      color: #0f1117;
+      padding: 8px 16px;
+      z-index: 200;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .skip-link:focus {
+      top: 0;
+    }
+
+    /* --- Focus Indicators --- */
+    a:focus-visible,
+    .btn:focus-visible {
+      outline: 2px solid var(--accent-bright, #8b5cf6);
+      outline-offset: 3px;
+    }
+
+    /* --- Reduced Motion --- */
+    @media (prefers-reduced-motion: reduce) {
+      .hero::before {
+        animation: none;
+      }
+      html {
+        scroll-behavior: auto;
+      }
+    }
+
     @media (max-width: 480px) {
       .hero {
         min-height: auto;
@@ -545,8 +604,10 @@
 </head>
 <body>
 
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
   <!-- Nav -->
-  <nav>
+  <nav aria-label="Main navigation">
     <div class="nav-inner">
       <a href="/" class="nav-logo"><span>Min</span>Spec</a>
       <ul class="nav-links">
@@ -558,8 +619,10 @@
     </div>
   </nav>
 
+  <main id="main-content">
+
   <!-- Hero -->
-  <section class="hero">
+  <header class="hero">
     <div class="hero-content">
       <div class="hero-badge">VS Code Extension</div>
       <h1>The <span class="accent">Right Amount</span> of Spec</h1>
@@ -570,7 +633,7 @@
       </div>
       <p class="hero-sub">Free and open source. No AI dependency. No backend. No lock-in.</p>
     </div>
-  </section>
+  </header>
 
   <!-- Problem -->
   <section class="problem">
@@ -718,6 +781,8 @@
       <a href="#" class="btn btn-primary">Install from VS Code Marketplace</a>
     </div>
   </section>
+
+  </main>
 
   <!-- Footer -->
   <footer>
