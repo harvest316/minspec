@@ -950,36 +950,53 @@
 
       <div class="arch-diagram" role="img" aria-label="Architecture diagram showing request flow from VS Code through the ScroogeLLM proxy to the LLM provider">
         <pre class="mermaid">
-graph TD
-    subgraph localhost["🖥 Your Machine (localhost only)"]
-        A["VS Code / AI Tool"] --> proxy
-        subgraph proxy["ScroogeLLM Proxy"]
-            direction LR
-            subgraph row1[" "]
-                direction LR
-                B["compress"] --> C["anonymize"] --> D["cache"]
-            end
-            subgraph row2[" "]
-                direction LR
-                E["route"] --> F["log"] --> G["audit"]
-            end
-            row1 --> row2
-        end
-    end
-    proxy --> H["☁️ LLM Provider API\n(OpenAI, Anthropic, etc.)"]
+---
+config:
+  layout: fixed
+  theme: dark
+---
+flowchart TB
+ subgraph row1[" "]
+    direction LR
+        D["cache"]
+        C["anonymize"]
+        B["compress"]
+  end
+ subgraph row2[" "]
+    direction LR
+        G["audit"]
+        F["log"]
+        E["route"]
+  end
+ subgraph proxy["ScroogeLLM Proxy"]
+    direction LR
+        row1
+        row2
+  end
+ subgraph localhost["🖥 Your Machine (localhost only)"]
+        proxy
+        A["VS Code / AI Tool"]
+  end
+    B --> C
+    C --> D
+    E --> F
+    F --> G
+    D --> E
+    A --> B
+    G --> H["☁️ LLM Provider API\n(OpenAI, Anthropic, etc.)"]
 
-    style localhost fill:#0d1117,stroke:#1a3a2a,color:#8b9a8b
-    style proxy fill:#0a1f0a,stroke:#22c55e,color:#4ade80
+    style D fill:#132613,stroke:#22c55e,color:#4ade80
+    style C fill:#132613,stroke:#22c55e,color:#4ade80
+    style B fill:#132613,stroke:#22c55e,color:#4ade80
+    style G fill:#132613,stroke:#22c55e,color:#4ade80
+    style F fill:#132613,stroke:#22c55e,color:#4ade80
+    style E fill:#132613,stroke:#22c55e,color:#4ade80
     style row1 fill:transparent,stroke:none
     style row2 fill:transparent,stroke:none
+    style proxy fill:#0a1f0a,stroke:#22c55e,color:#4ade80
     style A fill:#1a1a2e,stroke:#6c9cfc,color:#a0b4e0
-    style B fill:#132613,stroke:#22c55e,color:#4ade80
-    style C fill:#132613,stroke:#22c55e,color:#4ade80
-    style D fill:#132613,stroke:#22c55e,color:#4ade80
-    style E fill:#132613,stroke:#22c55e,color:#4ade80
-    style F fill:#132613,stroke:#22c55e,color:#4ade80
-    style G fill:#132613,stroke:#22c55e,color:#4ade80
     style H fill:#1a1a2e,stroke:#6c9cfc,color:#a0b4e0
+    style localhost fill:#0d1117,stroke:#1a3a2a,color:#8b9a8b
         </pre>
       </div>
 
