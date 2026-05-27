@@ -1,23 +1,50 @@
 #!/usr/bin/env bash
 # dispatch-issue.sh — local agent dispatch via claude --bg
-# Usage: scripts/dispatch-issue.sh <issue-number>
+# Usage: scripts/dispatch-issue.sh <issue-number> [--role <role>]
 #
-# Fetches issue body, labels it agent-running, launches claude --bg
-# in an isolated worktree. On completion, labels agent-done.
+# Fetches issue body + labels, resolves agent role, loads role prompt,
+# labels agent-running, launches claude --bg in isolated worktree.
 
 set -euo pipefail
 
-ISSUE="${1:?Usage: dispatch-issue.sh <issue-number>}"
+ISSUE="${1:?Usage: dispatch-issue.sh <issue-number> [--role <role>]}"
 REPO="harvest316/minspec"
 WORKTREE_BASE="/tmp/minspec-agent"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROLES_DIR="${SCRIPT_DIR}/roles"
+FORCE_ROLE=""
 
-# Fetch issue
+shift || true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --role) FORCE_ROLE="$2"; shift 2 ;;
+    *) echo "Unknown arg: $1"; exit 1 ;;
+  esac
+done
+
 echo "Fetching issue #$ISSUE..."
-ISSUE_BODY=$(gh issue view "$ISSUE" --repo "$REPO" --json body,title,labels -q '
-  "# " + .title + "\n\n" + .body
-')
+ISSUE_JSON=$(gh issue view "$ISSUE" --repo "$REPO" --json body,title,labels)
+ISSUE_BODY=$(echo "$ISSUE_JSON" | jq -r '"# " + .title + "\n\n" + .body')
+ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
+ISSUE_LABELS=$(echo "$ISSUE_JSON" | jq -r '.labels[].name')
 
-ISSUE_TITLE=$(gh issue view "$ISSUE" --repo "$REPO" --json title -q '.title')
+# Resolve role: --role flag > role:X label > default to dev
+if [[ -n "$FORCE_ROLE" ]]; then
+  ROLE="$FORCE_ROLE"
+else
+  ROLE=$(echo "$ISSUE_LABELS" | grep -oP '^role:\K.*' | head -1)
+  ROLE="${ROLE:-dev}"
+fi
+
+# Load role prompt
+ROLE_FILE="${ROLES_DIR}/${ROLE}.md"
+if [[ -f "$ROLE_FILE" ]]; then
+  ROLE_PROMPT=$(cat "$ROLE_FILE")
+  echo "Role: $ROLE (loaded from $ROLE_FILE)"
+else
+  echo "Warning: no role file for '$ROLE', using generic prompt"
+  ROLE_PROMPT=""
+fi
 
 # Label as running
 gh issue edit "$ISSUE" --repo "$REPO" \
@@ -28,15 +55,26 @@ gh issue edit "$ISSUE" --repo "$REPO" \
 BRANCH="agent/issue-${ISSUE}"
 WORKTREE="${WORKTREE_BASE}/issue-${ISSUE}"
 
+if [[ -d "$WORKTREE" ]]; then
+  echo "Cleaning up existing worktree at $WORKTREE"
+  git worktree remove "$WORKTREE" --force 2>/dev/null || true
+  git branch -D "$BRANCH" 2>/dev/null || true
+fi
+
 git worktree add -b "$BRANCH" "$WORKTREE" main
 
-echo "Launching agent for: $ISSUE_TITLE"
+echo "Launching $ROLE agent for: $ISSUE_TITLE"
 
-# Build prompt with contract-driven context
 PROMPT=$(cat <<PROMPT
-# Agent Task: Issue #${ISSUE}
+# Agent Task: Issue #${ISSUE} (Role: ${ROLE})
 
 ${ISSUE_BODY}
+
+---
+
+## Role Instructions
+
+${ROLE_PROMPT}
 
 ---
 
@@ -63,15 +101,14 @@ Then stop. Do not attempt a partial solution.
 PROMPT
 )
 
-# Launch background agent
 claude --bg --worktree "$WORKTREE" "$PROMPT" && {
   gh issue edit "$ISSUE" --repo "$REPO" \
     --remove-label "agent-running" \
     --add-label "agent-done" 2>/dev/null || true
-  echo "Agent completed issue #$ISSUE. Worktree: $WORKTREE"
+  echo "Agent completed issue #$ISSUE (role: $ROLE). Worktree: $WORKTREE"
 } || {
   gh issue edit "$ISSUE" --repo "$REPO" \
     --remove-label "agent-running" \
     --add-label "agent-escalated" 2>/dev/null || true
-  echo "Agent escalated issue #$ISSUE. Review output in $WORKTREE"
+  echo "Agent escalated issue #$ISSUE (role: $ROLE). Review output in $WORKTREE"
 }

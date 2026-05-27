@@ -167,7 +167,7 @@ No AI tool dependency. Extension provides structure; AI tool provides generation
 These rules MUST NOT be violated by any implementation:
 
 1. **No AI dependency.** Extension works with zero AI tools installed. Specs are plain markdown.
-2. **No backend.** Zero network calls. No accounts. No telemetry. Everything local.
+2. **Tiered network consent (DR-004).** Tier 0 (core): zero network calls, fully offline, no accounts, no telemetry. Tier 1 (opt-in): delegates to local CLI tools (`gh`, `claude`), no network code in extension. Tier 2 (MinSpec Pro): network services with explicit consent. No `http`/`https`/`fetch` imports in `packages/minspec` or `packages/shared`.
 3. **No lock-in.** Spec files are Spec Kit-compatible markdown. User can delete extension and keep all artifacts.
 4. **Ceremony proportional to complexity.** T1 changes MUST NOT require more than one sentence of specification. Enforcement via automated tests.
 5. **User override always wins.** Classifier suggests, human decides. No phase is mandatory. No gate blocks without explicit user opt-in.

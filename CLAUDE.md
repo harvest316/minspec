@@ -29,7 +29,7 @@ These rules must never be violated. All changes must preserve them.
 ### MinSpec (from specs/minspec/requirements.md)
 
 1. **No AI dependency** — works with zero AI tools installed. No AI calls in core path.
-2. **No backend** — zero network calls, no accounts, no telemetry, all local.
+2. **Tiered network consent (DR-004)** — Tier 0 (core): zero network calls, fully offline. Tier 1 (opt-in): delegates to local CLI tools (`gh`, `claude`), no network code in extension. Tier 2 (MinSpec Pro): network services with explicit consent. No `http`/`https`/`fetch` imports in `packages/minspec` or `packages/shared`.
 3. **No lock-in** — spec files are Spec Kit-compatible markdown. No proprietary format.
 4. **Ceremony proportional to complexity** — T1 task never requires >1 sentence of spec.
 5. **User override always wins** — classifier suggests, human decides. No forced classification.
