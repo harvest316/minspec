@@ -18,8 +18,20 @@
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["Programming Languages", "Other"],
-  "keywords": ["sdd", "specification", "spec", "productivity", "ai", "spec-driven", "complexity", "classifier"],
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "sdd",
+    "specification",
+    "spec",
+    "productivity",
+    "ai",
+    "spec-driven",
+    "complexity",
+    "classifier"
+  ],
   "badges": [],
   "activationEvents": [],
   "main": "./out/extension.js",
@@ -257,13 +269,19 @@
     "watch": "npm run build -- --watch --sourcemap",
     "package": "npm run build:prod && vsce package --no-dependencies",
     "test": "vitest run",
-    "bench": "vitest bench"
+    "bench": "vitest bench",
+    "pretest:e2e": "npm run build && tsc -p tsconfig.test.json",
+    "test:e2e": "vscode-test"
   },
   "dependencies": {
     "handlebars": "^4.7.9",
     "simple-git": "^3.27.0"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.0.0"
+    "@types/mocha": "^10.0.10",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.0.0",
+    "mocha": "^11.7.6"
   }
 }

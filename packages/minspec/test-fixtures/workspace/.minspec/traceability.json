@@ -1,0 +1,10 @@
+{
+  "SPEC-001": {
+    "requirements": {
+      "user-login": {
+        "files": ["src/example.ts:5-10"],
+        "tests": []
+      }
+    }
+  }
+}

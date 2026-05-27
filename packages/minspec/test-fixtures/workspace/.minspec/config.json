@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "specsDir": "specs",
+  "decisionsDir": "docs/decisions",
+  "thresholds": {
+    "t1Max": 3,
+    "t2Max": 7,
+    "t3Max": 14
+  },
+  "phaseMappings": {
+    "T1": { "requiredPhases": ["specify"], "optionalPhases": [] },
+    "T2": { "requiredPhases": ["specify", "plan"], "optionalPhases": ["clarify"] },
+    "T3": { "requiredPhases": ["specify", "plan", "tasks", "implement"], "optionalPhases": ["clarify"] },
+    "T4": { "requiredPhases": ["specify", "clarify", "plan", "tasks", "implement"], "optionalPhases": [] }
+  }
+}

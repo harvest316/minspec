@@ -57,6 +57,31 @@ jobs:
         working-directory: packages/minspec
         run: npm run build
 
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build extension
+        working-directory: packages/minspec
+        run: npm run build
+
+      - name: Compile e2e tests
+        working-directory: packages/minspec
+        run: tsc -p tsconfig.test.json
+
+      - name: Run e2e tests
+        working-directory: packages/minspec
+        run: xvfb-run -a npm run test:e2e
+
   package:
     runs-on: ubuntu-latest
     needs: build
