@@ -98,8 +98,12 @@ Tests are in packages/*/tests/. Run \`npm test\` to verify.
 After completing work:
 1. Run \`npm test\` — must pass
 2. Run \`npm run validate\` — must pass
-3. Commit with conventional commit message
-4. Leave a comment on issue #${ISSUE} summarizing what was done
+3. Commit with a conventional commit message (commit locally only)
+4. Write a short markdown summary of what you changed to \`.agent-summary.md\`
+   in the worktree root. The dispatcher reads this and posts it to the issue.
+
+Do NOT run \`git push\`, \`git remote\`, \`gh\`, or any network/deploy command —
+you are not permitted to and the dispatcher handles publishing after you exit.
 
 ESCALATION RULE: If you cannot fully and correctly complete this task — due to complexity, missing context, token limits, or uncertainty — do NOT cut corners, leave stubs, skip edge cases, or simplify the implementation. Instead, output exactly:
 
@@ -112,12 +116,16 @@ PROMPT
 LOG="${WORKTREE}/.agent.log"
 echo "Running headless agent (log: $LOG)..."
 
-# Scoped tool allow-list instead of bypassPermissions. The agent runs with the
-# host's credentials (gh token, deploy keys, env secrets), so a prompt-injected
-# issue body must NOT be able to reach network/deploy/credential tooling.
-# Allow only what dev work needs; everything else (curl, wget, lftp, wrangler,
-# psql, rm, env reads) is denied by default. Tighten per-role if needed.
-ALLOWED_TOOLS="Read,Edit,Write,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh issue comment:*),Bash(gh issue view:*),Bash(ls:*),Bash(cat:*),Bash(mkdir:*)"
+# Scoped tool allow-list. NOTE: this is defense-in-depth, NOT a sandbox — an
+# agent that runs the project's own build/test IS executing arbitrary code by
+# definition (test files, npm scripts it can edit). The real control is that the
+# agent holds NO credentials it can abuse: no gh, no git push/remote/config, no
+# network tools. The dispatcher (parent) does all credentialed/network ops after
+# the agent exits. Interpreters that are trivial escapes (node -e, npx, cat of
+# arbitrary paths) are removed; Read covers worktree files.
+#   - npm: fixed subcommands only (still runs scripts, but agent has nothing to exfil)
+#   - git: local history ops only — NO push/remote/config/clone/fetch/pull
+ALLOWED_TOOLS="Read,Edit,Write,Glob,Grep,Bash(npm test),Bash(npm run validate),Bash(npm run lint),Bash(npm run build),Bash(npm ci),Bash(git add:*),Bash(git commit:*),Bash(git status),Bash(git diff:*),Bash(git log:*)"
 
 # Headless run inside the worktree. `claude -p` is the only automatable launch
 # primitive (cron/loop-able). It exits 0 even when the agent self-escalates, so
@@ -130,6 +138,20 @@ if (cd "$WORKTREE" && claude -p "$PROMPT" \
       --remove-label "agent-running" --add-label "agent-escalated" 2>/dev/null || true
     echo "Agent ESCALATED issue #$ISSUE (role: $ROLE). Review: $LOG"
   else
+    # Credentialed/network ops happen HERE in the parent, never in the agent.
+    # Push the branch the agent committed locally, then post its summary.
+    if git -C "$WORKTREE" push -u origin "$BRANCH" 2>&1; then
+      SHA=$(git -C "$WORKTREE" rev-parse --short HEAD)
+      SUMMARY_FILE="${WORKTREE}/.agent-summary.md"
+      if [[ -f "$SUMMARY_FILE" ]]; then
+        BODY=$(printf '%s\n\n— branch `%s` @ %s (auto-dispatched)' "$(cat "$SUMMARY_FILE")" "$BRANCH" "$SHA")
+      else
+        BODY=$(printf 'Agent completed (no summary written).\n\n— branch `%s` @ %s (auto-dispatched)' "$BRANCH" "$SHA")
+      fi
+      gh issue comment "$ISSUE" --repo "$REPO" --body "$BODY" 2>/dev/null || true
+    else
+      echo "WARNING: push failed for $BRANCH — review worktree manually"
+    fi
     gh issue edit "$ISSUE" --repo "$REPO" \
       --remove-label "agent-running" --add-label "agent-done" 2>/dev/null || true
     echo "Agent completed issue #$ISSUE (role: $ROLE). Worktree: $WORKTREE"
