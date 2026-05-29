@@ -101,14 +101,26 @@ Then stop. Do not attempt a partial solution.
 PROMPT
 )
 
-claude --bg --worktree "$WORKTREE" "$PROMPT" && {
+LOG="${WORKTREE}/.agent.log"
+echo "Running headless agent (log: $LOG)..."
+
+# Headless run inside the worktree. `claude -p` is the only automatable launch
+# primitive (cron/loop-able). It exits 0 even when the agent self-escalates, so
+# detect ESCALATE: in the output rather than relying on exit code.
+if (cd "$WORKTREE" && claude -p "$PROMPT" \
+      --permission-mode bypassPermissions \
+      --output-format text 2>&1 | tee "$LOG"); then
+  if grep -q '^ESCALATE:' "$LOG"; then
+    gh issue edit "$ISSUE" --repo "$REPO" \
+      --remove-label "agent-running" --add-label "agent-escalated" 2>/dev/null || true
+    echo "Agent ESCALATED issue #$ISSUE (role: $ROLE). Review: $LOG"
+  else
+    gh issue edit "$ISSUE" --repo "$REPO" \
+      --remove-label "agent-running" --add-label "agent-done" 2>/dev/null || true
+    echo "Agent completed issue #$ISSUE (role: $ROLE). Worktree: $WORKTREE"
+  fi
+else
   gh issue edit "$ISSUE" --repo "$REPO" \
-    --remove-label "agent-running" \
-    --add-label "agent-done" 2>/dev/null || true
-  echo "Agent completed issue #$ISSUE (role: $ROLE). Worktree: $WORKTREE"
-} || {
-  gh issue edit "$ISSUE" --repo "$REPO" \
-    --remove-label "agent-running" \
-    --add-label "agent-escalated" 2>/dev/null || true
-  echo "Agent escalated issue #$ISSUE (role: $ROLE). Review output in $WORKTREE"
-}
+    --remove-label "agent-running" --add-label "agent-escalated" 2>/dev/null || true
+  echo "Agent CRASHED on issue #$ISSUE (role: $ROLE). Review: $LOG"
+fi
