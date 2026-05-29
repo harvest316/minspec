@@ -424,6 +424,162 @@
       color: var(--accent);
     }
 
+    /* --- Methodology --- */
+    .methodology-intro {
+      max-width: 720px;
+      margin: 0 auto 32px;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    .methodology-intro strong { color: var(--text); font-weight: 600; }
+    .methodology-intro .accent { color: var(--accent-bright); font-weight: 600; }
+
+    .arch-diagram {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      overflow-x: auto;
+      margin-bottom: 40px;
+    }
+
+    .arch-diagram .mermaid {
+      display: flex;
+      justify-content: center;
+      min-width: 600px;
+    }
+
+    .methodology-pills {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 40px;
+    }
+
+    .methodology-pill {
+      padding: 16px 18px;
+      border-radius: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+    }
+
+    .methodology-pill-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .methodology-pill h4 {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .methodology-pill .weight {
+      font-size: 0.7rem;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      background: var(--accent-glow);
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+
+    .methodology-pill p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    .methodology-pill .source {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+
+    /* --- FAQ --- */
+    .faq-list {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .faq-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      transition: border-color 0.2s;
+    }
+
+    .faq-item[open] {
+      border-color: var(--accent-dim);
+    }
+
+    .faq-item summary {
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: var(--text);
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .faq-item summary::-webkit-details-marker { display: none; }
+
+    .faq-item summary::after {
+      content: "+";
+      color: var(--accent);
+      font-size: 1.2rem;
+      font-weight: 400;
+      transition: transform 0.2s;
+    }
+
+    .faq-item[open] summary::after {
+      content: "−";
+    }
+
+    .faq-item p,
+    .faq-item ul {
+      margin-top: 12px;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+
+    .faq-item ul {
+      padding-left: 20px;
+    }
+
+    .faq-item li + li { margin-top: 4px; }
+
+    .faq-item code {
+      background: rgba(108, 156, 252, 0.08);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 0.82rem;
+      color: var(--accent);
+    }
+
+    .faq-item a {
+      color: var(--accent-bright);
+      text-decoration: none;
+      border-bottom: 1px dotted var(--accent-dim);
+    }
+
+    .faq-item a:hover { border-bottom-style: solid; }
+
     /* --- Principles --- */
     .principles-grid {
       display: grid;
@@ -533,9 +689,13 @@
       }
 
       .features-grid,
-      .principles-grid {
+      .principles-grid,
+      .methodology-pills {
         grid-template-columns: 1fr;
       }
+
+      .arch-diagram { padding: 16px 12px; }
+      .arch-diagram .mermaid { min-width: 0; }
 
       .tier-row {
         grid-template-columns: 1fr;
@@ -613,7 +773,9 @@
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
         <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#methodology">Methodology</a></li>
         <li><a href="#principles">Principles</a></li>
+        <li><a href="#faq">FAQ</a></li>
         <li><a href="#" title="Coming soon">Install</a></li>
       </ul>
     </div>
@@ -741,6 +903,167 @@
   </section>
 
   <!-- Principles -->
+  <!-- Methodology -->
+  <section id="methodology">
+    <div class="section-inner">
+      <div class="section-label">Methodology</div>
+      <h2 class="section-title">Mostly SDD. A little CDD. A few borrowed habits.</h2>
+      <p class="methodology-intro">
+        MinSpec is built on <span class="accent">Spec-Driven Development</span> as the spine, with a thin layer of
+        <span class="accent">Contract-Driven Development</span> for testing discipline. A handful of
+        accepted best practices — ADR, WSJF, GTD-style session scoping — get borrowed where they pay rent.
+        Nothing exotic. No new framework to learn.
+      </p>
+
+      <div class="arch-diagram" role="img" aria-label="Methodology stack diagram: SDD core lifecycle, CDD applied as a cross-cutting layer, with Tier Classifier, ADR, WSJF, GTD-style sessions, and Bug Session Protocol as satellite practices">
+        <pre class="mermaid">
+---
+config:
+  layout: fixed
+  theme: dark
+---
+flowchart TB
+ subgraph SDD["SDD — Spec-Driven Development (primary, ~70%)"]
+    direction LR
+        P1["Constitution"]
+        P2["Specify"]
+        P3["Clarify"]
+        P4["Plan"]
+        P5["Tasks"]
+        P6["Analyze"]
+        P7["Implement"]
+  end
+  TC["Tier Classifier T1–T4\n(MinSpec's own)"] --> SDD
+  CDD["CDD — Contract-Driven Dev (~15%)\nT0–T4 tests, contracts, file allowlists"] -.applied across.-> SDD
+  ADR["ADR / DR-NNN\n(Nygard pattern)"] -.-> SDD
+  WSJF["WSJF Backlog\n(SAFe scoring)"] -.-> SDD
+  GTD["Session Scope + Parking Lot\n(GTD-style)"] -.-> SDD
+  BUG["Bug Session Protocol\n(MinSpec's own)"] -.-> SDD
+  P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+
+  style SDD fill:#0d1a2e,stroke:#6c9cfc,color:#a0b4e0
+  style P1 fill:#1a2540,stroke:#6c9cfc,color:#cbd5e8
+  style P2 fill:#1a2540,stroke:#6c9cfc,color:#cbd5e8
+  style P3 fill:#1a2540,stroke:#6c9cfc,color:#cbd5e8
+  style P4 fill:#1a2540,stroke:#6c9cfc,color:#cbd5e8
+  style P5 fill:#1a2540,stroke:#6c9cfc,color:#cbd5e8
+  style P6 fill:#1a2540,stroke:#6c9cfc,color:#cbd5e8
+  style P7 fill:#1a2540,stroke:#6c9cfc,color:#cbd5e8
+  style TC fill:#132613,stroke:#22c55e,color:#4ade80
+  style CDD fill:#2a1f3a,stroke:#a78bfa,color:#c4b5fd
+  style ADR fill:#1c1f2b,stroke:#8b8fa3,color:#b8bcc8
+  style WSJF fill:#1c1f2b,stroke:#8b8fa3,color:#b8bcc8
+  style GTD fill:#1c1f2b,stroke:#8b8fa3,color:#b8bcc8
+  style BUG fill:#132613,stroke:#22c55e,color:#4ade80
+        </pre>
+      </div>
+
+      <div class="methodology-pills">
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>SDD</h4><span class="weight">~70%</span></div>
+          <p>The spine. Constitution → Specify → Clarify → Plan → Tasks → Analyze → Implement.</p>
+          <span class="source">Source: GitHub Spec Kit (canonical SDD)</span>
+        </div>
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>Tier Classifier</h4><span class="weight">MinSpec</span></div>
+          <p>T1–T4 complexity scoring decides which phases run. The differentiator no other SDD tool has.</p>
+          <span class="source">Source: MinSpec's own invention</span>
+        </div>
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>CDD</h4><span class="weight">~15%</span></div>
+          <p>Contract-Driven Development layer: T0–T4 test tiers, TypeScript/Zod contracts, file allowlists for agent tasks.</p>
+          <span class="source">Source: industry CDD practice</span>
+        </div>
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>ADR</h4><span class="weight">borrow</span></div>
+          <p>Architecture Decision Records as <code>DR-NNN.md</code> files. Captures the "why" behind technical choices.</p>
+          <span class="source">Source: Michael Nygard, 2011</span>
+        </div>
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>WSJF</h4><span class="weight">borrow</span></div>
+          <p>Weighted Shortest Job First scoring for backlog prioritization. Cost of Delay ÷ Job Duration.</p>
+          <span class="source">Source: SAFe / Don Reinertsen</span>
+        </div>
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>GTD-style sessions</h4><span class="weight">borrow</span></div>
+          <p>Mandatory scope declaration + topic-drift parking lot → GitHub issues. Keeps work focused.</p>
+          <span class="source">Source: GTD / focused-work discipline</span>
+        </div>
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>Bug Session Protocol</h4><span class="weight">MinSpec</span></div>
+          <p>Reproduce → Diagnose → Fix → Harden. Root cause before fix, regression test before merge.</p>
+          <span class="source">Source: MinSpec's own (DR-003)</span>
+        </div>
+        <div class="methodology-pill">
+          <div class="methodology-pill-header"><h4>Tiered Network Consent</h4><span class="weight">orthogonal</span></div>
+          <p>Tier 0 fully offline, Tier 1 delegates to local CLIs, Tier 2 (Pro) opts into network with consent.</p>
+          <span class="source">Source: MinSpec privacy stance (DR-004)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="section-inner">
+      <div class="section-label">FAQ</div>
+      <h2 class="section-title">Methodology questions, answered straight</h2>
+      <div class="faq-list">
+
+        <details class="faq-item">
+          <summary>Is MinSpec a Spec Kit clone?</summary>
+          <p>No. MinSpec implements the same SDD methodology that <a href="https://github.com/github/spec-kit">GitHub Spec Kit</a> popularized, but adds an adaptive ceremony layer driven by a T1–T4 complexity classifier. Spec Kit applies the full lifecycle to every change. MinSpec asks: <em>does this trivial fix really need a Plan document?</em></p>
+          <p>Spec files are intentionally Spec Kit-compatible — unknown frontmatter fields are ignored by both tools. You can move between them.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>What is SDD, in one paragraph?</summary>
+          <p>Spec-Driven Development is the practice of writing the specification <strong>before</strong> the implementation, then driving the implementation (often by AI agents) from that spec. Canonical SDD has seven phases: <code>constitution → specify → clarify → plan → tasks → analyze → implement</code>. Each phase produces a markdown artifact. The artifacts form a traceable chain from intent to code.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>What is CDD and why layer it on top of SDD?</summary>
+          <p>Contract-Driven Development pushes you to write contracts (TypeScript types, Zod schemas, OpenAPI specs) and invariant tests <strong>before</strong> implementation. SDD tells you <em>what</em> to build. CDD tells you <em>what shape the output must satisfy</em>.</p>
+          <p>The two compose well: SDD's <code>plan</code> phase is the natural place to write contracts, and CDD's T0 invariant tests give SDD's <code>tasks</code> something concrete to verify against. Spec Kit doesn't include CDD; MinSpec adds it as a thin layer because AI agents need contracts to avoid drift.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Why mix in ADR, WSJF, and GTD instead of staying pure SDD?</summary>
+          <p>Because pure SDD doesn't answer some practical questions:</p>
+          <ul>
+            <li><strong>ADR</strong> answers "why did we choose this approach?" — useful even mid-spec.</li>
+            <li><strong>WSJF</strong> answers "which spec do I work on next?" — SDD is silent on backlog order.</li>
+            <li><strong>GTD-style session scope</strong> answers "what counts as drift?" — needed for AI agents that wander.</li>
+          </ul>
+          <p>None of these are full methodologies in MinSpec — they're small, well-known patterns plugged in where SDD has gaps. You can ignore any of them and MinSpec still works.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Does MinSpec replace my agile / kanban / scrum process?</summary>
+          <p>No. MinSpec is a development methodology tool — how you take one change from intent to merged code. It doesn't tell you how to run standups, plan sprints, or estimate stories. The WSJF scoring is for ordering MinSpec's own backlog of specs, not your team's overall workflow.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Why a Bug Session Protocol separate from the SDD lifecycle?</summary>
+          <p>SDD assumes you're building a feature — you know roughly what you want, you write a spec, you implement. Bug fixes invert this: you don't know what's wrong, you have to <em>find</em> the root cause first, and a written "spec" before diagnosis is just guessing.</p>
+          <p>MinSpec's Bug Session Protocol (<code>Reproduce → Diagnose → Fix → Harden</code>) is a separate, lighter lifecycle that respects this. Bug work is roughly half of developer time and shouldn't be forced through a feature-shaped process.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Do I need to know all these methodologies to use MinSpec?</summary>
+          <p>No. Open VS Code, install the extension, run <code>MinSpec: Init</code>. The classifier suggests tiers, the lifecycle UI shows which phase you're in, the templates fill in the boilerplate. You'll absorb the underlying SDD/CDD ideas by using them.</p>
+          <p>This FAQ exists for the curious developer who wants to know what's under the hood — not as required reading.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Can I disable phases or override the tier the classifier picks?</summary>
+          <p>Yes. <strong>User override always wins</strong> is a hard invariant. The classifier suggests a tier; you click to change it. Phases are never mandatory — MinSpec warns when you skip something the rules say you should keep, but it doesn't block. The methodology is a recommendation engine, not a gate.</p>
+        </details>
+
+      </div>
+    </div>
+  </section>
+
   <section id="principles">
     <div class="section-inner">
       <div class="section-label">Principles</div>
@@ -799,5 +1122,22 @@
     </div>
   </footer>
 
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#0f1117',
+        primaryColor: '#1a2540',
+        primaryBorderColor: '#6c9cfc',
+        lineColor: '#6c9cfc',
+        textColor: '#e2e4eb',
+        fontSize: '13px'
+      },
+      flowchart: { curve: 'basis' }
+    });
+  </script>
 </body>
 </html>
