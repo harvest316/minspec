@@ -326,19 +326,24 @@
     }
 
     /* --- Features --- */
-    .features-head {
+    .section-head {
       display: flex;
       align-items: center;
       justify-content: flex-start;
-      gap: 40px;
+      gap: 28px;
       margin-bottom: 48px;
     }
 
-    .features-head-text .section-desc {
+    .section-head-text .section-desc {
       margin-bottom: 0;
     }
 
-    .features-logo {
+    .section-head-text .section-title:last-child,
+    .section-head-text .section-label:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-head-logo {
       height: 160px;
       width: auto;
       flex-shrink: 0;
@@ -726,7 +731,7 @@
         grid-template-columns: 1fr;
       }
 
-      .features-logo { display: none; }
+      .section-head-logo { display: none; }
 
       .arch-diagram { padding: 16px 12px; }
       .arch-diagram .mermaid { min-width: 0; }
@@ -850,9 +855,9 @@
   <!-- Features -->
   <section id="features">
     <div class="section-inner">
-      <div class="features-head">
-        <img src="/img/logo.svg" alt="MinSpec logo" class="features-logo" width="131" height="160" loading="lazy">
-        <div class="features-head-text">
+      <div class="section-head">
+        <img src="/img/logo.svg" alt="" class="section-head-logo" width="131" height="160" loading="lazy">
+        <div class="section-head-text">
           <div class="section-label">Features</div>
           <h2 class="section-title">Built for developers who ship</h2>
           <p class="section-desc">MinSpec integrates into your existing workflow. No new tools to learn, no context switching, no overhead on simple changes.</p>
@@ -896,9 +901,14 @@
   <!-- How it works: Tiers -->
   <section class="tiers" id="how-it-works">
     <div class="section-inner">
-      <div class="section-label">How It Works</div>
-      <h2 class="section-title">Ceremony proportional to complexity</h2>
-      <p class="section-desc">MinSpec classifies every change and selects the right SDD phases. You always have override control.</p>
+      <div class="section-head">
+        <img src="/img/logo.svg" alt="" class="section-head-logo" width="131" height="160" loading="lazy">
+        <div class="section-head-text">
+          <div class="section-label">How It Works</div>
+          <h2 class="section-title">Ceremony proportional to complexity</h2>
+          <p class="section-desc">MinSpec classifies every change and selects the right SDD phases. You always have override control.</p>
+        </div>
+      </div>
       <div class="tier-list">
         <div class="tier-row tier-t1">
           <div><span class="tier-badge">T1</span></div>
@@ -945,8 +955,13 @@
   <!-- Methodology -->
   <section id="methodology">
     <div class="section-inner">
-      <div class="section-label">Methodology</div>
-      <h2 class="section-title">Mostly SDD. A little CDD. A few borrowed habits.</h2>
+      <div class="section-head">
+        <img src="/img/logo.svg" alt="" class="section-head-logo" width="131" height="160" loading="lazy">
+        <div class="section-head-text">
+          <div class="section-label">Methodology</div>
+          <h2 class="section-title">Mostly SDD. A little CDD. A few borrowed habits.</h2>
+        </div>
+      </div>
       <p class="methodology-intro">
         MinSpec is built on <span class="accent">Spec-Driven Development</span> as the spine, with a thin layer of
         <span class="accent">Contract-Driven Development</span> for testing discipline. A handful of
@@ -1006,8 +1021,13 @@
   <!-- FAQ -->
   <section id="faq">
     <div class="section-inner">
-      <div class="section-label">FAQ</div>
-      <h2 class="section-title">Methodology questions, answered straight</h2>
+      <div class="section-head">
+        <img src="/img/logo.svg" alt="" class="section-head-logo" width="131" height="160" loading="lazy">
+        <div class="section-head-text">
+          <div class="section-label">FAQ</div>
+          <h2 class="section-title">Methodology questions, answered straight</h2>
+        </div>
+      </div>
       <div class="faq-list">
 
         <details class="faq-item">
@@ -1066,9 +1086,14 @@
 
   <section id="principles">
     <div class="section-inner">
-      <div class="section-label">Principles</div>
-      <h2 class="section-title">Opinionated where it matters</h2>
-      <p class="section-desc">The design constraints that keep MinSpec useful instead of just another tool to configure.</p>
+      <div class="section-head">
+        <img src="/img/logo.svg" alt="" class="section-head-logo" width="131" height="160" loading="lazy">
+        <div class="section-head-text">
+          <div class="section-label">Principles</div>
+          <h2 class="section-title">Opinionated where it matters</h2>
+          <p class="section-desc">The design constraints that keep MinSpec useful instead of just another tool to configure.</p>
+        </div>
+      </div>
       <div class="principles-grid">
         <div class="principle">
           <div class="principle-header">
