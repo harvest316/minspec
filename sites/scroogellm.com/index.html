@@ -545,6 +545,7 @@
     .feature-card {
       flex: 0 1 calc(33.333% - 1rem);
       min-width: 280px;
+      display: flow-root; /* contain the floated dropcap icon */
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -559,10 +560,12 @@
     }
 
     .feature-icon {
-      font-size: 1.75rem;
-      margin-bottom: 1rem;
-      display: block;
+      float: left;
+      font-size: 3.25rem;
+      line-height: 0.85;
+      margin: 0 0.85rem 0.35rem 0;
     }
+
 
     .feature-title {
       font-size: 1.08rem;
@@ -577,7 +580,9 @@
     }
 
     .feature-tag {
-      display: inline-block;
+      display: block;
+      width: fit-content;
+      clear: left; /* drop below the floated dropcap icon, never tuck beside it */
       margin-top: 0.75rem;
       font-size: 0.7rem;
       font-weight: 700;
@@ -743,6 +748,84 @@
       font-size: 0.88rem;
       color: var(--text-secondary);
       line-height: 1.6;
+    }
+
+    /* ── Privacy: deep-dive disclosure ────────────────── */
+    .privacy-deep {
+      margin-top: 2.5rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .privacy-deep > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 1rem 1.25rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--gold-bright);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      user-select: none;
+    }
+
+    .privacy-deep > summary::-webkit-details-marker { display: none; }
+
+    .privacy-deep > summary::before {
+      content: "\25B8"; /* ▸ */
+      color: var(--text-secondary);
+      transition: transform 0.2s;
+    }
+
+    .privacy-deep[open] > summary::before { transform: rotate(90deg); }
+
+    .privacy-deep > summary:hover { background: var(--bg-card-hover); }
+
+    .privacy-deep-body {
+      padding: 0.25rem 1.25rem 1.5rem;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .privacy-deep-body h4 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin: 1.25rem 0 0.35rem;
+    }
+
+    .privacy-deep-body p,
+    .privacy-deep-body li {
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    .privacy-deep-body ul {
+      margin: 0.35rem 0 0;
+      padding-left: 1.1rem;
+    }
+
+    .privacy-deep-body li { margin-bottom: 0.3rem; }
+
+    .privacy-deep-body code {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.82em;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 0.05rem 0.3rem;
+      color: var(--accent);
+    }
+
+    .privacy-deep-foot {
+      margin-top: 1.25rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 0.78rem !important;
+      color: var(--text-secondary);
     }
 
     /* ── Dogfooding (cream interlude) ─────────────────── */
@@ -1446,6 +1529,73 @@ flowchart TB
           </div>
         </div>
       </div>
+
+      <details class="privacy-deep">
+        <summary>For the privacy geeks, here are the nerdy details&hellip;</summary>
+        <div class="privacy-deep-body">
+          <p>
+            Community Intelligence &mdash; the fleet-tuned routing and the
+            &ldquo;users saved $X&rdquo; figure &mdash; needs aggregate data from many
+            installs to mean anything. It is <strong>off by default</strong> and gates
+            only those two features; the proxy, cost tracking, and free-tier
+            optimizations never depend on it. When you do opt in, here is exactly what
+            we engineer so the stored dataset is <em>genuinely anonymous</em>, not merely
+            &ldquo;de-identified&rdquo;.
+          </p>
+
+          <h4>No stable identifier &mdash; not even a random one</h4>
+          <p>
+            There is no install id, account id, device fingerprint, MAC, or hostname in
+            the payload. We deliberately omit even a <em>random</em> per-install UUID: a
+            stable random id is still a pseudonymous identifier, which would let two rows
+            be linked to the same machine across sessions and would drag the data back
+            under personal-data retention limits. Batches carry at most a
+            <strong>non-persisted, unmapped per-batch token</strong> that is never stored
+            and never tied back to you.
+          </p>
+
+          <h4>Numbers and enums only &mdash; no field can carry your text</h4>
+          <p>
+            The payload schema has <strong>zero free-text fields</strong>. It is numeric
+            and enum values: stage timings, token-count <em>buckets</em>, and a
+            feature-flag bitset. There is physically no string field through which a
+            prompt, file path, API key, or code fragment could transit &mdash; so none
+            can, even by accident. The ingestion endpoint validates every payload against
+            a <strong>strict allow-list</strong> and rejects unknown keys outright.
+          </p>
+
+          <h4>One chokepoint, IP dropped at the edge</h4>
+          <p>
+            Everything flows through a single Cloudflare Worker that is the sole place any
+            data leaves your machine &mdash; one file to audit. It strips
+            <code>cf-connecting-ip</code> on the way in, so your IP is never recorded. No
+            exact timestamps are kept; dimensions are <strong>bucketed</strong>, not
+            stored at full resolution.
+          </p>
+
+          <h4>k-anonymity against singling-out</h4>
+          <p>
+            Every row we retain or serve sits inside an aggregate of at least
+            <strong>k&nbsp;=&nbsp;20</strong> within its stratum. Sampling plus that
+            threshold suppress rare combinations &mdash; an exotic model paired with a
+            tiny token bucket, say &mdash; that could otherwise pick out a single user at
+            low population. This is what defends against singling-out, linkability, and
+            inference, the three re-identification routes anonymisation guidance cares
+            about.
+          </p>
+
+          <p class="privacy-deep-foot">
+            Method grounded in free public guidance &mdash; the ICO&rsquo;s
+            <em>Anonymisation</em> code of practice and the EDPB/WP29
+            <em>Opinion&nbsp;05/2014 on Anonymisation Techniques</em>. We keep a dated,
+            written self-assessment in the repo and re-review it whenever the schema
+            changes; indefinite retention holds only while every box on that checklist
+            still passes. Separately, anything pseudonymous (e.g. <code>/good</code> /
+            <code>/bad</code> feedback keyed by a hashed id) is <em>not</em> covered by
+            this and stays storage-limited.
+          </p>
+        </div>
+      </details>
 
     </div>
   </section>
