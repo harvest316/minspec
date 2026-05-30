@@ -15,6 +15,8 @@ export interface AdrFrontmatter {
   readonly title: string;
   readonly status: AdrStatus;
   readonly date: string;
+  /** Optional epic reference (EPIC-NNN id or slug). Absent = ungrouped. */
+  readonly epic?: string;
 }
 
 /** Summary for listing/display */
@@ -24,6 +26,8 @@ export interface AdrSummary {
   readonly status: AdrStatus;
   readonly date: string;
   readonly filePath: string;
+  /** Optional epic reference (EPIC-NNN id or slug). Absent = ungrouped. */
+  readonly epic?: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -512,6 +516,7 @@ export function listAdrs(rootDir: string, vscodeOverrides?: { decisionsDir?: str
         status: ADR_STATUSES.has(fm.status) ? fm.status as AdrStatus : 'proposed',
         date: (fm.date as string) ?? '',
         filePath,
+        epic: (fm.epic as string) || undefined,
       });
     } catch {
       // Skip unreadable files

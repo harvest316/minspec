@@ -34,6 +34,8 @@ export interface SpecSummary {
   readonly phasesDone: number;
   /** Total required phases for this spec's tier (DR-012). */
   readonly phasesTotal: number;
+  /** Optional epic reference (EPIC-NNN id or slug). Absent = ungrouped. */
+  readonly epic?: string;
 }
 
 /** Full spec detail including content and phase states */
@@ -194,6 +196,7 @@ function buildSummary(parsed: ParsedSpec, filePath: string): SpecSummary {
     filePath,
     phasesDone: done,
     phasesTotal: total,
+    epic: parsed.frontmatter.epic,
   };
 }
 

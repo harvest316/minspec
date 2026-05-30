@@ -41,6 +41,7 @@ export interface MinspecConfig {
   readonly version: '1';
   readonly specsDir: string;
   readonly decisionsDir: string;
+  readonly epicsDir: string;
   readonly specsLayout: SpecsLayout;
   readonly thresholds: TierThresholds;
   readonly phaseMappings: Record<Tier, TierPhaseMapping>;
@@ -55,6 +56,7 @@ export const DEFAULT_CONFIG: MinspecConfig = {
   version: '1',
   specsDir: 'specs',
   decisionsDir: 'docs/decisions',
+  epicsDir: 'docs/epics',
   specsLayout: 'flat',
   thresholds: {
     t1Max: 3,
@@ -128,6 +130,7 @@ export function applyVSCodeOverrides(
   overrides: {
     specsDir?: string;
     decisionsDir?: string;
+    epicsDir?: string;
     specsLayout?: SpecsLayout;
     t1Max?: number;
     t2Max?: number;
@@ -138,6 +141,7 @@ export function applyVSCodeOverrides(
     ...config,
     specsDir: overrides.specsDir ?? config.specsDir,
     decisionsDir: overrides.decisionsDir ?? config.decisionsDir,
+    epicsDir: overrides.epicsDir ?? config.epicsDir,
     specsLayout: overrides.specsLayout ?? config.specsLayout,
     thresholds: {
       t1Max: overrides.t1Max ?? config.thresholds.t1Max,

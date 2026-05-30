@@ -29,6 +29,8 @@ export interface SpecFrontmatter {
   readonly status: SpecStatus;
   readonly created: string;
   readonly phases: Record<Phase, PhaseStatus>;
+  /** Optional epic reference (EPIC-NNN id or slug). Absent = ungrouped. */
+  readonly epic?: string;
 }
 
 /** Complete parsed spec */
@@ -163,6 +165,7 @@ export function parseSpec(content: string): ParsedSpec {
     tier: (TIERS_SET.has(fmParsed.tier as string) ? fmParsed.tier : 'T2') as Tier,
     status: (STATUSES_SET.has(fmParsed.status as string) ? fmParsed.status : 'new') as SpecStatus,
     created: (fmParsed.created as string) ?? new Date().toISOString().slice(0, 10),
+    epic: (fmParsed.epic as string) || undefined,
     phases: {
       specify: (fmPhases.specify as PhaseStatus) ?? 'pending',
       clarify: (fmPhases.clarify as PhaseStatus) ?? 'pending',
@@ -228,6 +231,7 @@ function serializeFrontmatter(fm: SpecFrontmatter): string {
   lines.push(`tier: ${fm.tier}`);
   lines.push(`status: ${fm.status}`);
   lines.push(`created: ${fm.created}`);
+  if (fm.epic) lines.push(`epic: ${fm.epic}`);
   lines.push('phases:');
   for (const phase of PHASES) {
     lines.push(`  ${phase}: ${fm.phases[phase]}`);

@@ -71,6 +71,7 @@ export function listSpecs(rootDir: string): SpecSummary[] {
         filePath: displayPath,
         phasesDone: done,
         phasesTotal: total,
+        epic: fm.epic,
       });
     } catch {
       // Skip unparseable entries
