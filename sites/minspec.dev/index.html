@@ -107,9 +107,8 @@
     }
 
     .nav-logo-icon {
-      width: 26px;
-      height: 26px;
-      border-radius: 7px;
+      height: 33px;
+      width: auto;
       display: block;
     }
 
@@ -330,14 +329,9 @@
     .features-head {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 48px;
+      justify-content: flex-start;
+      gap: 40px;
       margin-bottom: 48px;
-    }
-
-    .features-head-text {
-      flex: 1;
-      min-width: 0;
     }
 
     .features-head-text .section-desc {
@@ -345,11 +339,9 @@
     }
 
     .features-logo {
-      width: 132px;
-      height: 132px;
+      height: 160px;
+      width: auto;
       flex-shrink: 0;
-      border-radius: 26px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
     }
 
     .features-grid {
@@ -811,7 +803,7 @@
   <!-- Nav -->
   <nav aria-label="Main navigation">
     <div class="nav-inner">
-      <a href="/" class="nav-logo"><img src="/img/logo.svg" alt="" class="nav-logo-icon" width="26" height="26"><span>Min</span>Spec</a>
+      <a href="/" class="nav-logo"><img src="/img/logo.svg" alt="" class="nav-logo-icon" width="27" height="33"><span>Min</span>Spec</a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
         <li><a href="#how-it-works">How It Works</a></li>
@@ -859,12 +851,12 @@
   <section id="features">
     <div class="section-inner">
       <div class="features-head">
+        <img src="/img/logo.svg" alt="MinSpec logo" class="features-logo" width="131" height="160" loading="lazy">
         <div class="features-head-text">
           <div class="section-label">Features</div>
           <h2 class="section-title">Built for developers who ship</h2>
           <p class="section-desc">MinSpec integrates into your existing workflow. No new tools to learn, no context switching, no overhead on simple changes.</p>
         </div>
-        <img src="/img/logo.svg" alt="MinSpec logo" class="features-logo" width="132" height="132" loading="lazy">
       </div>
       <div class="features-grid">
         <div class="feature-card">
