@@ -15,6 +15,8 @@ import type { ApprovalStatus } from '../lib/approval';
 export type ApprovalLookupFn = (rootDir: string, specId: string, specFilePath: string) => ApprovalStatus;
 import type { SpecSummary } from '../lib/spec-manager';
 import { isSpecKitDirEntry, readSpecKitDir } from '../lib/spec-layout';
+import { EpicGroupingState, EpicGroupNode, buildEpicGroups } from './epic-grouping';
+import type { ListEpicsFn } from './epic-grouping';
 export type { SpecSummary };
 
 /**
@@ -244,21 +246,26 @@ export class RollupNode extends vscode.TreeItem {
 /** Function signature for listing specs — allows dependency injection in tests */
 export type ListSpecsFn = (rootDir: string) => SpecSummary[];
 
-export type SpecTreeNode = RollupNode | SpecGroupNode | SpecNode;
+export type SpecTreeNode = RollupNode | SpecGroupNode | EpicGroupNode<SpecSummary> | SpecNode;
 
 export class SpecTreeProvider implements vscode.TreeDataProvider<SpecTreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SpecTreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private readonly _listSpecs: ListSpecsFn;
   private readonly _approvalOf: ApprovalLookupFn;
+  private readonly _listEpics?: ListEpicsFn;
+  /** Per-panel "group by epic" toggle (FR-7), default on. */
+  public readonly epicGrouping = new EpicGroupingState(true);
 
   constructor(
     private workspaceRoot: string,
     listSpecsFn?: ListSpecsFn,
     approvalFn?: ApprovalLookupFn,
+    listEpicsFn?: ListEpicsFn,
   ) {
     this._listSpecs = listSpecsFn ?? listSpecs;
     this._approvalOf = approvalFn ?? (() => 'unapproved');
+    this._listEpics = listEpicsFn;
   }
 
   refresh(): void {
@@ -275,29 +282,36 @@ export class SpecTreeProvider implements vscode.TreeDataProvider<SpecTreeNode> {
     }
 
     if (!element) {
-      // Root level: roll-up summary, then status groups.
+      // Root level: roll-up summary, then either epic groups or status groups.
       const allSpecs = this._listSpecs(this.workspaceRoot);
       const root: SpecTreeNode[] = [];
       if (allSpecs.length > 0) root.push(new RollupNode(allSpecs));
-      root.push(...this.getStatusGroups(allSpecs));
+      const epicGroups = this.epicGrouping.enabled ? this.getEpicGroups(allSpecs) : null;
+      root.push(...(epicGroups ?? this.getStatusGroups(allSpecs)));
       return root;
     }
 
     if (element instanceof SpecGroupNode) {
-      // Group level: spec nodes, each tagged with its current approval status.
-      return element.specs.map(spec => {
-        let approval: ApprovalStatus = 'unapproved';
-        try {
-          approval = this._approvalOf(this.workspaceRoot, spec.id, spec.filePath);
-        } catch {
-          // best-effort — default to unapproved
-        }
-        return new SpecNode(spec, approval);
-      });
+      return element.specs.map(spec => this.toSpecNode(spec));
+    }
+
+    if (element instanceof EpicGroupNode) {
+      return element.members.map(spec => this.toSpecNode(spec));
     }
 
     // RollupNode and SpecNode are leaves
     return [];
+  }
+
+  /** Build a SpecNode tagged with its current approval status. */
+  private toSpecNode(spec: SpecSummary): SpecNode {
+    let approval: ApprovalStatus = 'unapproved';
+    try {
+      approval = this._approvalOf(this.workspaceRoot, spec.id, spec.filePath);
+    } catch {
+      // best-effort — default to unapproved
+    }
+    return new SpecNode(spec, approval);
   }
 
   private getStatusGroups(allSpecs: SpecSummary[]): SpecGroupNode[] {
@@ -305,5 +319,15 @@ export class SpecTreeProvider implements vscode.TreeDataProvider<SpecTreeNode> {
       const groupSpecs = allSpecs.filter(s => group.statuses.includes(s.status));
       return new SpecGroupNode(group, groupSpecs);
     });
+  }
+
+  private getEpicGroups(allSpecs: SpecSummary[]): EpicGroupNode<SpecSummary>[] | null {
+    return buildEpicGroups(
+      this.workspaceRoot,
+      allSpecs,
+      s => s.epic,
+      s => s.status === 'done',
+      this._listEpics,
+    );
   }
 }

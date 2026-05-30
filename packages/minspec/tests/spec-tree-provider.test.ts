@@ -31,6 +31,8 @@ vi.mock('vscode', () => ({
 
 import type { SpecSummary } from '../src/views/spec-tree-provider';
 import { SpecTreeProvider, SpecGroupNode, SpecNode, RollupNode, listSpecs } from '../src/views/spec-tree-provider';
+import { EpicGroupNode } from '../src/views/epic-grouping';
+import type { EpicSummary } from '../src/lib/epic-manager';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -429,5 +431,64 @@ describe('SpecTreeProvider', () => {
       const groups = emptyProvider.getChildren(undefined);
       expect(groups).toHaveLength(0);
     });
+  });
+});
+
+// --- Epic grouping (DR-013 / SPEC-007 FR-6/FR-7/FR-10) ---
+
+describe('SpecTreeProvider — epic grouping', () => {
+  const EPICS: EpicSummary[] = [
+    { id: 'EPIC-001', slug: 'telemetry', title: 'Telemetry', status: 'active', order: 1, filePath: '/e/EPIC-001.md' },
+    { id: 'EPIC-002', slug: 'auth', title: 'Auth', status: 'active', order: 2, filePath: '/e/EPIC-002.md' },
+  ];
+  const SPECS: SpecSummary[] = [
+    makeSpec({ id: 'SPEC-001', status: 'done', epic: 'EPIC-001' }),
+    makeSpec({ id: 'SPEC-002', status: 'implementing', epic: 'telemetry' }), // by slug
+    makeSpec({ id: 'SPEC-003', status: 'new', epic: 'auth' }),
+    makeSpec({ id: 'SPEC-004', status: 'new' }),                              // ungrouped
+  ];
+
+  function epicGroups(p: SpecTreeProvider): EpicGroupNode<SpecSummary>[] {
+    return p.getChildren(undefined).filter((n): n is EpicGroupNode<SpecSummary> => n instanceof EpicGroupNode);
+  }
+
+  it('groups specs by epic (id or slug) with NO_EPIC last when grouping on + epics exist', () => {
+    const p = new SpecTreeProvider('/ws', () => SPECS, undefined, () => EPICS);
+    const groups = epicGroups(p);
+    expect(groups.map(g => g.groupLabel)).toEqual([
+      'Telemetry (EPIC-001)',
+      'Auth (EPIC-002)',
+      '(no epic)',
+    ]);
+  });
+
+  it('badge counts terminal (done) specs over total per epic', () => {
+    const p = new SpecTreeProvider('/ws', () => SPECS, undefined, () => EPICS);
+    const telemetry = epicGroups(p).find(g => g.groupLabel.startsWith('Telemetry'))!;
+    expect(telemetry.description).toBe('1/2'); // SPEC-001 done of {001,002}
+    expect(telemetry.members).toHaveLength(2);
+  });
+
+  it('children of an epic group are SpecNodes', () => {
+    const p = new SpecTreeProvider('/ws', () => SPECS, undefined, () => EPICS);
+    const telemetry = epicGroups(p).find(g => g.groupLabel.startsWith('Telemetry'))!;
+    const kids = p.getChildren(telemetry);
+    expect(kids.every(k => k instanceof SpecNode)).toBe(true);
+    expect(kids).toHaveLength(2);
+  });
+
+  it('falls back to status groups when no epics are registered (FR-10)', () => {
+    const p = new SpecTreeProvider('/ws', () => SPECS, undefined, () => []);
+    const nodes = p.getChildren(undefined);
+    expect(nodes.some(n => n instanceof EpicGroupNode)).toBe(false);
+    expect(nodes.some(n => n instanceof SpecGroupNode)).toBe(true);
+  });
+
+  it('toggling grouping off yields status groups even when epics exist', () => {
+    const p = new SpecTreeProvider('/ws', () => SPECS, undefined, () => EPICS);
+    p.epicGrouping.set(false);
+    const nodes = p.getChildren(undefined);
+    expect(nodes.some(n => n instanceof EpicGroupNode)).toBe(false);
+    expect(nodes.some(n => n instanceof SpecGroupNode)).toBe(true);
   });
 });

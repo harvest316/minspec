@@ -153,6 +153,21 @@ export function extractWsjfFromLabels(labels: string[]): number | null {
   return null;
 }
 
+/**
+ * Extract an epic slug from an issue's labels (DR-013).
+ * Convention: label "epic:<slug>" links the issue to a registered epic.
+ * Returns the slug, or null if absent.
+ */
+export function extractEpicSlug(labels: string[]): string | null {
+  for (const label of labels) {
+    const match = label.match(/^epic:(.+)$/);
+    if (match) {
+      return match[1].trim();
+    }
+  }
+  return null;
+}
+
 // ─── GitHub CLI Integration ─────────────────────────────────────────────────
 
 /** JSON shape returned by `gh issue list --json` */

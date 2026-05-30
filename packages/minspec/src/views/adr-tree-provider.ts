@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { listAdrs } from '../lib/adr-manager';
 import type { AdrSummary, AdrStatus } from '../lib/adr-manager';
+import { EpicGroupingState, EpicGroupNode, buildEpicGroups } from './epic-grouping';
+import type { ListEpicsFn } from './epic-grouping';
 
 // ─── Status grouping ────────────────────────────────────────────────────────
 
@@ -80,55 +82,79 @@ export class AdrNode extends vscode.TreeItem {
 /** Function signature for listing ADRs — allows dependency injection in tests */
 export type ListAdrsFn = (rootDir: string, vscodeOverrides?: { decisionsDir?: string }) => AdrSummary[];
 
-export class AdrTreeProvider implements vscode.TreeDataProvider<AdrGroupNode | AdrNode> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<AdrGroupNode | AdrNode | undefined | null | void>();
+export type AdrTreeNode = AdrGroupNode | EpicGroupNode<AdrSummary> | AdrNode;
+
+export class AdrTreeProvider implements vscode.TreeDataProvider<AdrTreeNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<AdrTreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private readonly _listAdrs: ListAdrsFn;
+  private readonly _listEpics?: ListEpicsFn;
+  /** Per-panel "group by epic" toggle (FR-7), default on. */
+  public readonly epicGrouping = new EpicGroupingState(true);
 
   constructor(
     private workspaceRoot: string,
     listAdrsFn?: ListAdrsFn,
+    listEpicsFn?: ListEpicsFn,
   ) {
     this._listAdrs = listAdrsFn ?? listAdrs;
+    this._listEpics = listEpicsFn;
   }
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
   }
 
-  getTreeItem(element: AdrGroupNode | AdrNode): vscode.TreeItem {
+  getTreeItem(element: AdrTreeNode): vscode.TreeItem {
     return element;
   }
 
-  getChildren(element?: AdrGroupNode | AdrNode): (AdrGroupNode | AdrNode)[] {
+  getChildren(element?: AdrTreeNode): AdrTreeNode[] {
     if (!this.workspaceRoot) {
       return [];
     }
 
     if (!element) {
-      return this.getStatusGroups();
+      const allAdrs = this.listAll();
+      const epicGroups = this.epicGrouping.enabled ? this.getEpicGroups(allAdrs) : null;
+      return epicGroups ?? this.getStatusGroups(allAdrs);
     }
 
     if (element instanceof AdrGroupNode) {
       return element.adrs.map(adr => new AdrNode(adr));
     }
 
+    if (element instanceof EpicGroupNode) {
+      return element.members.map(adr => new AdrNode(adr));
+    }
+
     return [];
   }
 
-  private getStatusGroups(): AdrGroupNode[] {
+  private listAll(): AdrSummary[] {
     const decisionsDir = vscode.workspace
       .getConfiguration('minspec')
       .get<string>('decisionsDir');
-
-    const allAdrs = this._listAdrs(
+    return this._listAdrs(
       this.workspaceRoot,
       decisionsDir ? { decisionsDir } : undefined,
     );
+  }
 
+  private getStatusGroups(allAdrs: AdrSummary[]): AdrGroupNode[] {
     return STATUS_GROUPS.map(group => {
       const groupAdrs = allAdrs.filter(a => group.statuses.includes(a.status));
       return new AdrGroupNode(group, groupAdrs);
     });
+  }
+
+  private getEpicGroups(allAdrs: AdrSummary[]): EpicGroupNode<AdrSummary>[] | null {
+    return buildEpicGroups(
+      this.workspaceRoot,
+      allAdrs,
+      a => a.epic,
+      a => a.status === 'accepted',
+      this._listEpics,
+    );
   }
 }

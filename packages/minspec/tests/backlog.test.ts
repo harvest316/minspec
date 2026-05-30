@@ -23,6 +23,7 @@ import {
   extractLifecycleLabel,
   extractPriorityLabel,
   extractWsjfFromLabels,
+  extractEpicSlug,
   sortBacklog,
   type WsjfDimensions,
   type BacklogIssue,
@@ -100,6 +101,19 @@ describe('calculateWsjf()', () => {
     };
     const result = calculateWsjf(dims);
     expect(result.dimensions).toEqual(dims);
+  });
+});
+
+describe('extractEpicSlug()', () => {
+  it('extracts the slug from an epic:<slug> label', () => {
+    expect(extractEpicSlug(['inbox', 'epic:telemetry', 'P1'])).toBe('telemetry');
+  });
+  it('returns null when no epic label is present', () => {
+    expect(extractEpicSlug(['inbox', 'wsjf:3.2'])).toBeNull();
+    expect(extractEpicSlug([])).toBeNull();
+  });
+  it('handles slugs with hyphens', () => {
+    expect(extractEpicSlug(['epic:auth-revamp'])).toBe('auth-revamp');
   });
 });
 

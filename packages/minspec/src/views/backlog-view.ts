@@ -3,8 +3,11 @@ import {
   fetchIssues,
   sortBacklog,
   isGhAvailable,
+  extractEpicSlug,
 } from '../lib/backlog';
 import type { BacklogIssue, IssueLifecycleLabel } from '../lib/backlog';
+import { EpicGroupingState, EpicGroupNode, buildEpicGroups } from './epic-grouping';
+import type { ListEpicsFn } from './epic-grouping';
 
 // ─── Lifecycle grouping ─────────────────────────────────────────────────────
 
@@ -109,16 +112,23 @@ class MessageNode extends vscode.TreeItem {
 
 // ─── TreeDataProvider ───────────────────────────────────────────────────────
 
-export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogGroupNode | BacklogIssueNode | MessageNode> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<BacklogGroupNode | BacklogIssueNode | MessageNode | undefined | null | void>();
+type BacklogNode = BacklogGroupNode | EpicGroupNode<BacklogIssue> | BacklogIssueNode | MessageNode;
+
+export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<BacklogNode | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private cachedIssues: BacklogIssue[] = [];
   private lastError: string | null = null;
   private loading = false;
   private lastRefreshAt = 0;
+  private readonly _listEpics?: ListEpicsFn;
+  /** Per-panel "group by epic" toggle (FR-7), default on. */
+  public readonly epicGrouping = new EpicGroupingState(true);
 
-  constructor(private workspaceRoot: string) {}
+  constructor(private workspaceRoot: string, listEpicsFn?: ListEpicsFn) {
+    this._listEpics = listEpicsFn;
+  }
 
   refresh(): void {
     this.cachedIssues = [];
@@ -136,13 +146,11 @@ export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogGroup
     this.refresh();
   }
 
-  getTreeItem(element: BacklogGroupNode | BacklogIssueNode | MessageNode): vscode.TreeItem {
+  getTreeItem(element: BacklogNode): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(
-    element?: BacklogGroupNode | BacklogIssueNode | MessageNode,
-  ): Promise<(BacklogGroupNode | BacklogIssueNode | MessageNode)[]> {
+  async getChildren(element?: BacklogNode): Promise<BacklogNode[]> {
     if (!this.workspaceRoot) {
       return [new MessageNode('No workspace folder open')];
     }
@@ -155,10 +163,14 @@ export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogGroup
       return element.issues.map(issue => new BacklogIssueNode(issue));
     }
 
+    if (element instanceof EpicGroupNode) {
+      return element.members.map(issue => new BacklogIssueNode(issue));
+    }
+
     return [];
   }
 
-  private async getRootNodes(): Promise<(BacklogGroupNode | MessageNode)[]> {
+  private async getRootNodes(): Promise<BacklogNode[]> {
     // Return cached data if available
     if (this.cachedIssues.length > 0) {
       return this.buildGroups(this.cachedIssues);
@@ -199,7 +211,17 @@ export class BacklogTreeProvider implements vscode.TreeDataProvider<BacklogGroup
     }
   }
 
-  private buildGroups(issues: BacklogIssue[]): BacklogGroupNode[] {
+  private buildGroups(issues: BacklogIssue[]): (BacklogGroupNode | EpicGroupNode<BacklogIssue>)[] {
+    if (this.epicGrouping.enabled) {
+      const epicGroups = buildEpicGroups(
+        this.workspaceRoot,
+        issues,
+        issue => extractEpicSlug(issue.labels) ?? undefined,
+        issue => issue.state.toLowerCase() === 'closed',
+        this._listEpics,
+      );
+      if (epicGroups) return epicGroups;
+    }
     return LIFECYCLE_GROUPS.map(group => {
       const groupIssues = issues.filter(issue => {
         if (group.lifecycleLabel === null) {
