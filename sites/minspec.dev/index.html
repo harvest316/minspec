@@ -840,6 +840,17 @@
       font-weight: 500;
     }
 
+    .dogfooding blockquote cite a {
+      color: var(--accent-dim);
+      text-decoration: none;
+      border-bottom: 1px dotted var(--accent-dim);
+    }
+
+    .dogfooding blockquote cite a:hover {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
     .dogfooding-image {
       line-height: 0;
     }
@@ -1353,7 +1364,7 @@
             &ldquo;MinSpec adds the missing layer of rigour that caused my first big AI project
             to fail &mdash; a 346k-line behemoth, &gt;85% unit test coverage, every conceivable
             integration test, but four days of bug-fixing for every one day of new functionality.&rdquo;
-            <cite>&mdash; Paul Harvey, founder</cite>
+            <cite>&mdash; <a href="https://paulharvey.com.au" target="_blank" rel="noopener">Paul Harvey</a>, founder</cite>
           </blockquote>
         </div>
         <div class="dogfooding-image">
