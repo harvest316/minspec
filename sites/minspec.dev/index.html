@@ -96,11 +96,21 @@
     }
 
     .nav-logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
       font-size: 1.1rem;
       font-weight: 700;
       color: var(--text);
       text-decoration: none;
       letter-spacing: -0.02em;
+    }
+
+    .nav-logo-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      display: block;
     }
 
     .nav-logo span {
@@ -317,6 +327,31 @@
     }
 
     /* --- Features --- */
+    .features-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 48px;
+      margin-bottom: 48px;
+    }
+
+    .features-head-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .features-head-text .section-desc {
+      margin-bottom: 0;
+    }
+
+    .features-logo {
+      width: 132px;
+      height: 132px;
+      flex-shrink: 0;
+      border-radius: 26px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    }
+
     .features-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -501,6 +536,11 @@
       font-size: 0.72rem;
       color: var(--text-dim);
       font-style: italic;
+    }
+
+    .methodology-pill .source a {
+      color: var(--accent);
+      text-decoration: underline;
     }
 
     /* --- FAQ --- */
@@ -694,6 +734,8 @@
         grid-template-columns: 1fr;
       }
 
+      .features-logo { display: none; }
+
       .arch-diagram { padding: 16px 12px; }
       .arch-diagram .mermaid { min-width: 0; }
 
@@ -769,7 +811,7 @@
   <!-- Nav -->
   <nav aria-label="Main navigation">
     <div class="nav-inner">
-      <a href="/" class="nav-logo"><span>Min</span>Spec</a>
+      <a href="/" class="nav-logo"><img src="/img/logo.svg" alt="" class="nav-logo-icon" width="26" height="26"><span>Min</span>Spec</a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
         <li><a href="#how-it-works">How It Works</a></li>
@@ -791,7 +833,7 @@
       <p class="hero-tagline">Just enough spec. Never too much.<br>Adaptive ceremony for specification-driven development.</p>
       <div class="hero-actions">
         <a href="#" class="btn btn-primary" title="Coming soon to the VS Code Marketplace">Install from Marketplace (Coming Soon)</a>
-        <a href="https://github.com/harvest316/MinSpecPro" class="btn btn-secondary">Source on GitHub</a>
+        <a href="https://github.com/harvest316/minspec" class="btn btn-secondary">Source on GitHub</a>
       </div>
       <p class="hero-sub">Free and open source. No AI dependency. No backend. No lock-in.</p>
     </div>
@@ -816,9 +858,14 @@
   <!-- Features -->
   <section id="features">
     <div class="section-inner">
-      <div class="section-label">Features</div>
-      <h2 class="section-title">Built for developers who ship</h2>
-      <p class="section-desc">MinSpec integrates into your existing workflow. No new tools to learn, no context switching, no overhead on simple changes.</p>
+      <div class="features-head">
+        <div class="features-head-text">
+          <div class="section-label">Features</div>
+          <h2 class="section-title">Built for developers who ship</h2>
+          <p class="section-desc">MinSpec integrates into your existing workflow. No new tools to learn, no context switching, no overhead on simple changes.</p>
+        </div>
+        <img src="/img/logo.svg" alt="MinSpec logo" class="features-logo" width="132" height="132" loading="lazy">
+      </div>
       <div class="features-grid">
         <div class="feature-card">
           <span class="feature-icon" aria-hidden="true">&#x2696;</span>
@@ -953,12 +1000,12 @@
         <div class="methodology-pill">
           <div class="methodology-pill-header"><h4>RCDD</h4><span class="weight">MinSpec</span></div>
           <p>Root-Cause-Driven Debugging. Reproduce → Diagnose → Fix → Harden. Root cause before fix, regression test before merge.</p>
-          <span class="source">Source: MinSpec's own (DR-003)</span>
+          <span class="source">Source: MinSpec's own (<a href="https://github.com/harvest316/minspec/blob/main/docs/decisions/DR-003.md" target="_blank" rel="noopener">DR-003</a>)</span>
         </div>
         <div class="methodology-pill">
           <div class="methodology-pill-header"><h4>Tiered Network Consent</h4><span class="weight">orthogonal</span></div>
           <p>Tier 0 fully offline, Tier 1 delegates to local CLIs, Tier 2 (Pro) opts into network with consent.</p>
-          <span class="source">Source: MinSpec privacy stance (DR-004)</span>
+          <span class="source">Source: MinSpec privacy stance (<a href="https://github.com/harvest316/minspec/blob/main/docs/decisions/DR-004.md" target="_blank" rel="noopener">DR-004</a>)</span>
         </div>
       </div>
     </div>
@@ -1075,7 +1122,7 @@
         Built by <a href="https://aiclarity.com.au">AI Clarity</a>
       </div>
       <ul class="footer-links">
-        <li><a href="https://github.com/harvest316/MinSpecPro">GitHub</a></li>
+        <li><a href="https://github.com/harvest316/minspec">GitHub</a></li>
         <li><a href="#">Docs</a></li>
         <li><a href="#">Changelog</a></li>
         <li><a href="https://aiclarity.com.au">aiclarity.com.au</a></li>

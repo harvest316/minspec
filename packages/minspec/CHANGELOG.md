@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Auto-bootstrap (detect + offer):** On activation, MinSpec detects missing `.minspec/`, harness template drift, or unclassified git changes and surfaces one toast at a time offering the appropriate setup action. Replaces the previous manual Ctrl-Shift-P workflow for first-time setup. Master toggle: `minspec.autoBootstrap.enabled` (default true). Per-prompt "Don't ask again" persisted to `.minspec/preferences.json`. See [DR-006](https://github.com/harvest316/MinSpecPro/blob/main/docs/decisions/DR-006.md).
+- **Auto-bootstrap (detect + offer):** On activation, MinSpec detects missing `.minspec/`, harness template drift, or unclassified git changes and surfaces one toast at a time offering the appropriate setup action. Replaces the previous manual Ctrl-Shift-P workflow for first-time setup. Master toggle: `minspec.autoBootstrap.enabled` (default true). Per-prompt "Don't ask again" persisted to `.minspec/preferences.json`. See [DR-006](https://github.com/harvest316/minspec/blob/main/docs/decisions/DR-006.md).
 - **Auto-classify on commit** (opt-in): `minspec.autoClassifyOnCommit` setting (default false) installs a watcher on `.git/HEAD` and `.git/refs/heads/*` that auto-runs classification after each commit.
 - **Real classify command:** `MinSpec: Classify Task Complexity` is no longer a Phase-2 stub — it analyses the current git diff via the existing classifier engine and reports tier, confidence, and suggested phases with an Override option.
 - **Aider integration:** Aider (`CONVENTIONS.md`) added to tool detection and active-spec context injection alongside Claude / Cursor / Cline / Windsurf.
