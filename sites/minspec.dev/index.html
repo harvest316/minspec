@@ -705,6 +705,33 @@
       font-weight: 700;
     }
 
+    .dogfooding p + p,
+    .dogfooding blockquote + p,
+    .dogfooding p + blockquote {
+      margin-top: 14px;
+    }
+
+    .dogfooding blockquote {
+      margin: 0;
+      padding: 14px 20px;
+      border-left: 3px solid var(--accent-dim);
+      background: rgba(108, 156, 252, 0.07);
+      font-style: italic;
+      font-size: 0.98rem;
+      color: #2e3447;
+      line-height: 1.65;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .dogfooding blockquote cite {
+      display: block;
+      margin-top: 8px;
+      font-style: normal;
+      font-size: 0.82rem;
+      color: #6a7088;
+      font-weight: 500;
+    }
+
     .dogfooding-image {
       line-height: 0;
     }
@@ -1212,7 +1239,15 @@
           <p>
             <strong>With a smile, even.</strong> Every shipped feature gets tested on its harshest
             critic first &mdash; the developer himself. This whole project was specified, classified,
-            and shipped using MinSpec itself. T1 changes got T1 ceremony. T4 changes got T4 ceremony.
+            and shipped using MinSpec itself.
+          </p>
+          <blockquote>
+            &ldquo;MinSpec adds the missing layer of rigour that caused my first big AI project
+            to fail &mdash; a 346k-line behemoth, &gt;85% unit test coverage, every conceivable
+            integration test, but four days of bug-fixing for every one day of new functionality.&rdquo;
+          </blockquote>
+          <p>
+            T1 changes got T1 ceremony. T4 changes got T4 ceremony.
             Which is why the tiers feel right &mdash; they were stress-tested on the project that built them.
           </p>
         </div>
