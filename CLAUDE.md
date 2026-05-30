@@ -142,6 +142,18 @@ npm run validate      # frontmatter validation
 
 All architectural decisions → `docs/decisions/DR-NNN.md`. See `docs/decisions/INDEX.md`.
 
+**This project keeps its OWN local register, sequential from `DR-001`.** It does
+NOT share the global `~/code/mmo-platform/docs/decisions.md` register (currently
+~DR-360). The global CLAUDE.md rule "next sequential number, all projects" does
+**not** apply here — it is overridden by this project-local register.
+
+- Next number = `max(existing DR-NNN in docs/decisions/) + 1`. Use the MinSpec
+  ext (**MinSpec: Create ADR**), which computes this correctly and writes the
+  standard template. Do not hand-pick a number from the global register.
+- A DR created with an out-of-sequence number (e.g. a global-register number
+  like `DR-012` in this repo) is a convention error — renumber to the next local
+  number and update all references.
+
 ## Repo Mapping (Parking Lot)
 
 | Topic | GitHub repo |

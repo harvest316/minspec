@@ -1,5 +1,14 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "bash scripts/hooks/spec-gate.sh" },
+          { "type": "command", "command": "node scripts/hooks/marker-guard.mjs" }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

@@ -1,6 +1,39 @@
-# AGENTS.md — MinSpec Monorepo
+# minspec-monorepo — Agent Instructions
 
-Cross-tool agent instructions. Valid for: Claude Code, Cursor, Copilot Workspace, and any agent that reads this file.
+## For AI Coding Assistants
+
+This project uses MinSpec SDD (Specification-Driven Development). Before implementing any change:
+
+1. **Check complexity** — Is this T1 (trivial) or does it need more ceremony?
+2. **Read the spec** — Check `specs/` for existing specs related to your task.
+3. **Follow the tier** — Don't over-specify T1 tasks. Don't under-specify T3/T4 tasks.
+
+## Specs Directory
+
+All specifications live in `specs/`. Each spec file uses Spec Kit-compatible markdown with YAML frontmatter.
+
+## Decision Records
+
+Architecture decisions are documented in `docs/decisions/`. Check existing decisions before proposing conflicting approaches.
+
+## Constitution
+
+Project invariants, principles, and constraints are in `.minspec/constitution.md`. These rules must never be violated.
+
+## Task Classification Guide
+
+Before starting work, classify the task:
+
+- **T1 (Trivial):** One-line fix, typo, config change. One sentence of spec is enough.
+- **T2 (Small):** Simple feature, clear scope. Needs spec + plan.
+- **T3 (Medium):** Multi-file change, some ambiguity. Full spec cycle.
+- **T4 (Complex):** Architectural change, cross-cutting concerns. Complete ceremony required.
+
+## Rules
+
+1. Never skip the spec phase, even for T1.
+2. User override always wins — if the human says "just do it," do it.
+3. Ceremony must be proportional to complexity — don't over-engineer T1 tasks.
 
 ## Project Identity
 

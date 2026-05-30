@@ -35,3 +35,6 @@ packages/minspec/test-fixtures/workspace/.minspec/generated-hashes.json
 
 # Supply-chain scan output (bumblebee, DR-005)
 .cache/supply-chain/
+
+# MinSpec local approval state (content-hash bound, machine-local)
+.minspec/approvals.json
