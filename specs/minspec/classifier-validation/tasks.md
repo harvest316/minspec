@@ -65,6 +65,38 @@ has no architectural changes — single-PR bug fixes).
   classifier is a sound *lower bound* on ceremony but systematically under-tiers
   cognitive difficulty. Same root cause + same options as below.
 
+### Error analysis (n=120) — decision-grade
+Two questions: is "predicted > T1" a safe upward ratchet, and can any size signal
+rescue the T1 bucket?
+
+**Ratchet precision (P(true ≥ t | pred ≥ t)):**
+- `pred ≥ T2` → true ≥ T2: **100%** (31/31). Over-tiering across the whole set is
+  **1/120** (django-11532, T2→T3). So a predicted tier is a near-perfect *lower
+  bound* — safe to auto-apply as a ceremony floor that only ratchets UP, never down.
+- `pred ≥ T3` → true ≥ T3: 75% (3/4) — too sparse to trust the T3 boundary.
+
+**Can size subdivide the predicted-T1 bucket? No.** Within the 89 predicted-T1:
+```
+                 TRUE-T1 (25)   FALSE-T1 (64)
+  lines median        4              5
+  lines max          15             20
+  files median        1              1
+  dirs median         1              1
+```
+true-T1 lines `1..15`, false-T1 lines `2..20` — fully overlapping; both have many
+2-line cases. **No line/file/dir threshold separates a trivial 2-line fix from a
+subtle 2-line fix.** Lowering thresholds only inflates the genuine T1s.
+
+**Consequences for the options:**
+- Option 2 (AST complexity signals) is a **dead end**: the 64 misses are median
+  1 file / 5 lines — no local complexity exists to measure. AST would also score
+  them low. Drop it.
+- The classifier IS shippable as an **upward-only ratchet / floor** (100% precise at
+  T1→T2). Recommend: apply predicted tier as a minimum, prompt-to-bump-up only.
+- Closing the false-T1 gap requires a semantic/text signal (problem description) →
+  invariant #1 (no-AI) constrained; only viable as opt-in. This is the real fork:
+  reframe+ratchet [no-AI, ship now] vs opt-in semantic difficulty [needs AI consent].
+
 ### Run B — semantic labels (n=50, 10 repos) — single-labeller pilot
 Labels assigned from `problem_statement` difficulty, independent of diff size.
 
