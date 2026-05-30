@@ -163,6 +163,21 @@
       {
         "command": "minspec.exportTraceability",
         "title": "MinSpec: Export Traceability for ScroogeLLM"
+      },
+      {
+        "command": "minspec.approveSpec",
+        "title": "MinSpec: Approve Spec for Implementation",
+        "shortTitle": "Approve",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "minspec.revokeApproval",
+        "title": "MinSpec: Revoke Spec Approval",
+        "icon": "$(unverified)"
+      },
+      {
+        "command": "minspec.validateSpec",
+        "title": "MinSpec: Check Spec Completeness"
       }
     ],
     "views": {
@@ -228,6 +243,21 @@
           "command": "minspec.classify",
           "when": "viewItem == specNode",
           "group": "1_tier"
+        },
+        {
+          "command": "minspec.approveSpec",
+          "when": "view == minspecStatus && viewItem =~ /^specNode/",
+          "group": "inline"
+        },
+        {
+          "command": "minspec.approveSpec",
+          "when": "view == minspecStatus && viewItem =~ /^specNode/",
+          "group": "2_approval@1"
+        },
+        {
+          "command": "minspec.revokeApproval",
+          "when": "view == minspecStatus && viewItem == specNode.approved",
+          "group": "2_approval@2"
         },
         {
           "command": "minspec.acceptAdr",
@@ -390,6 +420,7 @@
     "test:e2e": "vscode-test"
   },
   "dependencies": {
+    "@aiclarity/shared": "*",
     "handlebars": "^4.7.9",
     "simple-git": "^3.27.0"
   },

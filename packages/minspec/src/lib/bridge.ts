@@ -26,7 +26,7 @@ import type {
   ConformanceContract,
   ConformanceRequirement,
   CodeLocation,
-} from '../../../shared/src/contracts/conformance';
+} from '@aiclarity/shared';
 
 const SCROOGELLM_EXTENSION_ID = 'aiclarity.scroogellm';
 const NUDGE_DISMISSED_KEY = 'minspec.scroogellmNudge.dismissed';
