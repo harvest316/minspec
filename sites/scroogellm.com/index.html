@@ -455,19 +455,23 @@
     }
 
     .cost-savings-row {
-      display: grid;
-      grid-template-columns: 280px 1fr;
-      gap: 2.5rem;
-      align-items: center;
-      max-width: 900px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: stretch;
+      gap: 2rem;
       margin: 3rem auto 0;
     }
 
-    .cost-savings-img {
-      width: 100%;
-      max-width: 300px;
-      aspect-ratio: 1 / 1;
+    .cost-savings-img,
+    .cost-savings {
+      width: 300px;
+      height: 300px;
+      flex: 0 0 auto;
       border-radius: 10px;
+    }
+
+    .cost-savings-img {
       overflow: hidden;
       box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5), 0 0 0 3px rgba(244, 200, 67, 0.18);
       line-height: 0;
@@ -481,14 +485,19 @@
     }
 
     .cost-savings {
-      padding: 1.75rem 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 1.5rem;
       background: rgba(212, 164, 24, 0.07);
       border: 1px solid rgba(244, 200, 67, 0.25);
-      border-radius: 12px;
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.3);
     }
 
     .cost-savings-amount {
-      font-size: 2.75rem;
+      font-size: 3rem;
       font-weight: 800;
       color: var(--gold-bright);
       font-family: var(--font-mono);
@@ -498,9 +507,10 @@
     .cost-savings-label {
       font-size: 0.95rem;
       color: var(--text-secondary);
-      margin-top: 0.4rem;
+      margin-top: 0.65rem;
       font-family: var(--font-display);
       font-style: italic;
+      line-height: 1.45;
     }
 
     /* ── Features grid ───────────────────────────────── */
@@ -735,6 +745,68 @@
       line-height: 1.6;
     }
 
+    /* ── Dogfooding (cream interlude) ─────────────────── */
+    .dogfooding-section {
+      background: #ece8dd;
+      color: var(--ink);
+      border-top: 1px solid rgba(118, 17, 49, 0.12);
+      border-bottom: 1px solid rgba(118, 17, 49, 0.12);
+    }
+
+    .dogfooding-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 3rem;
+      align-items: center;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .dogfooding-text .section-label {
+      color: var(--burgundy);
+    }
+
+    .dogfooding-text .section-title {
+      color: var(--ink);
+    }
+
+    .dogfooding-text .section-title em {
+      color: var(--burgundy);
+      font-family: var(--font-display);
+      font-style: italic;
+    }
+
+    .dogfooding-text p {
+      font-size: 1.05rem;
+      color: #3a2818;
+      line-height: 1.7;
+    }
+
+    .dogfooding-text p strong {
+      color: var(--burgundy);
+      font-weight: 700;
+    }
+
+    .dogfooding-image {
+      line-height: 0;
+    }
+
+    .dogfooding-image img {
+      width: 100%;
+      height: auto;
+      display: block;
+      mix-blend-mode: multiply;
+    }
+
+    @media (max-width: 768px) {
+      .dogfooding-grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+        text-align: center;
+      }
+      .dogfooding-image { max-width: 280px; margin: 0 auto; }
+    }
+
     /* ── CTA (burgundy) ──────────────────────────────── */
     .cta-section {
       text-align: center;
@@ -891,12 +963,14 @@
       }
 
       .cost-savings-row {
-        grid-template-columns: 1fr;
-        gap: 1.5rem;
-        justify-items: center;
+        gap: 1.25rem;
       }
 
-      .cost-savings { text-align: center; }
+      .cost-savings-img,
+      .cost-savings {
+        width: min(300px, 80vw);
+        height: min(300px, 80vw);
+      }
 
       .features-grid {
         grid-template-columns: 1fr;
@@ -1373,6 +1447,31 @@ flowchart TB
         </div>
       </div>
 
+    </div>
+  </section>
+
+  <!-- ── Dogfooding ──────────────────────────────────── -->
+  <section class="section dogfooding-section" id="dogfooding">
+    <div class="section-inner">
+      <div class="dogfooding-grid">
+        <div class="dogfooding-text">
+          <p class="section-label">Exhibit A</p>
+          <h2 class="section-title">We eat our own <em>dog food</em></h2>
+          <p>
+            <strong>With a smile, even.</strong> Every shipped feature gets tested on its harshest
+            critic first &mdash; the developer himself. He dogfoods this proxy every working hour.
+            Which is why our figures aren't just forecasts &mdash; they're the savings we've already seen.
+          </p>
+        </div>
+        <div class="dogfooding-image">
+          <picture>
+            <source srcset="img/dogfooding.webp" type="image/webp">
+            <img src="img/dogfooding.jpg"
+                 alt="A cheerful developer happily eating from a bowl labelled DOG FOOD with a spoon"
+                 width="1024" height="1024" loading="lazy">
+          </picture>
+        </div>
+      </div>
     </div>
   </section>
 
