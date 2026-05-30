@@ -42,7 +42,30 @@ product: minspec
 Exact 95.8%, adjacent 100%. High — but labels followed the size rubric, which
 correlates with the size-based classifier by construction. Circular; not a real test.
 
-### Run B — semantic labels (n=50, 10 repos) — THE REAL TEST
+### Run C — consensus semantic labels (n=120, 11 repos) — STRONGEST EVIDENCE
+Ground truth = majority vote of 3 independent blind LLM labellers (given only the
+problem statement — no diff, no size) + 1 human on the overlap. **Fleiss κ = 0.80**
+(almost-perfect inter-rater agreement); 82% unanimous 3/3; human agreed 79% with
+consensus. Consensus tier distribution: T1=25, T2=62, T3=33, **T4=0** (the dataset
+has no architectural changes — single-PR bug fixes).
+
+- **Exact 34.2%, adjacent 86.7%.** Confusion (rows=expected, cols=predicted):
+  ```
+          T1   T2   T3   T4
+   T1     25    0    0    0
+   T2     48   13    1    0
+   T3     16   14    3    0
+  ```
+- **Conservative floor, not random:** every true-T1 predicted T1 (perfect recall on
+  trivial); the classifier never over-tiers. "Predicted > T1" is therefore reliable.
+- **But severe false-T1:** predicts T1 for 89/120 (74%); only 25 truly are. 64
+  bounded/subtle changes (48 T2, 16 T3) get one-sentence-spec ceremony. Never
+  predicts T4, almost never T3.
+- This confirms Run B at scale on de-subjectified ground truth: the size-based
+  classifier is a sound *lower bound* on ceremony but systematically under-tiers
+  cognitive difficulty. Same root cause + same options as below.
+
+### Run B — semantic labels (n=50, 10 repos) — single-labeller pilot
 Labels assigned from `problem_statement` difficulty, independent of diff size.
 
 - **Exact 18%, adjacent 80%.** Classifier predicted **T1 for 42 of 50** instances.

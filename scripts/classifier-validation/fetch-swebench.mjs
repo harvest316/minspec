@@ -37,20 +37,30 @@ const SPLIT = 'test';
 const API = 'https://datasets-server.huggingface.co/rows';
 const INFO = 'https://datasets-server.huggingface.co/info';
 
+const PAGE = 100; // datasets-server max length per request
+
 const count = Math.max(1, parseInt(process.argv[2] ?? '50', 10) || 50);
 
-async function getJson(url) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function getJson(url, attempt = 0) {
   const res = await fetch(url);
+  if (res.status === 429 && attempt < 5) {
+    const wait = 1000 * Math.pow(2, attempt); // 1s,2s,4s,8s,16s backoff
+    console.log(`  429 rate-limited; backing off ${wait}ms…`);
+    await sleep(wait);
+    return getJson(url, attempt + 1);
+  }
   if (!res.ok) {
     throw new Error(`HuggingFace API ${res.status} ${res.statusText} for ${url}`);
   }
   return res.json();
 }
 
-async function fetchRow(offset) {
-  const url = `${API}?dataset=${encodeURIComponent(DATASET)}&config=${CONFIG}&split=${SPLIT}&offset=${offset}&length=1`;
+async function fetchPage(offset, length) {
+  const url = `${API}?dataset=${encodeURIComponent(DATASET)}&config=${CONFIG}&split=${SPLIT}&offset=${offset}&length=${length}`;
   const json = await getJson(url);
-  return json.rows?.[0]?.row ?? null;
+  return (json.rows ?? []).map((r) => r.row).filter(Boolean);
 }
 
 async function getTotal() {
@@ -62,18 +72,24 @@ async function getTotal() {
 
 async function main() {
   const total = await getTotal();
-  // Stride evenly across the whole dataset for repo/size diversity — NOT the first N
-  // (rows are grouped by repo, so a sequential head is single-repo and size-skewed).
-  const step = Math.max(1, Math.floor(total / count));
+  // Page through the WHOLE split (5 requests for 500 rows — avoids per-row 429),
+  // then stride-select evenly. Rows are grouped by repo, so a sequential head is
+  // single-repo and size-skewed; striding gives repo/size diversity.
   console.log(
-    `Fetching ${count} instances from ${DATASET} (${SPLIT}, total=${total}) ` +
-      `strided every ${step} rows…`,
+    `Fetching all ${total} rows of ${DATASET} (${SPLIT}) in pages of ${PAGE}, ` +
+      `then striding to ${count}…`,
   );
+  const all = [];
+  for (let offset = 0; offset < total; offset += PAGE) {
+    const rows = await fetchPage(offset, Math.min(PAGE, total - offset));
+    all.push(...rows);
+    await sleep(300); // gentle pacing between pages
+  }
 
+  const step = Math.max(1, Math.floor(all.length / count));
   const instances = [];
-  for (let k = 0; k < count; k++) {
-    const offset = (k * step) % total;
-    const row = await fetchRow(offset);
+  for (let k = 0; k < count && k * step < all.length; k++) {
+    const row = all[k * step];
     if (!row || !row.patch) continue;
     instances.push({
       instanceId: row.instance_id,
