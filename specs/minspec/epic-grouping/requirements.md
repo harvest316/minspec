@@ -1,7 +1,7 @@
 ---
 id: SPEC-007
 type: requirements
-status: specifying
+status: done
 product: minspec
 ---
 

@@ -1,7 +1,7 @@
 ---
 id: SPEC-008
 type: design
-status: specifying
+status: done
 product: minspec
 ---
 
