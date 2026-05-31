@@ -7,6 +7,7 @@
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/harvest316/minspec/badges/coverage.json)](https://github.com/harvest316/minspec/actions/workflows/ci.yml)
 [![No AI Required](https://img.shields.io/badge/AI-not%20required-lightgrey.svg)](https://github.com/harvest316/minspec)
 [![Internet not required](https://img.shields.io/badge/Internet-not%20required-lightgrey.svg)](https://github.com/harvest316/minspec)
+[![Privacy first](https://img.shields.io/badge/Privacy-first-brightgreen.svg)](#what-minspec-does-on-your-network)
 
 ## Why This Exists
 
