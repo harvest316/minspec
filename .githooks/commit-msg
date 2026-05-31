@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# commit-msg — RCDD root-cause gate (DR-003).
+#
+# Bug-fix commits must document a root cause. If the subject is a Conventional
+# Commit `fix` (fix:, fix(scope):, fix!:), the body MUST contain a line matching
+# `Root cause:` (case-insensitive, space or hyphen). Otherwise the commit is
+# rejected — enforcing RCDD Phase 2 (diagnose) before Phase 3 (fix lands).
+#
+# This is deterministic and actor-agnostic: it reads the *composed* message
+# from $1, so it catches commits built via -m, heredoc, $(...) substitution, or
+# the editor — by Claude or a human alike.
+#
+# Kill-switch: RCDD_GATE_OFF=1 git commit ...   (explicit, intentional bypass)
+# Fail-open: any read error or missing message file -> allow (never block on a
+# hook bug).
+
+set -uo pipefail
+
+# Explicit escape hatch.
+if [ "${RCDD_GATE_OFF:-0}" = "1" ]; then
+  exit 0
+fi
+
+MSG_FILE="${1:-}"
+[ -n "$MSG_FILE" ] && [ -r "$MSG_FILE" ] || exit 0   # fail open
+
+# Subject = first non-comment, non-empty line.
+SUBJECT="$(grep -v '^#' "$MSG_FILE" | grep -m1 . || true)"
+
+# Only gate Conventional-Commit fix subjects: fix:  fix(scope):  fix!:  fix(scope)!:
+if ! printf '%s' "$SUBJECT" | grep -Eq '^fix(\([^)]*\))?!?:'; then
+  exit 0
+fi
+
+# Strip comment lines, then require a Root cause: marker anywhere in the body.
+if grep -v '^#' "$MSG_FILE" | grep -Eiq '\broot[ -]cause:'; then
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+✗ RCDD gate (DR-003): fix commit missing root cause.
+
+  A `fix` commit must document the diagnosis. Add a body line:
+
+      Root cause: <one sentence>
+
+  RCDD Phase 2 (diagnose) precedes Phase 3 (fix). A fix without a stated
+  root cause usually patches a symptom.
+
+  Intentional bypass (rare):  RCDD_GATE_OFF=1 git commit ...
+EOF
+exit 1

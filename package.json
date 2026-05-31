@@ -6,6 +6,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",

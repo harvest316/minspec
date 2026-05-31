@@ -11,15 +11,7 @@ minspec-monorepo project managed with MinSpec SDD methodology.
 
 These rules must never be violated. All changes must preserve them.
 
-### INV-1 — `minspec-extension-deployed`: public ADR references gate on visibility
-
-Public-facing surfaces — `sites/**`, `packages/*/README.md`, `packages/*/CHANGELOG.md`, and any VS Code Marketplace / Open VSX listing copy — reference ADR entries (`DR-NNN`) only under these rules:
-
-1. **Repo or ADR private → no public DR references.** If `github.com/harvest316/minspec` is private, or `docs/decisions/` is not publicly readable, do NOT cite `DR-NNN` on any public web page or store listing. A private link 404s for visitors and leaks internal identifiers. Describe the decision in prose instead, no DR id.
-2. **Repo and ADR both public → DR references must be clickable.** Every `DR-NNN` mention links to its published ADR: `https://github.com/harvest316/minspec/blob/main/docs/decisions/DR-NNN.md`. No bare unlinked `DR-NNN` text on public surfaces.
-3. **Check before deploy/publish.** Before deploying a site or publishing an extension, confirm repo visibility (`gh repo view harvest316/minspec --json isPrivate`) and that every public `DR-NNN` either links (public) or is removed (private).
-
-Rationale: ADR ids are an internal traceability convention; exposing them publicly only helps readers if the target actually resolves. See the Traceability Convention section.
+<!-- Add project invariants here -->
 
 ## SDD Methodology
 
@@ -142,6 +134,10 @@ npm run validate      # frontmatter validation
 
 1. No secrets (API keys, tokens, high-entropy strings)
 2. `specs/**/*.md` must have `id: SPEC-NNN` frontmatter
+3. **RCDD root-cause gate (DR-003).** `.githooks/commit-msg` rejects any
+   `fix:`/`fix(scope):`/`fix!:` commit whose body lacks a `Root cause:` line.
+   Installed via `core.hooksPath=.githooks` (set by `npm install` → `prepare`).
+   Intentional bypass: `RCDD_GATE_OFF=1 git commit ...`
 
 ## Decision Register
 
