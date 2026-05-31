@@ -240,6 +240,16 @@ describe('updateSpecFrontmatter()', () => {
     expect(reparsed.frontmatter.tier).toBe('T1');
     expect(reparsed.frontmatter.status).toBe('done');
   });
+
+  it('preserves an epic title comment across a frontmatter re-serialize', () => {
+    const withEpic = EXAMPLE_SPEC.replace(
+      /^id: SPEC-001$/m,
+      'id: SPEC-001\nepic: EPIC-001  # Telemetry & Privacy',
+    );
+    const updated = updateSpecFrontmatter(withEpic, { status: 'done' });
+    // The cosmetic title comment must survive a full writeSpec round-trip.
+    expect(updated).toContain('epic: EPIC-001  # Telemetry & Privacy');
+  });
 });
 
 describe('readSpecFile() / writeSpecFile()', () => {

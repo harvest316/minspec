@@ -33,6 +33,10 @@ import {
   buildEpicIndexContent,
   resolveEpicsDir,
   EPIC_STATUS_VALUES,
+  epicRefValue,
+  formatEpicRef,
+  setArtifactEpic,
+  readArtifactEpic,
   type EpicSummary,
 } from '../src/lib/epic-manager';
 
@@ -132,6 +136,68 @@ describe('epic-manager', () => {
       expect(resolveEpic('', epics)).toBeNull();
       expect(resolveEpic('   ', epics)).toBeNull();
       expect(resolveEpic('nope', epics)).toBeNull();
+    });
+    it('tolerates an inline title comment on the ref', () => {
+      expect(resolveEpic('EPIC-001  # Telemetry', epics)?.slug).toBe('telemetry');
+      expect(resolveEpic('telemetry # whatever the comment says', epics)?.id).toBe('EPIC-001');
+      expect(resolveEpic('   #just a comment, no ref', epics)).toBeNull();
+    });
+  });
+
+  // ─── epic ref value/format helpers ───────────────────────────────────
+
+  describe('epicRefValue() / formatEpicRef()', () => {
+    it('strips an inline comment back to the bare ref', () => {
+      expect(epicRefValue('EPIC-001  # Telemetry & Privacy')).toBe('EPIC-001');
+      expect(epicRefValue('telemetry#x')).toBe('telemetry');
+      expect(epicRefValue('  EPIC-002  ')).toBe('EPIC-002');
+    });
+    it('returns undefined for absent/empty/comment-only values', () => {
+      expect(epicRefValue(undefined)).toBeUndefined();
+      expect(epicRefValue(null)).toBeUndefined();
+      expect(epicRefValue('   ')).toBeUndefined();
+      expect(epicRefValue('# only a comment')).toBeUndefined();
+    });
+    it('formats with a comment only when a non-empty title is given', () => {
+      expect(formatEpicRef('EPIC-001', 'Telemetry')).toBe('EPIC-001  # Telemetry');
+      expect(formatEpicRef('EPIC-001')).toBe('EPIC-001');
+      expect(formatEpicRef('EPIC-001', '   ')).toBe('EPIC-001');
+    });
+    it('round-trips: epicRefValue(formatEpicRef(ref, title)) === ref', () => {
+      expect(epicRefValue(formatEpicRef('EPIC-007', 'Some Title'))).toBe('EPIC-007');
+    });
+  });
+
+  // ─── setArtifactEpic / readArtifactEpic ──────────────────────────────
+
+  describe('setArtifactEpic() / readArtifactEpic()', () => {
+    function artifact(body: string): string {
+      const p = path.join(tmpDir, 'SPEC-001.md');
+      fs.writeFileSync(p, body, 'utf-8');
+      return p;
+    }
+
+    it('writes the title as an inline comment and reads back the bare ref', () => {
+      const p = artifact('---\nid: SPEC-001\ntitle: X\n---\n# X\n');
+      setArtifactEpic(p, 'EPIC-001', 'Telemetry & Privacy');
+      expect(fs.readFileSync(p, 'utf-8')).toContain('epic: EPIC-001  # Telemetry & Privacy');
+      expect(readArtifactEpic(p)).toBe('EPIC-001');
+    });
+
+    it('omits the comment when no title is given', () => {
+      const p = artifact('---\nid: SPEC-001\n---\n');
+      setArtifactEpic(p, 'EPIC-002');
+      expect(fs.readFileSync(p, 'utf-8')).toContain('epic: EPIC-002\n');
+      expect(readArtifactEpic(p)).toBe('EPIC-002');
+    });
+
+    it('replaces an existing epic line (comment and all)', () => {
+      const p = artifact('---\nid: SPEC-001\nepic: EPIC-009  # Old\ntitle: X\n---\n');
+      setArtifactEpic(p, 'EPIC-003', 'New Name');
+      const out = fs.readFileSync(p, 'utf-8');
+      expect(out).toContain('epic: EPIC-003  # New Name');
+      expect(out).not.toContain('EPIC-009');
+      expect(out).not.toContain('Old');
     });
   });
 

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig, applyVSCodeOverrides, resolveAndValidate } from './config';
 import { slugify } from './spec-manager';
+import { epicRefValue } from './epic-manager';
 export { slugify };
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -516,7 +517,7 @@ export function listAdrs(rootDir: string, vscodeOverrides?: { decisionsDir?: str
         status: ADR_STATUSES.has(fm.status) ? fm.status as AdrStatus : 'proposed',
         date: (fm.date as string) ?? '',
         filePath,
-        epic: (fm.epic as string) || undefined,
+        epic: epicRefValue(fm.epic as string),
       });
     } catch {
       // Skip unreadable files

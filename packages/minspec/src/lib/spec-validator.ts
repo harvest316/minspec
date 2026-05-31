@@ -12,6 +12,7 @@
 
 import type { ParsedSpec } from './spec';
 import type { Tier, MinspecConfig, Phase } from './config';
+import { epicRefValue } from './epic-manager';
 
 /** A cross-cutting concern a spec may touch, each requiring a specific artifact. */
 export type Aspect = 'ux' | 'api' | 'data' | 'architecture';
@@ -185,7 +186,8 @@ export function validateSpec(
   const violations: ValidationViolation[] = [];
 
   // 0. Epic reference resolves (soft — warning only, DR-013 FR-9).
-  const epicRef = spec.frontmatter.epic?.trim();
+  //    Strip any inline title comment (`epic: EPIC-001  # Title`) before matching.
+  const epicRef = epicRefValue(spec.frontmatter.epic);
   if (epicRef && knownEpicRefs && !knownEpicRefs.has(epicRef.toLowerCase())) {
     violations.push({
       rule: 'epic.unresolved',

@@ -138,17 +138,42 @@ export function epicRefSet(rootDir: string, vscodeOverrides?: { epicsDir?: strin
   return set;
 }
 
+// ─── Ref parsing / formatting ─────────────────────────────────────────────────
+
+/**
+ * Extract the machine ref from an `epic:` frontmatter value, dropping any inline
+ * YAML comment. The line may carry a human-facing title comment
+ * (`epic: EPIC-001  # Telemetry & Privacy`); the resolvable ref is everything
+ * before the first `#`. Refs (EPIC-NNN ids and kebab slugs) never contain `#`,
+ * so a first-hash split is safe. Returns undefined for absent/empty.
+ */
+export function epicRefValue(raw: string | undefined | null): string | undefined {
+  if (raw == null) return undefined;
+  const hash = raw.indexOf('#');
+  const ref = (hash === -1 ? raw : raw.slice(0, hash)).trim();
+  return ref === '' ? undefined : ref;
+}
+
+/**
+ * Format an `epic:` frontmatter value, appending the epic title as an inline
+ * YAML comment when known. The comment is cosmetic — the registry remains the
+ * authoritative source of the title; `epicRefValue` strips it back off on read.
+ */
+export function formatEpicRef(ref: string, title?: string): string {
+  return title && title.trim() !== '' ? `${ref}  # ${title.trim()}` : ref;
+}
+
 // ─── Resolution ─────────────────────────────────────────────────────────────
 
 /**
  * Resolve an epic reference (id like "EPIC-001" OR slug like "telemetry") to its
- * summary. Case-insensitive. Returns null if absent or unresolved — callers
- * treat null as "ungrouped" (never throw; FR-9 warning is surfaced separately).
+ * summary. Case-insensitive. Tolerates an inline title comment on the ref.
+ * Returns null if absent or unresolved — callers treat null as "ungrouped"
+ * (never throw; FR-9 warning is surfaced separately).
  */
 export function resolveEpic(ref: string | undefined, epics: EpicSummary[]): EpicSummary | null {
-  if (!ref) return null;
-  const needle = ref.trim().toLowerCase();
-  if (needle === '') return null;
+  const needle = epicRefValue(ref)?.toLowerCase();
+  if (!needle) return null;
   for (const epic of epics) {
     if (epic.id.toLowerCase() === needle || epic.slug.toLowerCase() === needle) {
       return epic;
@@ -194,32 +219,36 @@ export function groupByEpic<T>(
 /**
  * Insert or replace the `epic:` line in an existing artifact's frontmatter
  * block (spec or ADR). Top-level placement (prepended, before any nested block
- * like `phases:`). Mirrors `setAdrStatus`. Returns the written ref.
+ * like `phases:`). Mirrors `setAdrStatus`. When `title` is given it is written
+ * as an inline comment after the ref (`epic: EPIC-001  # Title`). Returns the
+ * written ref (without the comment).
  * @throws if the file has no frontmatter block.
  */
-export function setArtifactEpic(filePath: string, ref: string): string {
+export function setArtifactEpic(filePath: string, ref: string, title?: string): string {
   const content = fs.readFileSync(filePath, 'utf-8');
   const fmMatch = content.match(FRONTMATTER_RE);
   if (!fmMatch) {
     throw new Error(`No frontmatter block in ${filePath}`);
   }
   const yaml = fmMatch[1];
+  const value = formatEpicRef(ref, title);
   const epicLineRe = /^([ \t]*)epic[ \t]*:[ \t]*.*$/m;
   const newYaml = epicLineRe.test(yaml)
-    ? yaml.replace(epicLineRe, `$1epic: ${ref}`)
-    : `epic: ${ref}\n${yaml}`;
+    ? yaml.replace(epicLineRe, `$1epic: ${value}`)
+    : `epic: ${value}\n${yaml}`;
   const updated = content.replace(FRONTMATTER_RE, `---\n${newYaml}\n---`);
   fs.writeFileSync(filePath, updated, 'utf-8');
   return ref;
 }
 
-/** Read the current `epic:` ref from an artifact's frontmatter, or null. */
+/** Read the current `epic:` ref from an artifact's frontmatter, or null. Any
+ * inline title comment is stripped — only the resolvable ref is returned. */
 export function readArtifactEpic(filePath: string): string | null {
   try {
     const m = fs.readFileSync(filePath, 'utf-8').match(FRONTMATTER_RE);
     if (!m) return null;
     const line = m[1].match(/^[ \t]*epic[ \t]*:[ \t]*(.+)$/m);
-    return line ? line[1].trim() : null;
+    return line ? (epicRefValue(line[1]) ?? null) : null;
   } catch {
     return null;
   }

@@ -406,13 +406,17 @@ export function applyBackfill(
   proposal: BackfillProposal,
   opts: { override?: boolean } = {},
 ): ApplyResult {
-  // Map proposed epic slugs → concrete ref (existing id, or freshly created).
+  // Map proposed epic slugs → concrete ref (existing id, or freshly created),
+  // plus slug → title so each tagged artifact gets a human-facing comment.
   const refBySlug = new Map<string, string>();
+  const titleBySlug = new Map<string, string>();
   let epicsCreated = 0;
   const registered = new Map(listEpics(rootDir).map(e => [e.slug, e]));
 
   for (const e of proposal.epics) {
     const existing = e.id ? e.id : registered.get(e.slug)?.id;
+    // Prefer the registry's canonical title for existing epics; else the proposal's.
+    titleBySlug.set(e.slug, registered.get(e.slug)?.title ?? e.title);
     if (existing) {
       refBySlug.set(e.slug, existing);
     } else {
@@ -429,7 +433,7 @@ export function applyBackfill(
     if (!ref) { skipped++; continue; }
     if (!opts.override && readArtifactEpic(m.filePath)) { skipped++; continue; }
     try {
-      setArtifactEpic(m.filePath, ref);
+      setArtifactEpic(m.filePath, ref, titleBySlug.get(m.epicSlug));
       artifactsTagged++;
     } catch {
       skipped++;
