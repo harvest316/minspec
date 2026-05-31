@@ -3,5 +3,5 @@
 | Epic | Status | Order |
 |---|---|---|
 | [EPIC-001: Explorer Epic Grouping](EPIC-001-epic-grouping.md) | active | 1 |
-| [EPIC-002: Signpost Integrity](EPIC-002-signpost-integrity.md) | proposed | 2 |
+| [EPIC-002: Signpost Integrity](EPIC-002-signpost-integrity.md) | active | 2 |
 <!-- minspec:epic-index:end -->

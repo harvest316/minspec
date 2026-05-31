@@ -2,7 +2,7 @@
 id: EPIC-002
 slug: signpost-integrity
 title: Signpost Integrity
-status: proposed
+status: active
 order: 2
 ---
 
