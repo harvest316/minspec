@@ -340,24 +340,43 @@ describe('auto-bootstrap', () => {
       fs.mkdirSync(path.join(root, '.minspec'), { recursive: true });
       fs.writeFileSync(path.join(root, '.minspec', 'config.json'), JSON.stringify({ version: '1' }));
     }
+    function epic(root: string, id: string): void {
+      const d = path.join(root, 'docs', 'epics');
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, `${id}-x.md`), `---\nid: ${id}\nslug: x\ntitle: X\nstatus: active\norder: 1\n---\n`);
+    }
 
-    it('false when fewer than 3 untagged artifacts', () => {
+    it('false on a fresh project with no specs', () => {
       cfg(tmpDir);
+      expect(hasUnbackfilledEpics(tmpDir)).toBe(false);
+    });
+
+    it('true when specs exist but the epic registry is empty (even one spec)', () => {
+      cfg(tmpDir);
+      specFile(tmpDir, 'a', 'SPEC-001');
+      expect(hasUnbackfilledEpics(tmpDir)).toBe(true);
+    });
+
+    it('false when a registry exists and fewer than 3 untagged', () => {
+      cfg(tmpDir);
+      epic(tmpDir, 'EPIC-001');
       specFile(tmpDir, 'a', 'SPEC-001');
       specFile(tmpDir, 'b', 'SPEC-002');
       expect(hasUnbackfilledEpics(tmpDir)).toBe(false);
     });
 
-    it('true when ≥3 specs/ADRs lack an epic ref', () => {
+    it('true when a registry exists but ≥3 artifacts lack an epic ref', () => {
       cfg(tmpDir);
+      epic(tmpDir, 'EPIC-001');
       specFile(tmpDir, 'a', 'SPEC-001');
       specFile(tmpDir, 'b', 'SPEC-002');
       specFile(tmpDir, 'c', 'SPEC-003');
       expect(hasUnbackfilledEpics(tmpDir)).toBe(true);
     });
 
-    it('false when all artifacts are already tagged', () => {
+    it('false when a registry exists and all artifacts are tagged', () => {
       cfg(tmpDir);
+      epic(tmpDir, 'EPIC-001');
       specFile(tmpDir, 'a', 'SPEC-001', 'EPIC-001');
       specFile(tmpDir, 'b', 'SPEC-002', 'EPIC-001');
       specFile(tmpDir, 'c', 'SPEC-003', 'EPIC-001');

@@ -31,6 +31,7 @@ import {
 } from './merge-refresh';
 import { TEMPLATE_NAMES, TEMPLATE_OUTPUT_PATHS, TEMPLATES } from './template-registry';
 import { collectArtifacts } from './epic-backfill';
+import { listEpics } from './epic-manager';
 
 // ---------------------------------------------------------------------------
 // Preferences (persisted in .minspec/preferences.json)
@@ -258,10 +259,14 @@ export interface BootstrapVsCode {
 export type PromptKind = 'init' | 'refresh' | 'classify' | 'backfill';
 
 /**
- * Detector: project has registered epics live (DR-013) but a meaningful number
- * of specs/ADRs carry no `epic:` ref — backfill (DR-016) would help. Pure
- * file-system (the offer is Tier 0; the AI pass only runs on explicit action).
- * Quiet on tiny/new projects (needs ≥3 untagged artifacts).
+ * Detector: a project with specs/ADRs that aren't well-grouped by epic — backfill
+ * (DR-016) would help. Pure file-system (the offer is Tier 0; the AI pass only
+ * runs on explicit action). Two triggers:
+ *   1. specs/ADRs exist but the epic registry is empty (the "opened a project
+ *      with specs but no epics" case — offer to establish the taxonomy), or
+ *   2. a registry exists but ≥3 artifacts are still untagged (mid-life gap).
+ * Quiet on a fresh `minspec init` (no specs yet → nothing to group), where epic
+ * grouping is simply on by default.
  */
 export function hasUnbackfilledEpics(rootDir: string): boolean {
   let artifacts;
@@ -270,9 +275,9 @@ export function hasUnbackfilledEpics(rootDir: string): boolean {
   } catch {
     return false;
   }
-  if (artifacts.length < 3) return false;
-  const untagged = artifacts.filter(a => !a.epic).length;
-  return untagged >= 3;
+  if (artifacts.length === 0) return false; // fresh project — nothing to group yet
+  if (listEpics(rootDir).length === 0) return true; // specs but no epics → offer
+  return artifacts.filter(a => !a.epic).length >= 3; // registry exists, gaps remain
 }
 
 /** A single bootstrap step the orchestrator may surface */
