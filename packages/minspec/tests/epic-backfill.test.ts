@@ -105,6 +105,20 @@ describe('epic-backfill', () => {
       expect(m?.epicSlug).toBe('telemetry');
     });
 
+    it('does NOT seed an epic from the product-root folder (folder == product)', () => {
+      // specs/<product>/file.md where folder name == frontmatter product:
+      // is the product container, not a feature epic.
+      writeSpec(tmp, 'minspec', 'SPEC-001', 'Core Requirements'); // folder 'minspec'
+      // writeSpec defaults product? No — add product via raw file:
+      const fp = path.join(tmp, 'specs', 'minspec', 'SPEC-001.md');
+      fs.writeFileSync(fp, [
+        '---', 'id: SPEC-001', 'title: Core Requirements', 'tier: T2', 'status: new',
+        'created: 2026-05-31', 'product: minspec', 'phases:', '  specify: done', '---', '', '# Core', '', 'body',
+      ].join('\n'));
+      const p = proposeHeuristic(tmp);
+      expect(p.epics.some(e => e.slug === 'minspec')).toBe(false);
+    });
+
     it('declines to map an artifact with no signal (no forced guess)', () => {
       writeSpec(tmp, 'minspec/alpha', 'SPEC-001', 'Alpha One');
       writeAdr(tmp, 'DR-009', 'Completely unrelated zebra giraffe');

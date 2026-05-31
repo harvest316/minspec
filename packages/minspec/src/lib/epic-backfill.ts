@@ -156,13 +156,19 @@ function collectSpecs(rootDir: string): ArtifactRef[] {
           continue;
         }
         if (!fm.id || !/^SPEC-/.test(fm.id)) continue;
+        // Folder name is an epic signal ONLY when it's a feature folder — not the
+        // product container itself (e.g. specs/minspec/ holds the core specs but
+        // "minspec" is the product, not an epic). Skip when folder == product.
+        const folder = path.basename(path.dirname(full));
+        const product = (content.match(/^---\n[\s\S]*?\n---/)?.[0].match(/^product\s*:\s*(.+)$/m)?.[1] ?? '').trim();
+        const group = product && slugify(folder) === slugify(product) ? undefined : folder;
         out.push({
           id: fm.id,
           kind: 'spec',
           title: fm.title || fm.id,
           filePath: full,
           epic: fm.epic,
-          group: path.basename(path.dirname(full)),
+          group,
           digest: firstParagraph(content),
         });
       }
@@ -458,7 +464,7 @@ export function renderProposalMarkdown(proposal: BackfillProposal): string {
   for (const [slug, ms] of bySlug) {
     lines.push(`### ${slug}`, '');
     for (const m of ms) {
-      lines.push(`- ${m.artifactId} (${(m.confidence * 100).toFixed(0)}%) — ${m.rationale}`);
+      lines.push(`- ${m.artifactId} \`${path.basename(m.filePath)}\` (${(m.confidence * 100).toFixed(0)}%) — ${m.rationale}`);
     }
     lines.push('');
   }
