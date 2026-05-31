@@ -25,11 +25,11 @@
   "CLAUDE.md": {
     "__preamble__": "ece35349e24a64371bf8ced25d09fe08bc65420ba70176df44f9831be96dc129",
     "Overview": "6002cdc29f45a95c3e4971694abe098af6a02f81220e619e4bded098479bdada",
-    "Invariants": "5d5d5c2c84564cd4e2ed8499afe43ed2fa85141713eaeeccbe59c7ee4021b70c",
+    "Invariants": "c31c03f976a013d96bd0a7ca790947731c338064e87034dfd18c6bf771128c39",
     "SDD Methodology": "659cf2fee5afc6db19cd4e80569ee28f026764d7b23f716e62808256f0a8f4a6",
     "File Locations": "7c8f5347eec33d9917104252890ef5c4912b6997cb7ea689f451095b1b712321",
     "Commands": "315b3b522b5b0097b0f28398b15590423e58e3ea115a2b81c31940439d8a6a7e",
-    "Project Overview": "0748f2d92973d2b8f9fbf7aa70c81e2fcd758b3351d4951aa254b3f5c5abc0f9",
+    "Project Overview": "72b6e1caea49ad3f72d91e9432ab9c7b302a98aeb6e8139edf43cb2454dadcf5",
     "Session Scope Protocol": "7f0e526fee740859b5007e899a8dd1be4e195be704c8e5b770f9000b56f3c4e8",
     "SDD Phases (current state)": "e3ec36cedca2ae1c3e5a05ae1160afdd81642d662a5f9ed2edef4b3b7ff538c3",
     "Traceability Convention": "f94fa97083b84ad6c1e24ed42f7ae2d4c44bac4836cceeab2db82dd3f4b3ca4e",
@@ -37,7 +37,7 @@
     "Deploy Reference": "ebb1304ad529dbab0444ab5e9e627d40928feb1cfa4a835e5ede432c68b75fdc",
     "Test Commands": "7d181a22f368dc3b37c56866e26ad63345d58e92c5a04bd1e1cf52f85d8f2459",
     "Pre-Commit Checks": "5d8784c1fca733ece82ba9396d0ae57b823e02f45b2b260cc1677d7929d72d74",
-    "Decision Register": "2db29da9bac1a1a21e9f68d83347c733be7c645a67275ca08e904c9b80eff4ec",
+    "Decision Register": "91468e1daf3090b624390e9db20769c71b4aac4af5080fbfca1a4050b5fb8b42",
     "Repo Mapping (Parking Lot)": "4bf805bcea48a96f28c64b0feb979aaebbf15989f5e90087c01f10214e0b95e0"
   },
   "AGENTS.md": {
