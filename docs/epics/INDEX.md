@@ -25,7 +25,7 @@ _Bodies of work grouping specs, decisions, and issues. One entry per epic._
 
 ## [EPIC-006 — Trust, Consent & Supply Chain](EPIC-006-trust-and-supply-chain.md)
 
-*Status: proposed · slug: `trust-and-supply-chain` · order: 6*
+*Status: active · slug: `trust-and-supply-chain` · order: 6*
 
 ## [EPIC-007 — Agent Execute Extension](EPIC-007-agent-execute.md)
 
