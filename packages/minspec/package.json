@@ -317,12 +317,12 @@
         },
         {
           "command": "minspec.approveSpec",
-          "when": "view == minspecStatus && viewItem =~ /^specNode(\\.approved)?$/",
+          "when": "view == minspecStatus && viewItem == specNode",
           "group": "inline"
         },
         {
           "command": "minspec.approveSpec",
-          "when": "view == minspecStatus && viewItem =~ /^specNode(\\.approved)?$/",
+          "when": "view == minspecStatus && viewItem == specNode",
           "group": "2_approval@1"
         },
         {

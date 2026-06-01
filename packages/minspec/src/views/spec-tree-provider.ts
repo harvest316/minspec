@@ -201,18 +201,30 @@ export class SpecNode extends vscode.TreeItem {
     const phaseLabel = spec.currentPhase ?? 'complete';
     const pct = spec.phasesTotal > 0 ? Math.round((spec.phasesDone / spec.phasesTotal) * 100) : 100;
     const meter = progressMeter(spec.phasesDone, spec.phasesTotal);
-    // \ud83d\udd12 (lock), NOT \u2714 (check): approval seals the spec's content (editing
-    // voids it), it does NOT mean the feature is built/done. A checkmark here
-    // misreads as "done" on a spec that is only approved-to-build (signpost-lie).
+    const terminal = spec.status === 'done' || spec.status === 'archived';
+
+    // Approval state shows on the ALWAYS-VISIBLE left icon, not the description.
+    // The description is dimmed + truncated-first, so a trailing badge vanished
+    // at normal pane widths. Terminal specs (done/archived) are past the gate, so
+    // they keep their status icon and show no approval marker.
+    //   approved \u2192 \ud83d\udd12 (lock = content sealed; editing voids it). NOT \u2714 \u2014 a check
+    //   misreads as "done" on a spec that is only approved-to-build (signpost-lie).
+    //   stale \u2192 \u26a0 warning. otherwise \u2192 status icon.
+    const iconId =
+      terminal ? statusIcon(spec.status)
+        : approval === 'approved' ? 'lock'
+          : approval === 'stale' ? 'warning'
+            : statusIcon(spec.status);
+    this.iconPath = new vscode.ThemeIcon(iconId);
+
+    // Description keeps a plain-text approval word (no glyph \u2014 icon carries it)
+    // so wide panes / quick scans still read it; it truncating when narrow is now
+    // harmless because the icon is authoritative.
     const approvalTag =
-      approval === 'approved' ? ' \ud83d\udd12 approved'
-        : approval === 'stale' ? ' \u26a0 stale'
-          : '';
-
-    // Description: tier \u00b7 meter pct% \u00b7 phase [\u00b7 approval]
+      terminal ? ''
+        : approval === 'approved' ? ' \u00b7 approved'
+          : approval === 'stale' ? ' \u00b7 stale' : '';
     this.description = `${spec.tier} \u00b7 ${meter} ${pct}% \u00b7 ${phaseLabel}${approvalTag}`;
-
-    this.iconPath = new vscode.ThemeIcon(statusIcon(spec.status));
 
     this.command = {
       command: 'vscode.open',
@@ -224,7 +236,6 @@ export class SpecNode extends vscode.TreeItem {
     // past the DR-012 approve-before-implement gate, so they expose no approval
     // action at all. Otherwise the suffix encodes approval state so Revoke shows
     // only on approved specs (see package.json when-clauses).
-    const terminal = spec.status === 'done' || spec.status === 'archived';
     this.contextValue = terminal
       ? 'specNode.terminal'
       : approval === 'approved' ? 'specNode.approved' : 'specNode';

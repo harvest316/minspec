@@ -514,14 +514,15 @@ describe('SpecTreeProvider — approval wiring (regression)', () => {
     const node = activeNodes(provider)[0];
     expect(node.approval).toBe('approved');
     expect(node.contextValue).toBe('specNode.approved');
-    expect(node.description).toContain('approved');
-    // Badge must NOT use a checkmark — ✔ on an unbuilt-but-approved spec misreads
-    // as "done" (signpost-lie). Use 🔒 (sealed/gated), not ✔ (complete).
-    expect(node.description).toContain('🔒');
+    // Approval shows on the ALWAYS-VISIBLE left icon (🔒 lock), not buried in the
+    // truncatable description. NOT ✔ — a check misreads as "done" on a spec that
+    // is only approved-to-build (signpost-lie).
+    expect((node.iconPath as { id: string }).id).toBe('lock');
+    expect(node.description).toContain('approved'); // plain-text echo, no glyph
     expect(node.description).not.toContain('✔');
   });
 
-  it('default-constructed provider marks approval stale after the spec is edited', () => {
+  it('default-constructed provider marks approval stale (⚠ icon) after the spec is edited', () => {
     const specPath = writeSpec('SPEC-001');
     approveSpec(tmpDir, 'SPEC-001', specPath, 'T2');
     fs.appendFileSync(specPath, '\nedited after approval\n'); // hash now differs
@@ -529,7 +530,9 @@ describe('SpecTreeProvider — approval wiring (regression)', () => {
     const spec = makeSpec({ id: 'SPEC-001', status: 'implementing', filePath: specPath });
     const provider = new SpecTreeProvider(tmpDir, () => [spec]);
 
-    expect(activeNodes(provider)[0].approval).toBe('stale');
+    const node = activeNodes(provider)[0];
+    expect(node.approval).toBe('stale');
+    expect((node.iconPath as { id: string }).id).toBe('warning');
   });
 
   it('default-constructed provider shows unapproved when no record exists', () => {
