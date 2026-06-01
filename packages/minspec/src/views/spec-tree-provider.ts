@@ -143,8 +143,14 @@ interface StatusGroup {
   readonly defaultExpanded: boolean;
 }
 
-const STATUS_GROUPS: StatusGroup[] = [
-  { label: 'Active', statuses: ['new', 'specifying', 'implementing'], defaultExpanded: true },
+// Lifecycle-named lanes (SPEC-015). Order is render order (INV-2); the union of
+// statuses must cover every SpecStatus exactly once (INV-1) so no spec vanishes.
+// `new` folds into Specifying (pre-authoring). Active lanes expand, terminal
+// lanes collapse. Approval is orthogonal (DR-012) — shown via the row icon, not
+// a lane here.
+export const STATUS_GROUPS: StatusGroup[] = [
+  { label: 'Specifying', statuses: ['new', 'specifying'], defaultExpanded: true },
+  { label: 'Implementing', statuses: ['implementing'], defaultExpanded: true },
   { label: 'Done', statuses: ['done'], defaultExpanded: false },
   { label: 'Archived', statuses: ['archived'], defaultExpanded: false },
 ];

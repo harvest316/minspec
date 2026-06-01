@@ -30,9 +30,10 @@ vi.mock('vscode', () => ({
 }));
 
 import type { SpecSummary } from '../src/views/spec-tree-provider';
-import { SpecTreeProvider, SpecGroupNode, SpecNode, RollupNode, listSpecs } from '../src/views/spec-tree-provider';
+import { SpecTreeProvider, SpecGroupNode, SpecNode, RollupNode, listSpecs, STATUS_GROUPS } from '../src/views/spec-tree-provider';
 import { EpicGroupNode } from '../src/views/epic-grouping';
 import type { EpicSummary } from '../src/lib/epic-manager';
+import { SPEC_STATUSES } from '../src/lib/spec';
 import { approveSpec } from '../src/lib/approval';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -295,37 +296,40 @@ describe('SpecTreeProvider', () => {
   });
 
   describe('getChildren(undefined) — root level', () => {
-    it('returns a rollup node plus 3 group nodes', () => {
+    it('returns a rollup node plus 4 lifecycle group nodes (SPEC-015)', () => {
       const root = provider.getChildren(undefined);
       expect(root[0]).toBeInstanceOf(RollupNode);
-      expect(groupsOf(provider)).toHaveLength(3);
+      expect(groupsOf(provider)).toHaveLength(4);
     });
 
-    it('returns groups in order: Active, Done, Archived', () => {
+    it('returns groups in order: Specifying, Implementing, Done, Archived (SPEC-015)', () => {
       const groups = groupsOf(provider);
-      expect(groups[0].label).toBe('Active');
-      expect(groups[1].label).toBe('Done');
-      expect(groups[2].label).toBe('Archived');
+      expect(groups[0].label).toBe('Specifying');
+      expect(groups[1].label).toBe('Implementing');
+      expect(groups[2].label).toBe('Done');
+      expect(groups[3].label).toBe('Archived');
     });
 
-    it('Active group is expanded by default', () => {
+    it('Specifying and Implementing groups are expanded by default', () => {
       const groups = groupsOf(provider);
       // Expanded = 2
       expect(groups[0].collapsibleState).toBe(2);
+      expect(groups[1].collapsibleState).toBe(2);
     });
 
     it('Done and Archived groups are collapsed by default', () => {
       const groups = groupsOf(provider);
       // Collapsed = 1
-      expect(groups[1].collapsibleState).toBe(1);
       expect(groups[2].collapsibleState).toBe(1);
+      expect(groups[3].collapsibleState).toBe(1);
     });
 
     it('shows spec count in group description', () => {
       const groups = groupsOf(provider);
-      expect(groups[0].description).toBe('(3)'); // 3 active specs
-      expect(groups[1].description).toBe('(1)'); // 1 done spec
-      expect(groups[2].description).toBe('(1)'); // 1 archived spec
+      expect(groups[0].description).toBe('(2)'); // new + specifying
+      expect(groups[1].description).toBe('(1)'); // implementing
+      expect(groups[2].description).toBe('(1)'); // done
+      expect(groups[3].description).toBe('(1)'); // archived
     });
 
     it('shows (0) when group is empty', () => {
@@ -333,28 +337,31 @@ describe('SpecTreeProvider', () => {
       provider = new SpecTreeProvider('/fake/workspace', mockListSpecs);
 
       const groups = groupsOf(provider);
-      expect(groups[0].description).toBe('(0)');
-      expect(groups[1].description).toBe('(0)');
-      expect(groups[2].description).toBe('(0)');
+      expect(groups.map((g) => g.description)).toEqual(['(0)', '(0)', '(0)', '(0)']);
     });
   });
 
   describe('getChildren(groupNode) — spec list', () => {
-    it('returns specs belonging to the Active group', () => {
+    it('returns specs belonging to the Specifying group (new + specifying)', () => {
       const groups = groupsOf(provider);
-      const activeGroup = groups[0];
-      const specs = provider.getChildren(activeGroup) as SpecNode[];
+      const specs = provider.getChildren(groups[0]) as SpecNode[];
 
-      expect(specs).toHaveLength(3);
-      expect(specs[0].label).toBe('SPEC-001: Rate limiting');
-      expect(specs[1].label).toBe('SPEC-002: Auth flow');
-      expect(specs[2].label).toBe('SPEC-003: Dashboard');
+      expect(specs).toHaveLength(2);
+      expect(specs[0].label).toBe('SPEC-001: Rate limiting'); // new
+      expect(specs[1].label).toBe('SPEC-002: Auth flow');     // specifying
+    });
+
+    it('returns specs belonging to the Implementing group', () => {
+      const groups = groupsOf(provider);
+      const specs = provider.getChildren(groups[1]) as SpecNode[];
+
+      expect(specs).toHaveLength(1);
+      expect(specs[0].label).toBe('SPEC-003: Dashboard');
     });
 
     it('returns specs belonging to the Done group', () => {
       const groups = groupsOf(provider);
-      const doneGroup = groups[1];
-      const specs = provider.getChildren(doneGroup) as SpecNode[];
+      const specs = provider.getChildren(groups[2]) as SpecNode[];
 
       expect(specs).toHaveLength(1);
       expect(specs[0].label).toBe('SPEC-010: Login page');
@@ -362,8 +369,7 @@ describe('SpecTreeProvider', () => {
 
     it('returns specs belonging to the Archived group', () => {
       const groups = groupsOf(provider);
-      const archivedGroup = groups[2];
-      const specs = provider.getChildren(archivedGroup) as SpecNode[];
+      const specs = provider.getChildren(groups[3]) as SpecNode[];
 
       expect(specs).toHaveLength(1);
       expect(specs[0].label).toBe('SPEC-020: Old feature');
@@ -388,35 +394,38 @@ describe('SpecTreeProvider', () => {
 
     it('has description with tier, progress meter, percent and phase (DR-012)', () => {
       const groups = groupsOf(provider);
-      const specs = provider.getChildren(groups[0]) as SpecNode[];
-      expect(specs[0].description).toMatch(/^T1 \u00b7 [\u25b0\u25b1]+ \d+% \u00b7 specify$/);
-      expect(specs[1].description).toMatch(/^T3 \u00b7 [\u25b0\u25b1]+ \d+% \u00b7 clarify$/);
-      expect(specs[2].description).toMatch(/^T4 \u00b7 [\u25b0\u25b1]+ \d+% \u00b7 implement$/);
+      const specifying = provider.getChildren(groups[0]) as SpecNode[]; // new + specifying
+      const implementing = provider.getChildren(groups[1]) as SpecNode[];
+      expect(specifying[0].description).toMatch(/^T1 \u00b7 [\u25b0\u25b1]+ \d+% \u00b7 specify$/);
+      expect(specifying[1].description).toMatch(/^T3 \u00b7 [\u25b0\u25b1]+ \d+% \u00b7 clarify$/);
+      expect(implementing[0].description).toMatch(/^T4 \u00b7 [\u25b0\u25b1]+ \d+% \u00b7 implement$/);
     });
 
     it('shows "complete" when no current phase', () => {
       const groups = groupsOf(provider);
-      const doneSpecs = provider.getChildren(groups[1]) as SpecNode[];
+      const doneSpecs = provider.getChildren(groups[2]) as SpecNode[]; // Done lane
       expect(doneSpecs[0].description).toMatch(/^T2 \u00b7 [\u25b0\u25b1]+ \d+% \u00b7 complete$/);
     });
 
     it('has ThemeIcon based on status', () => {
       const groups = groupsOf(provider);
-      const specs = provider.getChildren(groups[0]) as SpecNode[];
+      const specifying = provider.getChildren(groups[0]) as SpecNode[];
 
       // new -> circle-outline
-      expect((specs[0].iconPath as { id: string }).id).toBe('circle-outline');
+      expect((specifying[0].iconPath as { id: string }).id).toBe('circle-outline');
       // specifying -> sync
-      expect((specs[1].iconPath as { id: string }).id).toBe('sync');
+      expect((specifying[1].iconPath as { id: string }).id).toBe('sync');
+
       // implementing -> sync
-      expect((specs[2].iconPath as { id: string }).id).toBe('sync');
+      const implementing = provider.getChildren(groups[1]) as SpecNode[];
+      expect((implementing[0].iconPath as { id: string }).id).toBe('sync');
 
       // done -> check
-      const doneSpecs = provider.getChildren(groups[1]) as SpecNode[];
+      const doneSpecs = provider.getChildren(groups[2]) as SpecNode[];
       expect((doneSpecs[0].iconPath as { id: string }).id).toBe('check');
 
       // archived -> archive
-      const archivedSpecs = provider.getChildren(groups[2]) as SpecNode[];
+      const archivedSpecs = provider.getChildren(groups[3]) as SpecNode[];
       expect((archivedSpecs[0].iconPath as { id: string }).id).toBe('archive');
     });
 
@@ -473,6 +482,39 @@ describe('SpecTreeProvider', () => {
   });
 });
 
+// --- Status lane invariants (SPEC-015) — T0 ---
+//
+// The status-fallback lanes must cover the SpecStatus enum exactly once, in a
+// fixed order, so no spec can vanish from the pane or be double-counted. INV-1
+// is asymmetric on purpose (DR-003): it asserts every status HAS a lane, so
+// adding a value to SPEC_STATUSES without assigning a lane fails loudly here.
+describe('STATUS_GROUPS invariants (SPEC-015)', () => {
+  it('INV-1: lanes cover every SpecStatus exactly once (total + disjoint)', () => {
+    const mapped = STATUS_GROUPS.flatMap((g) => g.statuses);
+    // total: every enum status appears in some lane
+    for (const status of SPEC_STATUSES) {
+      expect(mapped, `status "${status}" has no lane`).toContain(status);
+    }
+    // disjoint: no status appears in two lanes
+    expect(new Set(mapped).size).toBe(mapped.length);
+    // closed: no lane references a status outside the enum
+    for (const status of mapped) {
+      expect(SPEC_STATUSES as readonly string[]).toContain(status);
+    }
+    // exact: lane status count equals enum size (no gaps, no extras)
+    expect(mapped.length).toBe(SPEC_STATUSES.length);
+  });
+
+  it('INV-2: lanes render in fixed lifecycle order', () => {
+    expect(STATUS_GROUPS.map((g) => g.label)).toEqual([
+      'Specifying',
+      'Implementing',
+      'Done',
+      'Archived',
+    ]);
+  });
+});
+
 // --- Approval wiring (DR-012) — T3 regression ---
 //
 // Bug: extension.ts constructed `new SpecTreeProvider(workspaceRoot)` with NO
@@ -499,8 +541,10 @@ describe('SpecTreeProvider — approval wiring (regression)', () => {
     return p;
   }
 
+  // Lane-agnostic: collect spec nodes across all lanes (test specs are
+  // status:implementing, which lives in the Implementing lane post-SPEC-015).
   function activeNodes(provider: SpecTreeProvider): SpecNode[] {
-    return provider.getChildren(groupsOf(provider)[0]) as SpecNode[];
+    return groupsOf(provider).flatMap((g) => provider.getChildren(g) as SpecNode[]);
   }
 
   it('default-constructed provider reflects a real approval from approvals.json', () => {

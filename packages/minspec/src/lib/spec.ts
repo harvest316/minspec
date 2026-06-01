@@ -5,8 +5,16 @@ import { PHASES } from './config';
 /** Status of an individual phase */
 export type PhaseStatus = 'pending' | 'in-progress' | 'done' | 'skipped';
 
+/**
+ * Lifecycle statuses of a spec, in lifecycle order. Single source of truth:
+ * `SpecStatus` derives from this tuple, and consumers that must cover every
+ * status (e.g. the tree's status lanes, SPEC-015 INV-1) import it so adding a
+ * status here forces a decision everywhere it matters.
+ */
+export const SPEC_STATUSES = ['new', 'specifying', 'implementing', 'done', 'archived'] as const;
+
 /** Lifecycle status of the entire spec */
-export type SpecStatus = 'new' | 'specifying' | 'implementing' | 'done' | 'archived';
+export type SpecStatus = typeof SPEC_STATUSES[number];
 
 /** A single task item within a phase section */
 export interface TaskItem {
@@ -227,7 +235,7 @@ export function parseSpec(content: string): ParsedSpec {
 }
 
 const TIERS_SET = new Set(['T1', 'T2', 'T3', 'T4']);
-const STATUSES_SET = new Set(['new', 'specifying', 'implementing', 'done', 'archived']);
+const STATUSES_SET = new Set<string>(SPEC_STATUSES);
 
 // --- Writer ---
 
