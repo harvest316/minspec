@@ -152,9 +152,25 @@ for content-bearing artifacts (specs, ADRs).
 - **FR-7 (highlight the new/changed spans only).** When a revision lands (the agent edits
   the file on disk), the webview MUST highlight the **new/changed** passages in the
   rendered artifact — the bits the reviewer needs to **re-read**. Computed locally against
-  the pre-revision snapshot; no network. Removed/old text is **NOT** shown and this is
-  **NOT** a two-sided diff review — it is a re-read cue. Highlight clears once the artifact
-  is approved (or the panel re-opens fresh).
+  a per-round snapshot; no network. Removed/old text is **NOT** shown and this is **NOT** a
+  two-sided diff review — it is a re-read cue. Highlight clears once the artifact is
+  approved (or the panel re-opens fresh).
+- **FR-7a (per-revision colour — one colour per changeset).** Each revision **round** in
+  the review session gets a **distinct highlight colour** from a cycling palette: spans
+  changed by revision 1 in colour A (e.g. blue), revision 2 in colour B (e.g. green), and
+  so on. Colours **accumulate** across rounds within the session, so the reviewer can see
+  *which round* touched each passage and re-read just the latest (or trace the whole
+  sequence). Mechanism: the webview snapshots the file **per round** (before each "Revise
+  with AI") and diffs round N against round N−1 to assign that round's colour. The map is
+  session-scoped and cleared on approve (FR-7). Constraints:
+  - **Palette is a small fixed cycle** drawn from VS Code theme tokens (e.g.
+    `--vscode-editor-*Highlight` / `charts.*`), readable in light + dark themes; it
+    **cycles/wraps** past its length and the **oldest rounds de-emphasise** (fade) so a
+    long session does not become an unreadable rainbow.
+  - **Never colour-alone (a11y — WCAG 1.4.1).** Colour MUST be paired with a non-colour
+    signal — a per-span label/tooltip ("changed · rev 2") and/or an edge marker — so the
+    cue survives for colour-blind reviewers and high-contrast themes. Colour is the
+    fast-scan affordance, not the only one.
 - **FR-8 (revision applied directly — no accept/reject gate).** A revision is written
   straight to the artifact (a normal file edit). There is **no** per-hunk accept/reject
   step and no removed-text panel. If a revision is wrong, the reviewer re-comments /
@@ -219,10 +235,11 @@ for content-bearing artifacts (specs, ADRs).
 │                                                       ├──────────────────┤  │
 │  ## Decision                                          │ 💬 (resolved) ·…  │  │
 │                                                       └──────────────────┘  │
-│  Add a code-completeness gate that scans ▒only spec-traced files▒ for stub   │
-│  markers.                                                                    │
-│     ▒ shaded ▒ = changed by the last revision → re-read this.                │
-│     (old text not shown · not a diff · just a re-read cue)                   │
+│  Add a code-completeness gate that scans ▓only spec-traced files▓ for stub   │
+│  markers, ░skipping vendored paths░.                                         │
+│     ▓ rev 1 (blue) ▓   ░ rev 2 (green) ░  = changed in that round → re-read.  │
+│     colour per revision, accumulates · old text not shown · not a diff ·     │
+│     each span also tooltip-labelled "changed · rev N" (not colour-alone)     │
 │  ```ts                                                                       │
 │  interface StubFinding { file: string; marker: string; line: number }       │
 │  ```                                                                         │
@@ -269,6 +286,7 @@ decision-only node (epic-promote / issue-triage) collapses to a summary card:
 | Text select → comment | FR-3, FR-4 |
 | → LLM revision | FR-6, FR-6a |
 | → highlight new/changed bits to re-read (no diff, no removals) | FR-7, FR-8 |
+| → distinct highlight colour per revision changeset (rev1 blue, rev2 green, …) | FR-7a |
 | Scroll-bottom Approve that does NOT close | FR-11 |
 | Approve shows the next spec/dr/issue/doc | FR-11, FR-12 |
 | "whatever the next-human-task signpost points to" | FR-12 (consume SPEC-012) |
@@ -287,6 +305,7 @@ decision-only node (epic-promote / issue-triage) collapses to a summary card:
 | R5 | **Stale anchors.** A comment pin's anchor drifts after an edit and points at the wrong span. | Med · Med | Content-based re-anchor (FR-OQ1), not char-offset; on no acceptable match the thread is **orphaned** and surfaced as such (FR-5, GDocs behaviour) — never silently re-pointed at the wrong span. Matcher + confidence threshold pinned at plan. |
 | R6 | **Approve-chain fatigue → rubber-stamping.** A continuous walk encourages reflexive approval without reading (the DR-020 R1 risk, amplified by flow). | Med · Med | FR-2 surfaces violations + stale state up-front; FR-14 skip is frictionless so "not sure" need not become a click-through approve; validator still refuses incomplete specs (FR-10). |
 | R7 | **Phase-action category error.** Authoring work shown with an Approve button → two-queue leak. | Low · Med | FR-13 explicitly de-approves phase-action nodes; INV — Two queues + test. |
+| R8 | **Highlight overload / colour-only a11y.** Many revision rounds → rainbow noise; colour-blind / high-contrast reviewers miss colour-coded changes. | Med · Med | FR-7a: small cycling palette from theme tokens, oldest rounds fade; colour never the sole signal — paired "changed · rev N" label/tooltip + edge marker (WCAG 1.4.1). |
 
 ## Dependencies
 
