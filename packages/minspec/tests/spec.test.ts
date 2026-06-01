@@ -190,6 +190,14 @@ describe('writeSpec()', () => {
     expect(reparsed.phaseSections.tasks!.tasks).toEqual(parsed.phaseSections.tasks!.tasks);
   });
 
+  it('emits the approval-reminder comment above status, inertly', () => {
+    const written = writeSpec(parseSpec(EXAMPLE_SPEC));
+    // Comment is present, accurate, and sits directly above the status line.
+    expect(written).toMatch(/# Editing voids approval[^\n]*DR-012\nstatus: /);
+    // It is inert: status still parses correctly (parser skips full-line `#`).
+    expect(parseSpec(written).frontmatter.status).toBe('implementing');
+  });
+
   it('round-trips Spec Kit format preserving user sections', () => {
     const parsed = parseSpec(SPECKIT_MINIMAL);
     const written = writeSpec(parsed);

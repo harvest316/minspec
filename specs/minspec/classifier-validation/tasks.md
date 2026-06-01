@@ -1,6 +1,7 @@
 ---
 id: SPEC-004
 type: tasks
+# Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
 status: implementing
 product: minspec
 ---

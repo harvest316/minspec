@@ -2,6 +2,7 @@
 epic: EPIC-005  # Auto Structure Repair
 id: SPEC-005
 type: requirements
+# Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
 status: specifying
 product: minspec
 ---

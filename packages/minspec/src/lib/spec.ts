@@ -229,6 +229,10 @@ function serializeFrontmatter(fm: SpecFrontmatter): string {
   lines.push(`id: ${fm.id}`);
   lines.push(`title: ${fm.title}`);
   lines.push(`tier: ${fm.tier}`);
+  // Reminder: approval (DR-012) binds a sha256 of this whole file. Any edit
+  // voids it (→ stale); re-run "MinSpec: Approve Spec" to re-bind. The parser
+  // skips full-line `#` comments (see parseFrontmatterYaml), so this is inert.
+  lines.push('# Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012');
   lines.push(`status: ${fm.status}`);
   lines.push(`created: ${fm.created}`);
   if (fm.epic) lines.push(`epic: ${fm.epic}`);

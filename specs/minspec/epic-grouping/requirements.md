@@ -1,6 +1,7 @@
 ---
 id: SPEC-007
 type: requirements
+# Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
 status: done
 product: minspec
 epic: EPIC-001  # Explorer Epic Grouping

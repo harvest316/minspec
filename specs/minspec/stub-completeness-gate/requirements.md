@@ -2,6 +2,7 @@
 epic: EPIC-002  # Signpost Integrity
 id: SPEC-006
 type: requirements
+# Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
 status: specifying
 product: minspec
 ---
