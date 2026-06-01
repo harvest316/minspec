@@ -76,4 +76,12 @@ All architectural decisions land in [docs/decisions/](docs/decisions/INDEX.md) a
 
 ## License
 
-MIT. Publisher: `aiclarity`.
+Multi-licensed — see [`LICENSE`](LICENSE) and [DR-018](docs/decisions/DR-018.md). Each package's `LICENSE` file is authoritative.
+
+| Path | License |
+|---|---|
+| `packages/shared` (classifier engine + contracts) | **MPL-2.0** |
+| `packages/minspec`, `packages/scroogellm`, `packages/extension-pack` | **MIT** |
+| docs / site copy / whitepaper ([`LICENSE-CONTENT`](LICENSE-CONTENT)) | **CC-BY-4.0** |
+
+Publisher: `aiclarity`.

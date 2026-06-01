@@ -261,4 +261,4 @@ MinSpec collects **zero data**. No telemetry, no analytics, no accounts, no back
 
 ## License
 
-MIT
+MIT. The bundled `@aiclarity/shared` classification engine is licensed MPL-2.0 (file-level copyleft); distributing it inside this MIT extension is permitted, and modifications to its source files stay open. See the repository `LICENSE` and DR-018.
