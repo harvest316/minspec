@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import {
   createAdr,
   findSimilarAdrs,
   regenerateDrIndex,
   setAdrStatus,
+  listAdrs,
   ADR_STATUS_VALUES,
   type AdrStatus,
 } from '../lib/adr-manager';
@@ -103,16 +105,44 @@ const STATUS_LABELS: Record<AdrStatus, string> = {
   superseded: '$(arrow-swap) Superseded',
 };
 
-/** Resolve the ADR file path + current status from a tree node argument. */
-function resolveAdrFromNode(
+/**
+ * Resolve the target ADR for a status command.
+ *
+ * Tree-view invocations (inline ✓ / right-click) pass an `AdrNode` carrying the
+ * decision. Command-palette invocations pass nothing — so fall back to the ADR
+ * file open in the active editor, matched against the known decisions by path.
+ * Returns undefined (after surfacing an error) when neither yields a decision.
+ */
+function resolveAdr(
   node: AdrNode | undefined,
 ): { filePath: string; status: AdrStatus; id: string } | undefined {
-  const adr = node?.adr;
-  if (!adr?.filePath) {
-    vscode.window.showErrorMessage('MinSpec: No decision selected.');
-    return undefined;
+  // 1. Tree node — carries its own state, no filesystem read needed.
+  const fromNode = node?.adr;
+  if (fromNode?.filePath) {
+    return { filePath: fromNode.filePath, status: fromNode.status, id: fromNode.id };
   }
-  return { filePath: adr.filePath, status: adr.status, id: adr.id };
+
+  // 2. Command palette — fall back to the ADR open in the active editor.
+  const activePath = vscode.window.activeTextEditor?.document.uri.fsPath;
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (activePath && folder) {
+    const decisionsDir = vscode.workspace
+      .getConfiguration('minspec')
+      .get<string>('decisionsDir');
+    const overrides = decisionsDir ? { decisionsDir } : undefined;
+    const target = path.resolve(activePath);
+    const match = listAdrs(folder, overrides).find(
+      a => path.resolve(a.filePath) === target,
+    );
+    if (match) {
+      return { filePath: match.filePath, status: match.status, id: match.id };
+    }
+  }
+
+  vscode.window.showErrorMessage(
+    'MinSpec: No decision selected. Open a decision file or pick one in the Decisions view.',
+  );
+  return undefined;
 }
 
 /** Write the new status, regenerate the index, surface result. */
@@ -149,7 +179,7 @@ async function applyStatus(
  * `accepted` in one click. No-op confirmation if already accepted.
  */
 export async function acceptAdrCommand(node?: AdrNode): Promise<void> {
-  const resolved = resolveAdrFromNode(node);
+  const resolved = resolveAdr(node);
   if (!resolved) return;
   if (resolved.status === 'accepted') {
     vscode.window.showInformationMessage(`MinSpec: ${resolved.id} already accepted.`);
@@ -163,7 +193,7 @@ export async function acceptAdrCommand(node?: AdrNode): Promise<void> {
  * Right-click → Set Status. Current status marked.
  */
 export async function setAdrStatusCommand(node?: AdrNode): Promise<void> {
-  const resolved = resolveAdrFromNode(node);
+  const resolved = resolveAdr(node);
   if (!resolved) return;
 
   const items: (vscode.QuickPickItem & { value: AdrStatus })[] =

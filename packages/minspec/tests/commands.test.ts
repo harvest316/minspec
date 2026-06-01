@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Mock vscode ───────────────────────────────────────────────────────────
 
@@ -53,6 +53,10 @@ vi.mock('../src/lib/scaffold', () => ({
 vi.mock('../src/lib/adr-manager', () => ({
   createAdr: vi.fn(),
   findSimilarAdrs: vi.fn(() => []),
+  listAdrs: vi.fn(() => []),
+  setAdrStatus: vi.fn(),
+  regenerateDrIndex: vi.fn(),
+  ADR_STATUS_VALUES: ['proposed', 'accepted', 'deprecated', 'superseded'],
 }));
 
 vi.mock('../src/lib/active-spec', () => ({
@@ -126,13 +130,23 @@ import * as vscode from 'vscode';
 import { classifyCommand } from '../src/commands/classify';
 import { statusCommand } from '../src/commands/status';
 import { initCommand, initRefreshCommand } from '../src/commands/init';
-import { createAdrCommand, promptAdrOnT4Classification } from '../src/commands/adr';
+import {
+  createAdrCommand,
+  promptAdrOnT4Classification,
+  acceptAdrCommand,
+  setAdrStatusCommand,
+} from '../src/commands/adr';
 import { generateExampleCommand } from '../src/commands/example';
 import { declareScopeCommand, ensureSession } from '../src/commands/session';
 import { parkCommand } from '../src/commands/park';
 import { scoreWsjfCommand, triageIssueCommand } from '../src/commands/backlog';
 import { scaffold, generateHarnessFiles, refreshHarnessFiles } from '../src/lib/scaffold';
-import { createAdr, findSimilarAdrs } from '../src/lib/adr-manager';
+import {
+  createAdr,
+  findSimilarAdrs,
+  listAdrs,
+  setAdrStatus,
+} from '../src/lib/adr-manager';
 import { findActiveSpec, summarizeActiveSpec } from '../src/lib/active-spec';
 import { loadSession, saveSession, clearSession } from '../src/lib/session';
 import { parkTopic } from '../src/lib/parking-lot';
@@ -495,6 +509,127 @@ describe('commands', () => {
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
         'MinSpec: Failed to create ADR — string error',
       );
+    });
+  });
+
+  // ─── acceptAdrCommand / setAdrStatusCommand ───────────────────────────────
+
+  describe('acceptAdrCommand()', () => {
+    const DR8 = '/tmp/test-workspace/docs/decisions/DR-008.md';
+
+    /** Point the active editor at a given file (command-palette context). */
+    function setActiveEditor(fsPath: string | undefined): void {
+      (vscode.window as { activeTextEditor: unknown }).activeTextEditor =
+        fsPath === undefined
+          ? undefined
+          : { document: { uri: { fsPath } } };
+    }
+
+    afterEach(() => setActiveEditor(undefined));
+
+    // T3 regression: invoking "Accept Decision" from the command palette (no
+    // tree node) with a DR file open used to fail with "No decision selected"
+    // because the command only read its target from an AdrNode argument. It
+    // must now fall back to the ADR open in the active editor.
+    it('palette invocation (no node) resolves the ADR from the active editor', async () => {
+      setActiveEditor(DR8);
+      vi.mocked(listAdrs).mockReturnValueOnce([
+        {
+          id: 'DR-008',
+          title: 'Dispatch security',
+          status: 'proposed',
+          date: '2026-05-20',
+          filePath: DR8,
+        },
+      ]);
+
+      await acceptAdrCommand(undefined);
+
+      expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
+      expect(setAdrStatus).toHaveBeenCalledWith(DR8, 'accepted');
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        'MinSpec: DR-008 → accepted',
+      );
+    });
+
+    it('errors when no node and no ADR file is open', async () => {
+      setActiveEditor(undefined);
+      await acceptAdrCommand(undefined);
+      expect(setAdrStatus).not.toHaveBeenCalled();
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining('No decision selected'),
+      );
+    });
+
+    it('errors when the active file is not a known ADR', async () => {
+      setActiveEditor('/tmp/test-workspace/README.md');
+      vi.mocked(listAdrs).mockReturnValueOnce([
+        {
+          id: 'DR-008',
+          title: 'Dispatch security',
+          status: 'proposed',
+          date: '2026-05-20',
+          filePath: DR8,
+        },
+      ]);
+      await acceptAdrCommand(undefined);
+      expect(setAdrStatus).not.toHaveBeenCalled();
+      expect(vscode.window.showErrorMessage).toHaveBeenCalled();
+    });
+
+    it('still works from a tree node argument', async () => {
+      const node = {
+        adr: {
+          id: 'DR-008',
+          title: 'Dispatch security',
+          status: 'proposed' as const,
+          date: '2026-05-20',
+          filePath: DR8,
+        },
+      };
+      await acceptAdrCommand(node as never);
+      expect(setAdrStatus).toHaveBeenCalledWith(DR8, 'accepted');
+      // Tree node carries its own state — no editor fallback needed.
+      expect(listAdrs).not.toHaveBeenCalled();
+    });
+
+    it('no-ops with a message when the ADR is already accepted', async () => {
+      setActiveEditor(DR8);
+      vi.mocked(listAdrs).mockReturnValueOnce([
+        {
+          id: 'DR-008',
+          title: 'Dispatch security',
+          status: 'accepted',
+          date: '2026-05-20',
+          filePath: DR8,
+        },
+      ]);
+      await acceptAdrCommand(undefined);
+      expect(setAdrStatus).not.toHaveBeenCalled();
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        'MinSpec: DR-008 already accepted.',
+      );
+    });
+
+    it('setAdrStatusCommand also falls back to the active editor', async () => {
+      setActiveEditor(DR8);
+      vi.mocked(listAdrs).mockReturnValueOnce([
+        {
+          id: 'DR-008',
+          title: 'Dispatch security',
+          status: 'proposed',
+          date: '2026-05-20',
+          filePath: DR8,
+        },
+      ]);
+      vi.mocked(vscode.window.showQuickPick).mockResolvedValueOnce({
+        value: 'deprecated',
+      } as never);
+
+      await setAdrStatusCommand(undefined);
+
+      expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
+      expect(setAdrStatus).toHaveBeenCalledWith(DR8, 'deprecated');
     });
   });
 
