@@ -237,4 +237,44 @@ The design content lives here; phase sections live in sibling files.
     const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
     expect(r.violations.some((v) => v.rule === 'section.plan.empty' && v.severity === 'error')).toBe(true);
   });
+
+  // Aspect artifacts (mockup/schema/diagram) are design-phase deliverables: a
+  // tasks/requirements file that references a UX/API surface must not be flagged
+  // for a missing artifact that lives in the sibling design file. (#93 class.)
+  const splitTasksWithAspects = `---
+id: SPEC-003
+type: tasks
+tier: T3
+status: implementing
+product: minspec
+aspects: [ux, api, data, architecture]
+---
+
+# Task Breakdown
+- [ ] build the dashboard, wire the endpoint, migrate the table
+`;
+
+  it('split-layout tasks file does not flag missing design artifacts', () => {
+    const r = validateSpec(parseSpec(splitTasksWithAspects), DEFAULT_CONFIG);
+    expect(r.violations.filter((v) => /^aspect\./.test(v.rule))).toHaveLength(0);
+    expect(r.complete).toBe(true);
+  });
+
+  it('split-layout design file STILL enforces aspect artifacts', () => {
+    const splitDesignUx = `---
+id: SPEC-002
+type: design
+tier: T3
+status: implementing
+product: minspec
+aspects: [ux]
+---
+
+# Design
+## Architecture
+no mockup here.
+`;
+    const r = validateSpec(parseSpec(splitDesignUx), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup')).toBe(true);
+  });
 });

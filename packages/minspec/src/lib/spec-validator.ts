@@ -254,13 +254,19 @@ export function validateSpec(
     });
   }
 
-  // 3. Aspect-conditional artifacts.
+  // 3. Aspect-conditional artifacts. Mockups / schemas / diagrams are
+  //    DESIGN-phase deliverables, so in split-layout they live in the `design`
+  //    file: a requirements/tasks file that merely references a UX/API/data
+  //    surface must not be flagged for a missing artifact that belongs to its
+  //    sibling design file (#93 class). Detection is still reported; only the
+  //    artifact-requirement violations are gated to design + single-file.
   const declaredAspects = parseDeclaredAspects(raw);
   const detectedAspects = detectAspects(rawLower);
   const effectiveAspects = ASPECTS.filter(
     (a) => declaredAspects.includes(a) || detectedAspects.includes(a),
   );
-  const sev = aspectSeverity(tier);
+  const aspectArtifactFile = !isSplitLayout || specType === 'design';
+  const sev = aspectArtifactFile ? aspectSeverity(tier) : null;
   if (sev) {
     for (const ar of ASPECT_RULES) {
       if (!effectiveAspects.includes(ar.aspect)) continue;
