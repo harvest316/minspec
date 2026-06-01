@@ -21,8 +21,7 @@ MinSpec fixes this. It classifies each change by complexity and applies proporti
 
 MinSpec is mostly **SDD** (Spec-Driven Development, ~70%) with a thin **CDD** layer (Contract-Driven Development, ~15%) and a few borrowed best practices: ADR, WSJF, GTD-style session discipline. Bug fixes follow **RCDD** (Root-Cause-Driven Debugging) — a separate lifecycle, because bug-fix work doesn't fit a feature-shaped process.
 
-![MinSpec methodology stack — SDD spine with CDD layer and satellite practices](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/methodology-stack.png)
-
+[![MinSpec methodology stack — SDD spine with CDD layer and satellite practices](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/methodology-stack.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/methodology-stack.png)
 Full explanation, attribution to source methodologies, and FAQ at [**minspec.dev/#methodology**](https://minspec.dev/#methodology).
 
 ## What MinSpec Does on Your Network
@@ -44,8 +43,7 @@ These run under your own GitHub authentication and only when you trigger them. I
 3. MinSpec auto-detects your project state and offers setup actions as toasts -- accept "Initialize", "Refresh", or "Classify" when prompted.
 4. Write your spec -- MinSpec tells you how much (or how little) you need.
 
-![MinSpec Sidebar](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/sidebar.png)
-
+[![MinSpec Sidebar](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/sidebar.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/sidebar.png)
 ### What Initialization Produces — Files & AI Tool Integration
 
 When you accept the "Initialize" toast, MinSpec scaffolds the SDD structure for your project. The same files double as integration points: any AI coding tool that already reads these conventions (Claude Code, Cursor, Cline, Aider, Windsurf, Copilot) automatically picks up your active spec context, because MinSpec injects it into the file the tool already loads.
@@ -80,44 +78,36 @@ Accepting the "Refresh" toast later merges template updates with your edits via 
 
 MinSpec analyzes your git diff and classifies each change into one of four tiers. The classifier examines file count, line count, new exports, schema changes, dependency additions, and more -- then recommends the right level of specification ceremony.
 
-![Complexity Classification](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/classification.png)
-
+[![Complexity Classification](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/classification.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/classification.png)
 ### Adaptive Phase Lifecycle
 
 Each spec moves through a lifecycle of phases: **Specify, Clarify, Plan, Tasks, Implement**. MinSpec skips phases that do not add value for the current tier. A T1 trivial change jumps straight from a one-liner spec to implementation. A T3 complex change goes through the full pipeline.
 
-![Phase Lifecycle](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/phase-lifecycle.png)
-
+[![Phase Lifecycle](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/phase-lifecycle.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/phase-lifecycle.png)
 Solid arrows are the full T3/T4 path. Dashed arrows show how T1 collapses Specify directly to a single auto-generated Tasks step, and how T2 makes Clarify optional and reduces Plan to a single sentence.
 
-![Phase Stepper](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-stepper.png)
-
+[![Phase Stepper](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-stepper.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-stepper.png)
 ### Sidebar Tree View
 
 All specs in your project appear in the Explorer sidebar, grouped by status (active, done, archived) with tier badges (T1-T4). Click any spec to open it. Right-click for actions like reclassification and phase transitions.
 
-![Sidebar Tree View](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/sidebar.png)
-
+[![Sidebar Tree View](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/sidebar.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/sidebar.png)
 ### Active Spec Panel
 
 A webview panel displays the current spec as a vertical stepper. Completed phases collapse. The active phase expands with its content. Tasks appear as an interactive checklist you can toggle directly.
 
-![Phase Stepper](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-stepper.png)
-
-![Task Checklist](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-tasks.png)
-
+[![Phase Stepper](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-stepper.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-stepper.png)
+[![Task Checklist](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-tasks.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/spec-panel-tasks.png)
 ### CodeLens Traceability
 
 Inline CodeLens annotations appear above functions and classes, showing which spec requirement each piece of code implements. Click a CodeLens annotation to jump to the spec. Click a spec requirement to jump to the code. Create mappings manually or let MinSpec suggest them from task file paths.
 
-![CodeLens Annotations](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/codelens.png)
-
+[![CodeLens Annotations](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/codelens.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/codelens.png)
 ### Architecture Decision Records
 
 MinSpec manages Architecture Decision Records (ADRs) in `docs/decisions/DR-NNN.md`. When you classify a change as T4 (Architectural), MinSpec prompts you to create an ADR. The sidebar shows all decisions in a dedicated tree view.
 
-![ADR Tree View](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/adr-tree.png)
-
+[![ADR Tree View](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/adr-tree.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/adr-tree.png)
 ### Session Discipline
 
 Declare your session scope before starting work. MinSpec monitors file saves and warns you when you drift outside scope. Drifted work can be parked as a GitHub Issue (via `gh` CLI) or saved to a local parking lot file for later triage.
@@ -130,8 +120,7 @@ This is a MinSpec-specific discipline -- inspired by SDD and SAFe but not litera
 
 The status bar shows the active spec's tier, current phase, and task progress at a glance. Click it to open the active spec panel.
 
-![Status Bar](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/status-bar.png)
-
+[![Status Bar](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/status-bar.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/status-bar.png)
 ## Tier System
 
 MinSpec classifies every change into one of four complexity tiers:
