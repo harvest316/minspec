@@ -6,6 +6,11 @@ tier: T2
 product: minspec
 epic: EPIC-003  # SDD Core Methodology
 depends_on: [DR-012]
+phases:
+  specify: done
+  plan: done
+  tasks: pending
+  implement: pending
 ---
 
 # Status Lanes — lifecycle-named SPECS groups
@@ -54,8 +59,8 @@ Triggered by: #105
 
 - **FR-3 (default expansion).** Lanes representing active work expand by default;
   terminal lanes collapse: **Specifying** and **Implementing** expanded; **Done**
-  and **Archived** collapsed. (Matches today's "active expanded, rest collapsed"
-  behaviour.)
+  and **Archived** collapsed. (Matches today's "active expanded, terminal lanes
+  collapsed" behaviour.)
 
 - **FR-4 (empty lanes still shown).** A lane with zero specs still renders with
   its `(0)` count — no lane is hidden. (Preserves current behaviour; keeps the
