@@ -235,7 +235,7 @@ Mappings are semi-automated: classifier suggests based on file paths in task lis
 ### Status Bar
 
 ```
-$(shield) MinSpec: T2 | Specify → Plan → Tasks | 2/5 done
+$(shield) MinSpec: T2 | Specify → Plan → Tasks | 2/5
 ```
 
 Click opens the active spec panel (the review webview, below).
