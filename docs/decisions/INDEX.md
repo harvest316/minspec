@@ -43,7 +43,7 @@ Users were reporting confusion because MinSpec required them to manually run thr
 
 *Status: accepted · Date: 2026-05-28*
 
-Tombstone — content relocated to the private `harvest316/scroogellm` repo per DR-027 (ScroogeLLM is not public). Stub preserves the register slot so `DR-007` references resolve.
+_No summary available._
 
 ## [DR-008 — Unattended agent dispatch gated on no-credential execution isolation](DR-008.md)
 
@@ -61,7 +61,7 @@ The tier classifier (classifier.ts) and its analyzers (git-analyzer.ts, ast-anal
 
 *Status: accepted · Date: 2026-05-30*
 
-Tombstone — content relocated to the private `harvest316/scroogellm` repo per DR-027. Stub kept so `DR-010` references (DR-013, DR-015, EPIC-006) resolve.
+_No summary available._
 
 ## [DR-011 — Marker-bounded auto-update of MinSpec-managed harness sections (no permission prompt)](DR-011.md)
 
