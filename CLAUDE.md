@@ -83,7 +83,7 @@ Type: bug / feat / explore / plan
 
 MinSpec is at **Implement** phase. Work from `specs/minspec/tasks.md`.
 
-ScroogeLLM was split into its own **private** repo (`harvest316/scroogellm`, `~/code/scroogellm`) per DR-027 and is in **Specify** there (SPEC-100/101/102). Do ScroogeLLM work in that repo, not here. Public proxy implementation tracked at harvest316/minspec#119. Note: this repo shares a DR namespace with scroogellm (DR-007/010 live there with their original numbers) — do not assume scroogellm's DR numbers restart at 001.
+ScroogeLLM was split into its own **private** repo (`harvest316/scroogellm`, `~/code/scroogellm`) per DR-027 and is in **Specify** there (SPEC-100/101/102). Do ScroogeLLM work in that repo, not here. Public proxy implementation tracked at harvest316/minspec#119. Note: scroogellm keeps its OWN local DR register (independent of this repo's); DR-007/010 were imported there with their original numbers.
 
 ## Traceability Convention
 
