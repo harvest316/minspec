@@ -785,10 +785,11 @@
       height: auto;
     }
 
-    .arch-tall { display: none; }
+    /* Toggles must out-specify `.arch-diagram svg` (0-1-1) above, else display:block wins. */
+    .arch-diagram svg.arch-tall { display: none; }
     @media (max-width: 640px) {
-      .arch-wide { display: none; }
-      .arch-tall { display: block; max-width: 360px; }
+      .arch-diagram svg.arch-wide { display: none; }
+      .arch-diagram svg.arch-tall { display: block; max-width: 360px; }
     }
 
     /* ── Privacy section ─────────────────────────────── */
