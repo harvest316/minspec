@@ -2,17 +2,18 @@
 id: SPEC-004
 type: requirements
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
-status: specifying
+status: implementing  # harness built + run (n=120, κ=0.80); findings in tasks.md drove DR-021/022/024
 product: minspec
 epic: EPIC-004  # Classifier Validation
 ---
 
 # MinSpec — Classifier Validation Harness (Requirements)
 
-**Date:** 2026-05-29
-**Status:** Specifying (SDD Specify phase)
+**Date:** 2026-05-29 · updated 2026-06-01
+**Status:** Implementing — harness built + run; findings recorded in [tasks.md](tasks.md#findings).
 **Triggered by:** session request — validate classifier on real-world issue→PR data
-**Related:** [classifier.ts](../../../packages/minspec/src/lib/classifier.ts), DR-009
+**Related:** [classifier.ts](../../../packages/minspec/src/lib/classifier.ts), [DR-009](../../../docs/decisions/DR-009.md)
+**Outcome:** [DR-021](../../../docs/decisions/DR-021.md) (reframe to scope + upward-only ratchet) · [DR-024](../../../docs/decisions/DR-024.md) (tier → derived label, reach axis gated)
 
 ---
 
@@ -25,6 +26,16 @@ We have no evidence it predicts sensible tiers on **real** code changes. Without
 real-diff validation we cannot calibrate thresholds (file-count / line-count /
 file-type tiers in [git-analyzer.ts](../../../packages/minspec/src/lib/git-analyzer.ts))
 with confidence.
+
+> **Outcome (resolved 2026-06-01).** The harness ran (n=120, 11 repos; size-blind
+> consensus labels, Fleiss κ=0.80). It found the classifier measures **mechanical
+> scope, not cognitive difficulty** — exact 34.2% / adjacent 86.7%, never over-tiers
+> (predicted tier is a 100%-precise lower bound) but systematically under-tiers subtle
+> small fixes. **Tuning thresholds cannot fix this** — size-identical diffs differ in
+> difficulty, so the "calibrate thresholds" framing above is *measured and rejected*.
+> Remediation moved to [DR-021](../../../docs/decisions/DR-021.md) (reframe to scope +
+> upward-only ratchet) and [DR-022](../../../docs/decisions/DR-022.md)/[DR-024](../../../docs/decisions/DR-024.md)
+> (reach axis; tier → derived label). Full analysis: [tasks.md](tasks.md#findings).
 
 ## Goal
 
@@ -41,10 +52,15 @@ gold patch and problem statement).
 - **FR-1 — Fetch (out-of-tree).** A standalone download script fetches a curated
   subset of SWE-bench-Verified into a **gitignored** directory. Nothing fetched is
   committed. The script is the only component permitted to touch the network.
-- **FR-2 — Fixture shape.** Each instance is normalised to
-  `{ instanceId, patch, problemStatement, expectedTier }`. `expectedTier` is
-  hand-labelled (T1–T4), stored in a committed labels file keyed by `instanceId`
-  (the *labels* are committed; the *patches* are not).
+- **FR-2 — Fixture shape + labelling protocol.** Each instance is normalised to
+  `{ instanceId, patch, problemStatement, expectedTier }`. `expectedTier` (T1–T4) is a
+  **size-blind consensus label**: majority vote of 3 independent blind LLM raters
+  judging the *problem statement only* (no diff, no line counts) + 1 human on the
+  overlap, with **Fleiss κ reported** (achieved κ=0.80, 22/120 split votes recorded).
+  Labels are committed keyed by `instanceId`
+  ([labels.json](../../../scripts/classifier-validation/labels.json)); patches are not.
+  Size-blind labelling is load-bearing: labelling from the diff makes the test circular
+  against a size-based classifier (Run A scored 95.8% by construction — see tasks.md).
 - **FR-3 — Real path reuse.** For each instance the harness applies `patch` to a
   temporary git repo, stages it, and calls the real `analyzeGitDiff()` →
   `classify()`. No reimplementation of analyzer logic in the harness.
@@ -59,8 +75,12 @@ gold patch and problem statement).
 
 - **NFR-1 — Determinism.** Same fixtures + same labels → same report. No network at
   run time (only the separate fetch script hits the network).
-- **NFR-2 — Proportional ceremony.** Subset ~50 instances, not all 500. Enough for
-  a meaningful accuracy signal, cheap to label and run.
+- **NFR-2 — Proportional ceremony.** Subset ~50–120 instances, not all 500 (run: 120
+  across 11 repos). Enough for a meaningful accuracy signal, cheap to label and run.
+  **Known corpus gap:** SWE-bench-Verified is single-PR bug fixes → **zero true-T4**
+  (architectural) instances; the T4 row/column is unexercised and the T3 boundary is
+  sparse (only 4 predicted ≥T3). Conclusions are firm for T1–T2; T3+ need a different
+  corpus.
 
 ## Invariants Preserved
 
