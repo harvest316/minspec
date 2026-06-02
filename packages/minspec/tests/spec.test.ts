@@ -80,6 +80,56 @@ describe('parseSpec()', () => {
     expect(tasks[1].text).toBe('Add 429 response test');
   });
 
+  // T3 regression: a YAML inline comment on a scalar value was baked into the
+  // value (parser never stripped ' #…'). For `status` that failed the SpecStatus
+  // enum check and silently coerced to 'new' — a false status in the pane.
+  // (SPEC-004: `status: implementing  # harness built…` showed as 'new'.)
+  it('strips YAML inline comments from scalar values', () => {
+    const spec = parseSpec(`---
+id: SPEC-004
+title: Classifier validation
+tier: T2
+status: implementing  # harness built + run (n=120, κ=0.80); drove DR-021/022
+epic: EPIC-003  # SDD Core Methodology
+created: 2026-05-31
+---
+
+# Classifier validation
+`);
+    expect(spec.frontmatter.status).toBe('implementing'); // not 'new'
+    // epic keeps its raw form by design (carries a human title comment; consumers
+    // strip via epicRefValue). Only closed-enum fields strip at parse time.
+    expect(spec.frontmatter.epic).toBe('EPIC-003  # SDD Core Methodology');
+  });
+
+  it('strips inline comments from nested (phase) values', () => {
+    const spec = parseSpec(`---
+id: SPEC-004
+title: X
+tier: T2
+status: implementing
+phases:
+  specify: done   # finished 2026-05-31
+  implement: in-progress  # WIP
+---
+`);
+    expect(spec.frontmatter.phases.specify).toBe('done');
+    expect(spec.frontmatter.phases.implement).toBe('in-progress');
+  });
+
+  it('does not treat a # without leading whitespace as a comment', () => {
+    // YAML rule: '#' starts a comment only when preceded by whitespace. A '#'
+    // glued to preceding text is part of the value.
+    const spec = parseSpec(`---
+id: SPEC-004
+title: Issue#42 hotfix
+tier: T2
+status: done
+---
+`);
+    expect(spec.frontmatter.title).toBe('Issue#42 hotfix');
+  });
+
   it('handles minimal Spec Kit format (no MinSpec extensions)', () => {
     const spec = parseSpec(SPECKIT_MINIMAL);
     expect(spec.frontmatter.id).toBe('SPEC-042');

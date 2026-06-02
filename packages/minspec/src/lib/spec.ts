@@ -86,6 +86,32 @@ function firstH1Heading(body: string): string {
 }
 
 /** Parse YAML frontmatter — lightweight, no dependency */
+/**
+ * Strip a YAML inline comment from a scalar value. A `#` begins a comment only
+ * when preceded by whitespace (YAML spec); a `#` glued to preceding text is part
+ * of the value. Quoted scalars are returned verbatim (their `#` is literal).
+ *
+ * Without this, `status: implementing  # note` parsed as the whole string, which
+ * failed the SpecStatus enum check and silently became 'new' — a false status.
+ */
+function stripInlineComment(value: string): string {
+  const v = value.trim();
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    return v;
+  }
+  const m = v.match(/\s#/);
+  return m && m.index !== undefined ? v.slice(0, m.index).trim() : v;
+}
+
+const PHASE_STATUSES = ['pending', 'in-progress', 'done', 'skipped'] as const;
+
+/** Strip any inline comment, then validate against PhaseStatus (default pending). */
+function phaseStatusOf(raw: unknown): PhaseStatus {
+  if (typeof raw !== 'string') return 'pending';
+  const v = stripInlineComment(raw);
+  return (PHASE_STATUSES as readonly string[]).includes(v) ? (v as PhaseStatus) : 'pending';
+}
+
 function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   let currentKey: string | null = null;
@@ -150,7 +176,7 @@ function parseTasks(body: string): TaskItem[] {
 /** Determine phase status from frontmatter phases map, falling back to body content */
 function resolvePhaseStatus(phase: Phase, fmPhases: Record<string, string> | undefined, body: string): PhaseStatus {
   if (fmPhases && fmPhases[phase]) {
-    const raw = fmPhases[phase];
+    const raw = stripInlineComment(fmPhases[phase]);
     if (['pending', 'in-progress', 'done', 'skipped'].includes(raw)) {
       return raw as PhaseStatus;
     }
@@ -184,18 +210,22 @@ export function parseSpec(content: string): ParsedSpec {
     // Title comes from frontmatter when present; otherwise fall back to the
     // first level-1 `# ` heading in the body (the human title for spec files).
     title: (fmParsed.title as string) ?? firstH1Heading(bodyAfterFm),
-    tier: (TIERS_SET.has(fmParsed.tier as string) ? fmParsed.tier : 'T2') as Tier,
-    status: (STATUSES_SET.has(fmParsed.status as string) ? fmParsed.status : 'new') as SpecStatus,
+    // Closed-enum fields strip inline comments before the membership check, so a
+    // commented value (e.g. `status: implementing  # note`) isn't silently
+    // coerced to the default. epic/title keep their raw form (epic carries its
+    // human title in a `#` comment by design — see updateSpecFrontmatter).
+    tier: (() => { const t = stripInlineComment(String(fmParsed.tier ?? '')); return (TIERS_SET.has(t) ? t : 'T2') as Tier; })(),
+    status: (() => { const s = stripInlineComment(String(fmParsed.status ?? '')); return (STATUSES_SET.has(s) ? s : 'new') as SpecStatus; })(),
     created: (fmParsed.created as string) ?? new Date().toISOString().slice(0, 10),
     epic: (fmParsed.epic as string) || undefined,
     product: (fmParsed.product as string) || undefined,
     type: (fmParsed.type as string) || undefined,
     phases: {
-      specify: (fmPhases.specify as PhaseStatus) ?? 'pending',
-      clarify: (fmPhases.clarify as PhaseStatus) ?? 'pending',
-      plan: (fmPhases.plan as PhaseStatus) ?? 'pending',
-      tasks: (fmPhases.tasks as PhaseStatus) ?? 'pending',
-      implement: (fmPhases.implement as PhaseStatus) ?? 'pending',
+      specify: phaseStatusOf(fmPhases.specify),
+      clarify: phaseStatusOf(fmPhases.clarify),
+      plan: phaseStatusOf(fmPhases.plan),
+      tasks: phaseStatusOf(fmPhases.tasks),
+      implement: phaseStatusOf(fmPhases.implement),
     },
   };
 
