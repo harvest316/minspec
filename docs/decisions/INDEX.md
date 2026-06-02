@@ -171,7 +171,7 @@ The harvest316/minspec monorepo is **public**. It was framed as a two-extension 
 
 Required *cross-cutting* sections — **Risks & Mitigations**, **Consequences** — summarise the **whole** artifact. A presence check (SPEC-013 FR-1) can verify a section *exists*; it cannot verify the section still *reflects the current spec*. The failure mode (raised in the SPEC-013 review session): a Risks section is filled in early, while the spec is still being built; later FRs are added; the Risks section now omits them — yet the presence gate still reads ✓. The author trusts it ("that bit's…
 
-## [DR-029 — Self-audit appendix is LLM-authored-last in a rubdown phase, trusted via an earned tiered signal — "just enough human"](DR-029.md)
+## [DR-029 — Self-audit appendix is LLM-authored-last in a cross-checks phase, trusted via an earned tiered signal — "just enough human"](DR-029.md)
 
 *Status: proposed · Date: 2026-06-02*
 
