@@ -128,12 +128,21 @@ describe('adr-manager', () => {
       expect(content).toContain('date: 2026-05-26');
     });
 
-    it('includes Context, Decision, and Consequences sections', () => {
+    it('includes Context, Decision, Costly to Refactor, and Consequences sections', () => {
       const content = generateAdrContent('DR-042', 'Switch to Vitest', '2026-01-01');
 
       expect(content).toContain('## Context');
       expect(content).toContain('## Decision');
+      expect(content).toContain('## Costly to Refactor');
       expect(content).toContain('## Consequences');
+    });
+
+    it('places Costly to Refactor after Decision and before Consequences', () => {
+      const content = generateAdrContent('DR-042', 'X', '2026-01-01');
+      expect(content.indexOf('## Decision'))
+        .toBeLessThan(content.indexOf('## Costly to Refactor'));
+      expect(content.indexOf('## Costly to Refactor'))
+        .toBeLessThan(content.indexOf('## Consequences'));
     });
 
     it('includes the heading with id and title', () => {

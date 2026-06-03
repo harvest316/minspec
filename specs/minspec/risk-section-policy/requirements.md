@@ -60,6 +60,14 @@ skim-safe claim** — Slice 1 ships the mechanism; the claim waits for evidence
   | Alternatives Considered | specs + DRs | T3 | ≥1 named alternative + why-not | yes |
   | Dependencies & Blast-Radius | specs | T4 | declared file list (codegraph reverse-deps = Tier-1, EPIC-007) | yes |
   | Rollback / Reversibility | specs | T4 | undo mechanism + ADR-filter answer | yes |
+  | Costly to Refactor | specs + DRs | T2 | ranked seam list, FR/decision-referenced ("Low — <reason>" valid) | yes |
+
+  **Placement exception (#132).** Every family member above renders in the Zone-B
+  skim appendix *except* **Costly to Refactor**, which renders in **Zone A**
+  (read-first), placed **after Requirements** (specs) / **after Decision** (DRs) so
+  the reader has the terms before the seam index. It is the standard seam-first read
+  aid — auto-aided by deterministic seam-candidate detection (contracts, cross-package,
+  new deps, data-model/API changes) + LLM ranking.
 
   Adding/removing a section is a registry edit, not new mechanism. **Tier scales
   *breadth* (which entries emit) + human attention — never LLM depth** (DR-029 §1).
