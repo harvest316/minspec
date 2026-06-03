@@ -173,7 +173,7 @@ Required *cross-cutting* sections — **Risks & Mitigations**, **Consequences** 
 
 ## [DR-029 — Self-audit appendix is LLM-authored-last in a cross-checks phase, trusted via an earned tiered signal — "just enough human"](DR-029.md)
 
-*Status: proposed · Date: 2026-06-02*
+*Status: accepted · Date: 2026-06-02*
 
 MinSpec's core goal: **ensure the LLM thoroughly considers all aspects of a planned change**, with **"just enough human"** — the human writes only the trigger prompt, reviews the core (Context / Requirements / Out-of-Scope / Open Questions), answers OQs, raises concerns, and skims a final result. The LLM does all writing, including the **self-audit sections** (Risks, Consequences, …) that exist to make it cross-check its own work.
 <!-- minspec:dr-index:end -->
