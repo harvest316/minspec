@@ -171,6 +171,27 @@ skim-safe claim** — Slice 1 ships the mechanism; the claim waits for evidence
   round-table, LLM-drafted content, and the trust claim are EPIC-007 / Slices 2-3 /
   #127). Slice 1 stays Tier-0.
 
+## Costly to Refactor
+
+*The expensive-to-reverse commitments — read these closely; everything else is cheap
+to change on live. Ranked most→least costly. (Auto-detectable seam candidates:
+contracts, cross-package boundaries, new deps, data-model / public-API changes.)*
+
+1. **Single `hasSection` predicate** (FR-2, INV-single-predicate) — one source of
+   truth shared by validator + templates. Two implementations = permanent drift,
+   costly to re-unify. *Check: one function, consumed everywhere.*
+2. **Tier-0 no-AI/network boundary** (FR-14, INV-Tier-0) — a leak breaks invariant #1
+   (the air-gap positioning) and is very costly to extract. *Check: no claude/http/fetch
+   in Slice 1.*
+3. **Per-FR disposition shape + parse contract** (FR-3, FR-12) — the data-model the
+   coverage layer keys off; changing the grammar = re-parse + migrate every existing
+   spec. *Check: grammar fixed before specs adopt it.*
+4. **Two-zone delimiter `<!-- minspec:core-end -->` + `coreHash`** (FR-8, FR-13) — a
+   structural contract every doc adopts; moving it = re-delimit + rehash all. *Check:
+   Zone A/B boundary settled.*
+5. **Freshness binds FR-body bytes** (FR-10) — changes staleness behaviour for every
+   spec. *Check: you accept "cosmetic FR reword voids the section".*
+
 ## Invariants (must hold)
 
 - **INV — Tier-0 (T0).** Slice 1 is pure file-system: no AI, no network in

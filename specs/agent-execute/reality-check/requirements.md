@@ -104,6 +104,29 @@ into the doc (LLM authoring is the spec-author flow, DR-029).
   when the agent ran (an agent-ran provenance stamp is allowed; a *skim licence* is
   not). The claim is unlocked only by the study (DR-029 §6; #127).
 
+## Costly to Refactor
+
+*The expensive-to-reverse commitments — read these closely; everything else is cheap
+to change on live. Ranked most→least costly.*
+
+1. **Agent in agent-execute, never in core; core consumes verdict JSON only** (FR-8,
+   INV-Tier-1; DR-015) — agent code landing in `packages/minspec` breaks invariant #1
+   and is very costly to extract. *Check: invocation in agent-execute; minspec only
+   reads the verdict.*
+2. **Never-throw graceful degradation to the Tier-0 floor** (FR-8, INV-degrades) — if
+   the agent can throw/block, the air-gap guarantee dies; retrofitting never-throw is
+   costly. *Check: return-null-never-throw + a T0 test that the floor stands with
+   claude absent.*
+3. **Zod verdict contract** (FR-10, OQ-1) — the cross-boundary contract between Tier-1
+   agent and core; changing it later breaks both sides. *Check: schema fixed before
+   build (contracts-first).*
+4. **Untrusted input as DATA + credential-free** (FR-9; DR-030) — if the agent gets
+   creds/write/network or treats content as instructions, injection becomes an action.
+   *Check: credential-free, data-framed, no write.*
+5. **Advisory — never blocks, never auto-writes** (FR-5, INV-advisory) — coupling the
+   verdict into the approval path or auto-edits breaks offer-never-silent. *Check:
+   verdict advisory-only.*
+
 ## Invariants (must hold)
 
 - **INV — Tier-1, degrades to Tier-0 (T0).** No code path makes MinSpec core depend on
