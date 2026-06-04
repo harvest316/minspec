@@ -262,7 +262,11 @@ const SPLIT_LAYOUT_TYPES = SPEC_TYPE_SET;
 // hardcoded guess. Across the real specs/ corpus (21 files, 2026-06-04):
 //   - id      21/21 present  → required (identity; parser silently defaults to '')
 //   - status  21/21 present  → required (parser silently coerces absent → 'new')
-//   - tier    10/21 present  → NOT required (split-layout files omit it)
+//   - tier    primary specs (requirements artifacts: single-file OR type:requirements)
+//             carry it; split-layout design/tasks files omit it. The parser silently
+//             coerces an absent tier → 'T2', so a primary spec missing tier shows a
+//             FALSE ceremony level with no signal (#103). → required-when-primary
+//             (requiredWhen), NOT a flat `required` — secondary files stay silent.
 //   - type    single-file specs legitimately omit it (absence IS the single-file
 //             signal) → closed-set but NOT required
 // product has no canonical value-list anywhere in code, so it is intentionally
@@ -285,7 +289,24 @@ interface ClosedSetField {
   readonly coercesTo?: string;
   /** When true, a missing field warns (required ⇒ present). */
   readonly required: boolean;
+  /**
+   * Type-conditional required-ness (#103). When present it OVERRIDES `required`:
+   * the field is required only when this predicate, given the spec's `type`
+   * frontmatter (lowercased; `''` for a single-file spec with no `type`), returns
+   * true. Lets `tier` be required for *primary* specs (requirements artifacts)
+   * while staying optional for split-layout `design`/`tasks` files that omit it.
+   */
+  readonly requiredWhen?: (specType: string) => boolean;
 }
+
+/**
+ * A *primary* spec is the requirements artifact: a single-file spec (no `type`)
+ * or the split-layout `requirements` file. Split-layout `design`/`tasks` files are
+ * *secondary* and legitimately omit fields the requirements artifact carries (#103,
+ * mirrors the `isSplitLayout` branch). `specType` is the lowercased `type`, `''`
+ * when absent.
+ */
+const isPrimarySpec = (specType: string): boolean => specType === '' || specType === 'requirements';
 
 const CLOSED_SET_FIELDS: readonly ClosedSetField[] = [
   // `id` — identity, presence-only (values not enumerable). Required: 21/21 real
@@ -294,7 +315,11 @@ const CLOSED_SET_FIELDS: readonly ClosedSetField[] = [
   // scripts/validate-frontmatter.ts also blocks it; this is the in-extension warning.
   { key: 'id', required: true },
   { key: 'status', valid: SPEC_STATUS_SET, validList: SPEC_STATUSES, coercesTo: 'new', required: true },
-  { key: 'tier', valid: TIER_SET, validList: TIERS, coercesTo: 'T2', required: false },
+  // tier: required only for a PRIMARY spec (requirements artifact). A missing tier
+  // is silently coerced to 'T2' by the parser → wrong completeness requirements and
+  // a false ceremony level in the SPECS pane (#103). Secondary split design/tasks
+  // files legitimately omit it, so `requiredWhen` gates on the spec's `type`.
+  { key: 'tier', valid: TIER_SET, validList: TIERS, coercesTo: 'T2', required: false, requiredWhen: isPrimarySpec },
   { key: 'type', valid: SPEC_TYPE_SET, validList: SPEC_TYPES, required: false },
 ];
 
@@ -311,10 +336,17 @@ const CLOSED_SET_FIELDS: readonly ClosedSetField[] = [
  *   should *exist*. Only fires for `required` fields, so non-required closed-set
  *   fields (tier/type) stay silent when omitted.
  */
-function checkClosedSetField(raw: string, field: ClosedSetField, out: ValidationViolation[]): void {
+function checkClosedSetField(
+  raw: string,
+  field: ClosedSetField,
+  specType: string,
+  out: ValidationViolation[],
+): void {
   const value = rawFrontmatterField(raw, field.key);
+  // requiredWhen (type-conditional, #103) overrides the static `required` flag.
+  const required = field.requiredWhen ? field.requiredWhen(specType) : field.required;
   if (value === undefined) {
-    if (field.required) {
+    if (required) {
       const oneOf = field.validList ? `, one of: ${field.validList.join(', ')}` : '';
       out.push({
         rule: `frontmatter.${field.key}.missing`,
@@ -390,8 +422,14 @@ export function validateSpec(
   //     foreign-but-valid vocabularies (`draft`) and incremental authoring are
   //     legitimate. Field set is derived from the schema (CLOSED_SET_FIELDS),
   //     not scattered literals.
+  //
+  //     The spec's `type` (lowercased; `''` for a single-file spec) drives the
+  //     type-conditional `requiredWhen` rules — e.g. tier is required only for a
+  //     primary spec (#103), so the gate needs the type. It also drives the
+  //     split-layout phase/acceptance checks below, so it is computed once here.
+  const specType = (spec.frontmatter.type ?? '').toLowerCase();
   for (const field of CLOSED_SET_FIELDS) {
-    checkClosedSetField(raw, field, violations);
+    checkClosedSetField(raw, field, specType, violations);
   }
 
   // Split-layout (#93): a spec whose phases are split across sibling files
@@ -401,7 +439,6 @@ export function validateSpec(
   // a single-file spec, so they are skipped for split-layout phase files (the
   // sibling files carry those). Cross-file coverage (do all required phase files
   // exist for the tier?) is a separate, deferred concern.
-  const specType = (spec.frontmatter.type ?? '').toLowerCase();
   const isSplitLayout = SPLIT_LAYOUT_TYPES.has(specType);
 
   // 1. Required-phase sections must be present and non-empty (single-file only).

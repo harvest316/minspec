@@ -538,9 +538,11 @@ describe('validateSpec — symmetric frontmatter primitive (#137)', () => {
       expect(r.complete).toBe(true);
     });
 
-    it('does NOT warn missing for a non-required closed-set field (tier absent is fine)', () => {
-      // 10/21 real specs legitimately omit tier — requiring it would flood.
-      const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'status: done'])), DEFAULT_CONFIG);
+    it('does NOT warn missing tier for a secondary (split-layout) spec — design/tasks omit it', () => {
+      // 10/21 real specs legitimately omit tier — they are split-layout design/tasks
+      // files (secondary artifacts). Requiring tier on those would flood. (See the
+      // #103 block below for the primary-spec direction, which DOES warn.)
+      const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: design', 'status: done'])), DEFAULT_CONFIG);
       expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
     });
 
@@ -596,5 +598,59 @@ describe('validateSpec — symmetric frontmatter primitive (#137)', () => {
     );
     expect(frontmatterRules.length).toBeGreaterThan(0); // we did trip several
     expect(frontmatterRules.every((v) => v.severity === 'warning')).toBe(true);
+  });
+});
+
+// T3 regression (#103): a spec with no `tier:` is silently coerced to T2 by the
+// parser (spec.ts), so completeness requirements (required phase sections, aspect
+// severities) are computed for the WRONG tier — and nothing warns. This is the
+// #137 asymmetry: tier is checked present⇒valid but a missing tier is never flagged.
+// The catch: tier is required ONLY for a *primary* spec (a requirements artifact:
+// single-file, type absent; OR type: requirements). Split-layout design/tasks files
+// legitimately omit tier (they are secondary), so they must stay silent. Extends the
+// #137 CLOSED_SET_FIELDS model with a type-conditional required rule; warning-only.
+describe('validateSpec — missing tier silently coerced to T2 (#103)', () => {
+  function rawSpec(fmLines: string[], body = '## Specify\none-liner\n'): string {
+    return `---\n${fmLines.join('\n')}\n---\n\n${body}`;
+  }
+
+  it('warns when a single-file (primary) spec has no tier', () => {
+    // No `type:` → single-file primary spec → tier is required. A missing tier is
+    // silently shown as T2, so the SPECS pane would lie about the ceremony level.
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'status: implementing'])), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'frontmatter.tier.missing');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    // names the silent default it is shown as, so the fix is obvious
+    expect(v!.message).toContain('T2');
+  });
+
+  it('warns when a split requirements (primary) spec has no tier', () => {
+    // type: requirements is ALSO a primary artifact (the requirements live there).
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: requirements', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing' && x.severity === 'warning')).toBe(true);
+  });
+
+  it('does NOT warn when a split design (secondary) spec has no tier', () => {
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: design', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
+  });
+
+  it('does NOT warn when a split tasks (secondary) spec has no tier', () => {
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: tasks', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
+  });
+
+  it('does NOT warn when a primary spec DOES declare a tier', () => {
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'tier: T3', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
+  });
+
+  it('the missing-tier warning never blocks approval (warning, not error)', () => {
+    // A T1 single-file spec with a Specify section is otherwise complete; a missing
+    // tier must surface but must not flip it to incomplete.
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing' && x.severity === 'error')).toBe(false);
+    expect(r.complete).toBe(true);
   });
 });
