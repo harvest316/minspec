@@ -913,33 +913,39 @@
     .dogfooding-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 320px;
-      gap: 3rem;
+      grid-template-areas:
+        "head image"
+        "body image";
+      gap: 0 3rem;
       align-items: center;
       max-width: 1000px;
       margin: 0 auto;
     }
+    .dogfooding-head { grid-area: head; }
+    .dogfooding-body { grid-area: body; }
+    .dogfooding-image { grid-area: image; align-self: center; }
 
-    .dogfooding-text .section-label {
+    .dogfooding-section .section-label {
       color: var(--burgundy);
     }
 
-    .dogfooding-text .section-title {
+    .dogfooding-section .section-title {
       color: var(--ink);
     }
 
-    .dogfooding-text .section-title em {
+    .dogfooding-section .section-title em {
       color: var(--burgundy);
       font-family: var(--font-display);
       font-style: italic;
     }
 
-    .dogfooding-text p {
+    .dogfooding-section p {
       font-size: 1.05rem;
       color: #3a2818;
       line-height: 1.7;
     }
 
-    .dogfooding-text p strong {
+    .dogfooding-section p strong {
       color: var(--burgundy);
       font-weight: 700;
     }
@@ -958,7 +964,8 @@
     @media (max-width: 768px) {
       .dogfooding-grid {
         grid-template-columns: 1fr;
-        gap: 1.5rem;
+        grid-template-areas: "head" "image" "body";
+        gap: 1.25rem;
         text-align: center;
       }
       .dogfooding-image { max-width: 280px; margin: 0 auto; }
@@ -1117,6 +1124,7 @@
 
       .cost-panel {
         padding: 1.25rem 0.9rem;
+        font-size: 0.72rem;
       }
 
       .cost-arrow {
@@ -1795,9 +1803,11 @@
   <section class="section dogfooding-section" id="dogfooding">
     <div class="section-inner">
       <div class="dogfooding-grid">
-        <div class="dogfooding-text">
+        <div class="dogfooding-head">
           <p class="section-label">Exhibit A</p>
           <h2 class="section-title">We eat our own <em>dog food</em></h2>
+        </div>
+        <div class="dogfooding-body">
           <p>
             <strong>With a smile, even.</strong> Every shipped feature gets tested on its harshest
             critic first &mdash; the developer himself. He dogfoods this proxy every working hour.
