@@ -226,6 +226,31 @@ describe('epic-backfill', () => {
       applyBackfill(tmp, proposeHeuristic(tmp), { override: true });
       expect(listEpics(tmp).length).toBe(before);
     });
+
+    // ── #79 regression (T3): backfill must NOT discard the proposal rationale.
+    // Every epic minted by applyBackfill was born with an empty `## Goal`
+    // because createEpic/generateEpicContent never received the rationale.
+    it('writes the proposal rationale into the new epic\'s ## Goal (#79)', () => {
+      const rationale = 'Groups all billing and invoicing work so payment flows ship together.';
+      const fp = writeSpec(tmp, 'minspec/billing', 'SPEC-001', 'Billing Spec');
+      const proposal = {
+        epics: [{ slug: 'billing', title: 'Billing', rationale }],
+        mappings: [{
+          artifactId: 'SPEC-001', kind: 'spec' as const, filePath: fp,
+          epicSlug: 'billing', confidence: 0.9, rationale: 'in billing folder',
+        }],
+        source: 'heuristic' as const,
+      };
+      const res = applyBackfill(tmp, proposal);
+      expect(res.epicsCreated).toBe(1);
+
+      const epic = listEpics(tmp)[0];
+      const body = fs.readFileSync(epic.filePath, 'utf-8');
+      // ## Goal section is non-empty and contains the rationale (not the placeholder).
+      const goal = body.match(/## Goal\n([\s\S]*?)\n## /)?.[1].trim() ?? '';
+      expect(goal).toContain(rationale);
+      expect(goal).not.toContain('<!--'); // placeholder comment is gone
+    });
   });
 
   describe('renderProposalMarkdown()', () => {

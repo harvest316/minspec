@@ -420,7 +420,9 @@ export function applyBackfill(
     if (existing) {
       refBySlug.set(e.slug, existing);
     } else {
-      const created = createEpic(rootDir, e.title, e.slug);
+      // Thread the proposal's rationale into the new epic's `## Goal` so a
+      // backfilled epic is born complete, not as a bare skeleton (#79).
+      const created = createEpic(rootDir, e.title, e.slug, undefined, e.rationale);
       refBySlug.set(e.slug, created.id);
       epicsCreated++;
     }
