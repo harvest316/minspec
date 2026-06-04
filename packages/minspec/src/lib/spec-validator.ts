@@ -47,15 +47,21 @@ export interface ValidationResult {
 
 // ─── Aspect detection ────────────────────────────────────────────────────────
 
-/** Keyword signals per aspect. Word-boundary matched, case-insensitive. */
+/**
+ * Strong keyword signals per aspect — each unambiguous enough that ONE is enough to
+ * detect the aspect. Word-boundary matched, case-insensitive. The `api` and `data`
+ * aspects ALSO carry an ambiguous keyword set (below) handled by a stricter rule;
+ * their entries here are the strong sets only.
+ */
 const ASPECT_KEYWORDS: Record<Aspect, string[]> = {
   ux: ['ui', 'ux', 'screen', 'page', 'component', 'button', 'modal', 'dialog',
     'layout', 'wireframe', 'frontend', 'css', 'view', 'form', 'menu', 'icon'],
   // See `API_AMBIGUOUS_KEYWORDS` below — the api aspect has a stricter rule and
   // its keyword set is split into strong/weak; this entry is the strong set.
   api: ['endpoint', 'api', 'payload', 'graphql', 'webhook', 'rpc', 'restful', 'openapi'],
-  data: ['schema', 'table', 'migration', 'database', 'column', 'entity',
-    'index', 'query', 'sql'],
+  // See `DATA_AMBIGUOUS_KEYWORDS` below — `table`/`query`/`index` are polysemous and
+  // moved to the ambiguous set (#153.4); this entry is the strong, unambiguous set.
+  data: ['schema', 'migration', 'database', 'column', 'entity', 'sql'],
   architecture: ['architecture', 'subsystem', 'service', 'integration',
     'cross-cutting', 'topology', 'pipeline', 'queue', 'broker'],
 };
@@ -64,12 +70,27 @@ const ASPECT_KEYWORDS: Record<Aspect, string[]> = {
  * Ambiguous api keywords (#108). `request`, `response`, `route`, `http` are common
  * English words; bare `rest` (now dropped — `restful` / `rest api` carry the real
  * signal) collided with "the rest". A single ambiguous keyword is NOT enough to flag
- * the api aspect: it needs a strong signal (`ASPECT_KEYWORDS.api`) OR ≥2 ambiguous
- * keywords corroborating each other. This fixes SPEC-015 tripping `aspect.api.no-schema`
- * on the prose "…the rest" while keeping genuine API specs (request+response, a route +
- * payload, "REST API") detected.
+ * the api aspect.
+ *
+ * `request` and `response` are the SOFTEST of these — both are everyday UX/interaction
+ * prose ("the user's request", "in response to a click") — so even *together* they are
+ * not a reliable API signal (#153.4: that pair tripped `aspect.api.no-schema` on UX
+ * prose with no API). The corroboration rule therefore requires the soft pair to be
+ * backed by a STRUCTURAL ambiguous keyword (`route`/`http`) or a strong keyword:
+ * request+response alone no longer fires; request+route / response+http still do, as
+ * does request+response+a-strong-word.
  */
 const API_AMBIGUOUS_KEYWORDS = ['request', 'response', 'route', 'http'] as const;
+/** The STRUCTURAL ambiguous api keywords — concrete enough to corroborate the soft pair. */
+const API_STRUCTURAL_AMBIGUOUS = ['route', 'http'] as const;
+
+/**
+ * Ambiguous data keywords (#153.4, the data sibling of #108). `table` (markdown
+ * table / HTML table), `query` ("query the user"), and `index` ("index.md",
+ * "index into the list") are individually polysemous, so one alone must not flag the
+ * data aspect: it needs a strong data keyword OR ≥2 ambiguous corroborating.
+ */
+const DATA_AMBIGUOUS_KEYWORDS = ['table', 'query', 'index'] as const;
 
 /** Compile a case-insensitive word-boundary regex for a keyword. */
 function wordBoundaryRe(kw: string): RegExp {
@@ -78,23 +99,38 @@ function wordBoundaryRe(kw: string): RegExp {
 
 /**
  * The api aspect's detection rule, separated from the generic any-keyword rule
- * because its keywords are individually ambiguous (#108). Fires when there is at
- * least one strong keyword, OR the phrase "rest api", OR ≥2 distinct ambiguous
- * keywords. One ambiguous keyword alone never fires.
+ * because its keywords are individually ambiguous (#108, #153.4). Fires when there is
+ * at least one strong keyword, OR the phrase "rest api", OR ≥2 distinct ambiguous
+ * keywords WHERE at least one is structural (`route`/`http`) — the soft `request` +
+ * `response` pair alone is not enough. One ambiguous keyword alone never fires.
  */
 function detectsApi(rawLower: string): boolean {
   if (ASPECT_KEYWORDS.api.some((kw) => wordBoundaryRe(kw).test(rawLower))) return true;
   if (/\brest\s+api\b/i.test(rawLower)) return true; // "REST API" as a phrase
   const ambiguousHits = API_AMBIGUOUS_KEYWORDS.filter((kw) => wordBoundaryRe(kw).test(rawLower)).length;
+  if (ambiguousHits < 2) return false;
+  // ≥2 ambiguous, but the soft request+response pair needs a structural anchor.
+  return API_STRUCTURAL_AMBIGUOUS.some((kw) => wordBoundaryRe(kw).test(rawLower));
+}
+
+/**
+ * The data aspect's detection rule (#153.4). Fires when there is at least one strong
+ * data keyword, OR ≥2 distinct ambiguous (`table`/`query`/`index`) keywords. One
+ * ambiguous keyword alone never fires.
+ */
+function detectsData(rawLower: string): boolean {
+  if (ASPECT_KEYWORDS.data.some((kw) => wordBoundaryRe(kw).test(rawLower))) return true;
+  const ambiguousHits = DATA_AMBIGUOUS_KEYWORDS.filter((kw) => wordBoundaryRe(kw).test(rawLower)).length;
   return ambiguousHits >= 2;
 }
 
 function detectAspects(rawLower: string): Aspect[] {
   const found: Aspect[] = [];
   for (const aspect of ASPECTS) {
-    const hit = aspect === 'api'
-      ? detectsApi(rawLower)
-      : ASPECT_KEYWORDS[aspect].some((kw) => wordBoundaryRe(kw).test(rawLower));
+    let hit: boolean;
+    if (aspect === 'api') hit = detectsApi(rawLower);
+    else if (aspect === 'data') hit = detectsData(rawLower);
+    else hit = ASPECT_KEYWORDS[aspect].some((kw) => wordBoundaryRe(kw).test(rawLower));
     if (hit) found.push(aspect);
   }
   return found;
@@ -121,10 +157,69 @@ const hasMermaid = (s: string, kind?: string) =>
   new RegExp('```mermaid' + (kind ? `[\\s\\S]*?\\b${kind}\\b` : ''), 'i').test(s);
 const hasSection = (s: string, names: string[]) =>
   new RegExp('^##+\\s*(' + names.join('|') + ')\\b', 'im').test(s);
-const hasMarkdownTable = (s: string) => /^\s*\|.+\|\s*\n\s*\|[\s:|-]+\|\s*$/m.test(s);
-/** crude ascii-box mockup: 3+ lines of box-drawing or +--+ framing */
-const hasAsciiBox = (s: string) =>
-  (s.match(/^[ \t]*[+|│┌└├─].*$/gm)?.length ?? 0) >= 3;
+const MARKDOWN_TABLE_RE = /^\s*\|.+\|\s*\n\s*\|[\s:|-]+\|\s*$/m;
+const hasMarkdownTable = (s: string) => MARKDOWN_TABLE_RE.test(s);
+/**
+ * A genuine box-drawing / flow glyph: unicode box-drawing + arrows. The bare `|`
+ * is deliberately NOT here — a markdown table row starts with `|`, and counting it
+ * as box-drawing made a plain table read as an ascii box (#153.1).
+ */
+const BOX_GLYPH_RE = /[┌┐└┘├┤┬┴┼─│▼▲►◄▶◀→←↓↑]/;
+/** An ASCII `+---` / `---+` frame corner — the other legitimate box style. */
+const PLUS_FRAME_RE = /\+[-=]{2,}|[-=]{2,}\+/;
+/** A markdown table separator row, e.g. `|---|:--:|`. The unambiguous table marker. */
+const TABLE_SEPARATOR_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|[\s:|-]*$/;
+/** A pipe-delimited row (table data OR an ascii-box interior `| label |` line). */
+const isPipeRow = (line: string): boolean => {
+  const t = line.trim();
+  return t.startsWith('|') && (t.match(/\|/g)?.length ?? 0) >= 2;
+};
+
+/**
+ * Line indices belonging to a MARKDOWN TABLE: a contiguous run of pipe-rows that
+ * contains a separator row (`|---|---|`). The separator is what distinguishes a
+ * data table from the `| label |` interior of a `+---` ascii box, which has no
+ * separator row. Used to exclude true table rows from the box-line count (#153.1).
+ */
+function markdownTableLineSet(lines: string[]): Set<number> {
+  const out = new Set<number>();
+  let run: number[] = [];
+  let hasSeparator = false;
+  const flush = () => {
+    if (hasSeparator) for (const i of run) out.add(i);
+    run = [];
+    hasSeparator = false;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    if (isPipeRow(lines[i])) {
+      run.push(i);
+      if (TABLE_SEPARATOR_RE.test(lines[i])) hasSeparator = true;
+    } else {
+      flush();
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Crude ascii-box mockup / diagram: 3+ lines carrying a real box-drawing glyph, a
+ * `+---` frame, or a pipe-delimited box-interior line — EXCLUDING rows that belong to
+ * a markdown table (a `|`-table with a `|---|` separator row is data, not a wireframe
+ * or component diagram, #153.1). A genuine ascii box (unicode box chars, `+--+`
+ * framing, or a flow diagram with arrows) still counts: its interior `| label |` lines
+ * are kept because the block has no table separator.
+ */
+const hasAsciiBox = (s: string) => {
+  const lines = s.split('\n');
+  const tableLines = markdownTableLineSet(lines);
+  let count = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (tableLines.has(i)) continue;
+    if (BOX_GLYPH_RE.test(lines[i]) || PLUS_FRAME_RE.test(lines[i]) || isPipeRow(lines[i])) count++;
+  }
+  return count >= 3;
+};
 /**
  * A fenced ``` code block containing box-drawing / flow characters — i.e. an
  * ASCII diagram, including *flow* diagrams (arrows, ▼) whose lines start with
@@ -197,12 +292,22 @@ function requiresAcceptanceCriteria(tier: Tier): boolean {
   return TIER_RANK[tier] >= 3;
 }
 
+/** A markdown checkbox list item: `- [ ]` / `- [x]`. */
+const CHECKBOX_RE = /- \[[ xX]\]/;
+
 function hasAcceptanceCriteria(spec: ParsedSpec): boolean {
   const raw = spec.raw;
   if (hasSection(raw, ['acceptance criteria', 'acceptance', 'success criteria'])) return true;
-  // checkbox list inside the specify section counts as acceptance criteria
+  // A checkbox list inside the requirements/specify content counts as acceptance
+  // criteria. The parser maps a heading to `phaseSections` only when its text is a
+  // literal Phase name (`specify`), so a `type: requirements` spec — whose checklist
+  // lives under `## Requirements`, mapping to NO phase — never populated
+  // `phaseSections.specify`; the fallback could not fire and a real checklist was
+  // FALSELY flagged (#153.2). Scan both the Specify phase section AND the
+  // `## Requirements` section (the requirements artifact's primary heading).
   const specify = spec.phaseSections.specify?.body ?? '';
-  return /- \[[ xX]\]/.test(specify);
+  const requirements = spec.sections.get('Requirements') ?? '';
+  return CHECKBOX_RE.test(specify) || CHECKBOX_RE.test(requirements);
 }
 
 // ─── Closed-enum frontmatter gate (#115) ─────────────────────────────────────
@@ -503,7 +608,7 @@ export function validateSpec(
       rule: 'acceptance.missing',
       severity: 'error',
       message: `${tier} spec has no acceptance criteria.`,
-      fixHint: 'Add an "## Acceptance Criteria" section defining done: a checkbox list where each item is a plain-language outcome tracing to its FR/INV (e.g. "- [ ] **Honest degradation** — incoherent state surfaces \'state unclear\'. (FR-6)"). See the "MinSpec: Generate Example Spec" output for the canonical format. A checkbox list in the Specify section also satisfies this.',
+      fixHint: 'Add an "## Acceptance Criteria" section defining done: a checkbox list where each item is a plain-language outcome tracing to its FR/INV (e.g. "- [ ] **Honest degradation** — incoherent state surfaces \'state unclear\'. (FR-6)"). See the "MinSpec: Generate Example Spec" output for the canonical format. A checkbox list under the Specify section (single-file specs) or the Requirements section (requirements specs) also satisfies this.',
     });
   }
 

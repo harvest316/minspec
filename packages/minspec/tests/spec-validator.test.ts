@@ -85,6 +85,65 @@ describe('validateSpec — acceptance criteria', () => {
   });
 });
 
+// T3 regression (#153.2): the checkbox-acceptance FALLBACK read only
+// `phaseSections.specify`, but the parser maps a heading to phaseSections only when
+// its text is a literal Phase name (`specify`). A `type: requirements` spec carries a
+// `## Requirements` heading (which maps to NO phase), so the fallback's source string
+// was always '' and could never fire — a requirements spec whose acceptance checklist
+// lives under `## Requirements` was FALSELY flagged `acceptance.missing`, and the
+// fixHint promised an impossible remedy ("a checkbox list in the Specify section") for
+// a file that has no Specify section. The fallback now also scans the Requirements
+// section, and the fixHint is honest for requirements specs.
+describe('validateSpec — acceptance checkbox fallback for requirements specs (#153.2)', () => {
+  // A `type: requirements` spec uses `## Requirements`, not `## Specify`. Build inline
+  // (the spec() helper assumes a single-file `## Specify` layout).
+  function reqSpec(tier: string, body: string): string {
+    return [
+      '---',
+      'id: SPEC-019',
+      'type: requirements',
+      `tier: ${tier}`,
+      'status: specifying',
+      'product: minspec',
+      '---',
+      '',
+      body,
+    ].join('\n');
+  }
+
+  it('a checkbox list under ## Requirements satisfies acceptance (was impossible before)', () => {
+    const body = '# Reqs\n\n## Requirements\n- [ ] **Honest degradation** — incoherent state surfaces \'state unclear\'. (FR-6)\n- [ ] **Never blocks** — warning only. (FR-9)\n';
+    const r = validateSpec(parseSpec(reqSpec('T4', body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'acceptance.missing')).toBe(false);
+  });
+
+  it('a requirements spec with NO checklist and no acceptance section still errors (true positive)', () => {
+    const body = '# Reqs\n\n## Requirements\n- **FR-1** prose requirement, no checkbox.\n- **FR-2** another.\n';
+    const r = validateSpec(parseSpec(reqSpec('T4', body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'acceptance.missing' && v.severity === 'error')).toBe(true);
+  });
+
+  it('the acceptance fixHint names the Requirements section, not only Specify (honest remedy)', () => {
+    const body = '# Reqs\n\n## Requirements\n- **FR-1** prose only.\n';
+    const r = validateSpec(parseSpec(reqSpec('T4', body)), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'acceptance.missing');
+    expect(v).toBeDefined();
+    // mentions the Requirements section as a valid place for the checklist
+    expect(v!.fixHint).toMatch(/Requirements/);
+  });
+
+  it('an explicit ## Acceptance Criteria section still satisfies a requirements spec (no regression)', () => {
+    const body = '# Reqs\n\n## Requirements\nprose\n\n## Acceptance Criteria\n- must work\n';
+    const r = validateSpec(parseSpec(reqSpec('T3', body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'acceptance.missing')).toBe(false);
+  });
+
+  it('a single-file spec still satisfies via a checkbox in ## Specify (no regression)', () => {
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, FULL_T3)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'acceptance.missing')).toBe(false);
+  });
+});
+
 describe('validateSpec — aspect: ux', () => {
   const uxBody = FULL_T3.replace('Build the thing.', 'Build the new settings screen with a toggle button.');
 
@@ -178,10 +237,89 @@ describe('validateSpec — api aspect false-positives (#108)', () => {
   });
 
   it('TWO corroborating ambiguous keywords do detect the api aspect', () => {
-    // request + response together is a genuine API signal even without a strong word.
+    // request + response + route together is a genuine API signal even without a strong word.
     const body = FULL_T3.replace('Build the thing.', 'Define the request and response shapes for the route.');
     const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
     expect(r.detectedAspects).toContain('api');
+  });
+});
+
+// T3 regression (#153.4): siblings of the shipped #108 fix.
+//  (api) `request` + `response` are the SOFTEST ambiguous keywords — both are everyday
+//        UX/interaction prose ("the user's request", "in response to a click"). The
+//        #108 rule (≥2 ambiguous ⇒ api) let that pair trip `aspect.api.no-schema` on UX
+//        prose with no API at all. The corroboration is tightened so the soft pair needs
+//        a STRUCTURAL ambiguous keyword (route/http) or a strong keyword to corroborate —
+//        request+response alone no longer fires; request+route / response+http still do.
+//  (data) the data aspect had a FLAT keyword list (no strong/ambiguous split, unlike api).
+//        `table`/`query`/`index` are polysemous (markdown table, "query the user",
+//        "index.md"), so a lone one tripped `aspect.data.no-schema`. The same #108
+//        strong/ambiguous split is now applied to data: one ambiguous word alone never
+//        fires; it needs a strong data keyword OR ≥2 ambiguous corroborating.
+describe('validateSpec — api/data over-match on polysemous prose (#153.4)', () => {
+  // ── api: the soft request+response pair ──
+  it('request + response in UX prose (no route/http, no strong) does NOT detect api', () => {
+    const body = FULL_T3.replace(
+      'Build the thing.',
+      "On the user's request, in response to a click, the panel expands.",
+    );
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).not.toContain('api');
+    expect(r.violations.some((v) => v.rule === 'aspect.api.no-schema')).toBe(false);
+  });
+
+  it('request + route (a structural ambiguous keyword) still detects api', () => {
+    const body = FULL_T3.replace('Build the thing.', 'The route handles the incoming request.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).toContain('api');
+  });
+
+  it('response + http still detects api', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Return an http response.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).toContain('api');
+  });
+
+  it('request + response WITH a strong api keyword still detects api', () => {
+    const body = FULL_T3.replace('Build the thing.', 'The endpoint takes a request and returns a response.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).toContain('api');
+  });
+
+  // ── data: polysemous table/query/index ──
+  it('a lone "table" in prose (markdown table) does NOT detect data', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Render the results in a table on the page.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects, '"table" alone tripped data').not.toContain('data');
+    expect(r.violations.some((v) => v.rule === 'aspect.data.no-schema')).toBe(false);
+  });
+
+  it('a lone "query"/"index" in prose does NOT detect data', () => {
+    for (const word of ['query', 'index']) {
+      const body = FULL_T3.replace('Build the thing.', `We ${word} the user before proceeding.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" alone tripped data`).not.toContain('data');
+    }
+  });
+
+  it('a single STRONG data keyword still detects the data aspect', () => {
+    for (const word of ['schema', 'migration', 'database', 'column', 'entity', 'sql']) {
+      const body = FULL_T3.replace('Build the thing.', `Add a ${word} to the store.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" failed to detect data`).toContain('data');
+    }
+  });
+
+  it('TWO corroborating ambiguous data keywords (table + query) detect the data aspect', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Add an index and a query against the table.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).toContain('data');
+  });
+
+  it('a strong data keyword without a schema artifact still ERRORS at T4 (no over-soften)', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Add a database migration for the new column.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T4', aspects: 'data' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.data.no-schema' && v.severity === 'error')).toBe(true);
   });
 });
 
@@ -190,6 +328,50 @@ describe('validateSpec — aspect: architecture', () => {
     const body = FULL_T3.replace('Build the thing.', 'Introduce a new broker service and message queue subsystem.');
     const r = validateSpec(parseSpec(spec({ tier: 'T4', aspects: 'architecture' }, body)), DEFAULT_CONFIG);
     expect(r.violations.some((v) => v.rule === 'aspect.architecture.no-diagram' && v.severity === 'error')).toBe(true);
+  });
+});
+
+// T3 regression (#153.1): a plain markdown table tripped `hasAsciiBox`, because the
+// box-line regex counted any line beginning with `|` — and a markdown table row starts
+// with `|`. 3+ table rows therefore read as an "ascii box", FALSELY satisfying the
+// ux/architecture diagram gates (a false negative: the gate passes on prose-plus-table
+// with no real diagram/mockup). A markdown table is NOT a wireframe nor a component
+// diagram. The fix tightens box detection to require a genuine box-drawing glyph or a
+// +--- frame, excluding markdown table rows — while a REAL ascii diagram (which uses
+// box-drawing chars / +---) still satisfies the gate.
+describe('validateSpec — markdown table is not an ascii box (#153.1)', () => {
+  const TABLE = '\n| Mode | Trigger | Sandbox |\n|---|---|---|\n| Manual | human | no |\n| Auto | cron | yes |\n';
+  const ASCII_BOX = '\n```\n┌──────────┐\n│  Widget  │\n└──────────┘\n```\n';
+  const PLUS_BOX = '\n+----------+\n|  Widget  |\n+----------+\n';
+
+  it('a declared ux aspect with ONLY a markdown table still errors (table ≠ mockup)', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Build the settings screen.') + TABLE;
+    const r = validateSpec(parseSpec(spec({ tier: 'T3', aspects: 'ux' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup' && v.severity === 'error')).toBe(true);
+  });
+
+  it('a declared architecture aspect with ONLY a markdown table still errors (table ≠ diagram)', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Introduce a new broker subsystem.') + TABLE;
+    const r = validateSpec(parseSpec(spec({ tier: 'T4', aspects: 'architecture' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.architecture.no-diagram' && v.severity === 'error')).toBe(true);
+  });
+
+  it('a REAL unicode ascii box still satisfies the architecture diagram gate (no regression)', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Introduce a new broker subsystem.') + ASCII_BOX;
+    const r = validateSpec(parseSpec(spec({ tier: 'T4', aspects: 'architecture' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.architecture.no-diagram')).toBe(false);
+  });
+
+  it('a REAL +--- frame box still satisfies the architecture diagram gate (no regression)', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Introduce a new broker subsystem.') + PLUS_BOX;
+    const r = validateSpec(parseSpec(spec({ tier: 'T4', aspects: 'architecture' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.architecture.no-diagram')).toBe(false);
+  });
+
+  it('a markdown table AND a real ascii box together still satisfies (box counted, table ignored)', () => {
+    const body = FULL_T3.replace('Build the thing.', 'Introduce a new broker subsystem.') + TABLE + ASCII_BOX;
+    const r = validateSpec(parseSpec(spec({ tier: 'T4', aspects: 'architecture' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.architecture.no-diagram')).toBe(false);
   });
 });
 
