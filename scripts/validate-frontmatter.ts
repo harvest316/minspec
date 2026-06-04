@@ -9,11 +9,13 @@
  * 4. Acceptance criteria patterns not allowed in docs/domain/ files
  */
 
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
 import { join, relative } from 'path';
+import { validateDrSequence } from '../packages/minspec/src/lib/adr-manager';
 
 const ROOT = process.cwd();
 let errors = 0;
+let warnings = 0;
 
 function glob(dir: string, ext: string): string[] {
   const results: string[] = [];
@@ -43,6 +45,30 @@ function parseFrontmatter(content: string): Record<string, string> {
 function fail(file: string, message: string): void {
   console.error(`FAIL ${relative(ROOT, file)}: ${message}`);
   errors++;
+}
+
+function warn(message: string): void {
+  console.warn(`WARN ${message}`);
+  warnings++;
+}
+
+// Resolve the decisions directory from .minspec/config.json (default
+// docs/decisions). Mirrors the script's own lightweight config reads — no
+// extension/vscode dependency.
+function resolveDecisionsDir(): string {
+  const configPath = join(ROOT, '.minspec', 'config.json');
+  let rel = 'docs/decisions';
+  try {
+    if (existsSync(configPath)) {
+      const cfg = JSON.parse(readFileSync(configPath, 'utf-8')) as { decisionsDir?: string };
+      if (typeof cfg.decisionsDir === 'string' && cfg.decisionsDir.trim()) {
+        rel = cfg.decisionsDir.trim();
+      }
+    }
+  } catch {
+    // Malformed config — fall back to the default location.
+  }
+  return join(ROOT, rel);
 }
 
 // Rule 1 + 3 + 4: docs/domain/*.md
@@ -123,6 +149,23 @@ try {
   }
 } catch {
   // specs/ doesn't exist yet — fine
+}
+
+// Rule 6 (non-fatal): local DR-NNN sequence health (issue #41). WARNS — never
+// fails the build — on a gap (a number skipped, e.g. DR-010 → DR-362), a
+// duplicate number, or an under-padded id. Would have caught DR-362 (a global-
+// register number minted into this project-local register). Tier-0, offline.
+try {
+  const drWarnings = validateDrSequence(resolveDecisionsDir());
+  for (const w of drWarnings) {
+    warn(`DR-sequence: ${w.message}`);
+  }
+} catch {
+  // Decisions dir unreadable / absent — nothing to validate, stay silent.
+}
+
+if (warnings > 0) {
+  console.warn(`\n${warnings} non-fatal warning(s).`);
 }
 
 if (errors > 0) {

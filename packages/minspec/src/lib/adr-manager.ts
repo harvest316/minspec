@@ -105,6 +105,134 @@ export function formatAdrId(num: number): string {
   return `DR-${String(num).padStart(3, '0')}`;
 }
 
+// ─── DR Sequence Validation (issue #41) ──────────────────────────────────────
+
+/** Kind of local-sequence anomaly a DR file can exhibit. */
+export type DrSequenceWarningKind = 'gap' | 'duplicate' | 'padding';
+
+/**
+ * A non-fatal warning about the local DR-NNN numbering sequence.
+ * `validateDrSequence` only ever WARNS — it never throws or fails a build.
+ */
+export interface DrSequenceWarning {
+  readonly kind: DrSequenceWarningKind;
+  /** The DR number this warning concerns. */
+  readonly number: number;
+  /**
+   * The DR file name(s) implicated. Empty for `gap` (no file exists for a
+   * missing number); one entry for `padding`; two-plus for `duplicate`.
+   */
+  readonly files: readonly string[];
+  /** Human-readable, single-line explanation with a suggested action. */
+  readonly message: string;
+}
+
+/** The minimum digit width an id must use to count as correctly padded. */
+const ADR_MIN_PAD_WIDTH = 3;
+
+/**
+ * Scan the decisions directory and report local DR-NNN sequence anomalies.
+ *
+ * Pure, offline, Tier-0 (DR-004): only reads file names — no frontmatter, no
+ * network, no AI. Catches the DR-362 class of error (a global-register number
+ * minted into a project-local register) after the fact, which `nextAdrNumber`
+ * — correct by construction — cannot.
+ *
+ * Reuses `ADR_FILE_RE` so it sees exactly the files `listAdrs` treats as DRs.
+ *
+ * Warning kinds:
+ *  - `gap`       — a number in `1..max` with no DR file (e.g. DR-010 → DR-362
+ *                  leaves 11..361 as gaps).
+ *  - `duplicate` — two or more files sharing one DR number.
+ *  - `padding`   — an id not zero-padded to at least 3 digits (e.g. `DR-1`).
+ *
+ * A clean, contiguous, properly-padded run (and the empty/single/non-DR-only
+ * cases) returns `[]`.
+ *
+ * Determinism: warnings are sorted by `number`, then by kind in a fixed order
+ * (gap, duplicate, padding) so identical inputs yield identical output.
+ *
+ * @param decisionsDir Absolute path to the resolved decisions directory.
+ */
+export function validateDrSequence(decisionsDir: string): DrSequenceWarning[] {
+  if (!fs.existsSync(decisionsDir)) return [];
+
+  // Map DR number → list of file names that claim it (preserves duplicates).
+  const byNumber = new Map<number, string[]>();
+  const warnings: DrSequenceWarning[] = [];
+
+  for (const entry of fs.readdirSync(decisionsDir).sort()) {
+    const match = entry.match(ADR_FILE_RE);
+    if (!match) continue; // non-DR file (INDEX.md, README.md, notes…) — ignore.
+
+    const digits = match[1];
+    const num = parseInt(digits, 10);
+    if (!Number.isFinite(num)) continue;
+
+    const existing = byNumber.get(num);
+    if (existing) existing.push(entry);
+    else byNumber.set(num, [entry]);
+
+    // Padding: a number whose printed-as-written digit run is shorter than the
+    // minimum width. `DR-1` → width 1; `DR-001`/`DR-100`/`DR-1234` are fine.
+    if (digits.length < ADR_MIN_PAD_WIDTH) {
+      warnings.push({
+        kind: 'padding',
+        number: num,
+        files: [entry],
+        message:
+          `${entry}: id "DR-${digits}" is not zero-padded to ${ADR_MIN_PAD_WIDTH} digits — ` +
+          `rename to "${formatAdrId(num)}".`,
+      });
+    }
+  }
+
+  if (byNumber.size === 0) return [];
+
+  // Duplicates: any number claimed by two or more files.
+  for (const [num, files] of byNumber) {
+    if (files.length > 1) {
+      warnings.push({
+        kind: 'duplicate',
+        number: num,
+        files: [...files],
+        message:
+          `DR-${String(num).padStart(ADR_MIN_PAD_WIDTH, '0')} is used by ${files.length} files ` +
+          `(${files.join(', ')}) — give each a distinct number.`,
+      });
+    }
+  }
+
+  // Gaps: every number in 1..max with no DR file. `max` is the highest number
+  // present (including any out-of-sequence jump), so a DR-010 → DR-362 leak
+  // surfaces 11..361 as gaps, flagging the leaked number itself.
+  const max = Math.max(...byNumber.keys());
+  for (let n = 1; n < max; n++) {
+    if (!byNumber.has(n)) {
+      warnings.push({
+        kind: 'gap',
+        number: n,
+        files: [],
+        message:
+          `${formatAdrId(n)} is missing — the sequence jumps over it. ` +
+          `Renumber the out-of-sequence DR to close the gap.`,
+      });
+    }
+  }
+
+  // Deterministic order: by number, then gap < duplicate < padding.
+  const kindOrder: Record<DrSequenceWarningKind, number> = {
+    gap: 0,
+    duplicate: 1,
+    padding: 2,
+  };
+  warnings.sort((a, b) =>
+    a.number !== b.number ? a.number - b.number : kindOrder[a.kind] - kindOrder[b.kind],
+  );
+
+  return warnings;
+}
+
 // ─── ADR Template ───────────────────────────────────────────────────────────
 
 /**
