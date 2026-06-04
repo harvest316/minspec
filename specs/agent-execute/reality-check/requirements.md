@@ -84,9 +84,17 @@ into the doc (LLM authoring is the spec-author flow, DR-029).
   verbatim: `isClaudeAvailable()` probe; `execFile` (never shell/http); JSON-only
   schema instruction; tolerant `extractJson`; a pure normaliser that drops anything
   unrecognised. **Any failure (binary absent / timeout / non-JSON / empty / non-zero)
-  returns null and NEVER throws** → the caller falls back to the SPEC-013 Tier-0 floor.
-  With no AI installed, MinSpec is byte-for-byte the structure-only product; the only
-  added surface is an "install agent-execute to enable review" affordance.
+  is `catch → log the reason → return a typed fallback`** — NEVER throws to the caller,
+  but is **never a silent black hole**. The fallback is a discriminated result
+  (`{ ok: false, reason: 'absent' | 'timeout' | 'bad-json' | 'empty' | 'exit' }`), not
+  a bare `null`, so *expected degradation* (claude absent) is distinguishable from *a
+  bug*; the swallowed reason is logged + **observable** (debug log / inspectable
+  "last error" in the UI — auditable-via-UI). The caller falls back to the SPEC-013
+  Tier-0 floor on any `ok: false`. Keep the never-throw shell **thin** — complex logic
+  lives in inner functions that throw normally (real stack traces); the shell only
+  catches at the seam, logs, and degrades. With no AI installed, MinSpec is
+  byte-for-byte the structure-only product; the only added surface is an "install
+  agent-execute to enable review" affordance.
 - **FR-9 (untrusted input — DR-030).** Spec content is passed as **delimited DATA, not
   instructions**; the system prompt states it may attempt injection and must be
   reviewed, never obeyed. The agent runs **credential-free, no write, no network
@@ -115,8 +123,10 @@ to change on live. Ranked most→least costly.*
    reads the verdict.*
 2. **Never-throw graceful degradation to the Tier-0 floor** (FR-8, INV-degrades) — if
    the agent can throw/block, the air-gap guarantee dies; retrofitting never-throw is
-   costly. *Check: return-null-never-throw + a T0 test that the floor stands with
-   claude absent.*
+   costly. Never-throw must NOT be a silent black hole: `catch → log reason → typed
+   fallback`, thin shell over throwing inner fns. *Check: T0 never-throw-contract test
+   — every failure path (absent/timeout/bad-json/empty/exit) returns `{ok:false,
+   reason}`, never throws; the floor stands with claude absent; the reason is logged.*
 3. **Zod verdict contract** (FR-10, OQ-1) — the cross-boundary contract between Tier-1
    agent and core; changing it later breaks both sides. *Check: schema fixed before
    build (contracts-first).*
@@ -144,7 +154,7 @@ to change on live. Ranked most→least costly.*
 | R1 | **Same-model collusion** — author + reviewer share priors; a shared hallucination gets "clear". | Med · High | Two-lens disagreement-as-signal (FR-4); evidence-ref-or-dropped; no skim claim until the study (FR-11). Residual named. |
 | R2 | **Prompt injection** via untrusted spec → false "no concerns". | Med · Med | DATA-framing + injection-aware prompt + advisory-only + credential-free (FR-9, DR-030); two-lens decorrelation. Residual: degraded verdict (quality, not integrity). |
 | R3 | **Plausible-but-wrong fabricated risk** (Stella-Lorenzo) rubber-stamped in. | Med · Med | Verdict advisory; author/DR-012 review; structural normalise (FR-10) can't judge truth — residual, bounded by no-claim. |
-| R4 | **Degradation gap** — agent throws/blocks instead of falling back. | Low · High | FR-8 never-throw-return-null + Tier-0 floor as unconditional fallback; T0 test asserts the floor stands with claude absent. |
+| R4 | **Degradation gap** — agent throws/blocks instead of falling back; or fails *silently* (bare null, no why) and can't be debugged. | Low · High | FR-8 `catch → log reason → typed fallback` ({ok:false,reason}) + Tier-0 floor as unconditional fallback; never-throw-contract T0 test (every failure path → typed fallback, never throws, reason logged); floor stands with claude absent. |
 | R5 | **Cost surprise** — round-table burns quota. | Med · Med | FR-7 metered + opt-in + bounded concurrency; partial verdicts marked partial. |
 
 ## Out of scope
