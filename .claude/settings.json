@@ -4,36 +4,36 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "bash scripts/hooks/spec-gate.sh" },
-          { "type": "command", "command": "node scripts/hooks/marker-guard.mjs" }
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/spec-gate.sh\"" },
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/marker-guard.mjs\"" }
         ]
       }
     ],
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "bash scripts/hooks/session-start.sh" }
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/session-start.sh\"" }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "bash scripts/hooks/scope-check.sh" }
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/scope-check.sh\"" }
         ]
       }
     ],
     "PostCompact": [
       {
         "hooks": [
-          { "type": "command", "command": "bash scripts/hooks/post-compact.sh" }
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/post-compact.sh\"" }
         ]
       }
     ],
     "SessionEnd": [
       {
         "hooks": [
-          { "type": "command", "command": "bash scripts/hooks/session-end.sh" }
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/session-end.sh\"" }
         ]
       }
     ]
