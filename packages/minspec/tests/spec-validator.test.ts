@@ -654,3 +654,76 @@ describe('validateSpec — missing tier silently coerced to T2 (#103)', () => {
     expect(r.complete).toBe(true);
   });
 });
+
+// Feature (#40): a dangling park reference — prose claiming something is "parked /
+// tracked / filed as a separate issue" with NO adjacent `#NNN` or issue URL —
+// silently loses parked work (SPEC-005 lost "Corrupt-file repair parked as a separate
+// issue", and the issue never existed). This lint warns (never errors) on such a
+// claim with no link. It is pure-local Tier 0: it does NOT verify the linked issue
+// EXISTS (that is a network check, Tier 1 / DR-004 — explicitly out of scope here).
+describe('validateSpec — dangling park reference lint (#40)', () => {
+  function rawSpec(body: string): string {
+    return `---\nid: SPEC-001\ntier: T1\nstatus: implementing\n---\n\n## Specify\n${body}\n`;
+  }
+
+  it('warns when "parked as a separate issue" has no link', () => {
+    const r = validateSpec(parseSpec(rawSpec('Corrupt-file repair parked as a separate issue.')), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'park-ref.dangling');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    // never an error — must not block approval
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling' && x.severity === 'error')).toBe(false);
+    expect(r.complete).toBe(true);
+  });
+
+  it('does NOT warn when the park claim carries an adjacent #NNN', () => {
+    const r = validateSpec(parseSpec(rawSpec('Corrupt-file repair parked as a separate issue (#39).')), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling')).toBe(false);
+  });
+
+  it('does NOT warn when the park claim carries an adjacent issue URL', () => {
+    const r = validateSpec(parseSpec(rawSpec(
+      'Corrupt-file repair parked as a separate issue: https://github.com/harvest316/minspec/issues/39',
+    )), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling')).toBe(false);
+  });
+
+  it('accepts a link on the immediately adjacent line (multi-line park ref)', () => {
+    // Real specs put the markdown link on the following line — must not false-positive.
+    const r = validateSpec(parseSpec(rawSpec(
+      'Corrupt-file repair parked as a separate issue\n[#39](https://github.com/harvest316/minspec/issues/39).',
+    )), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling')).toBe(false);
+  });
+
+  it('warns on "tracked as a separate issue" and "filed as an issue" with no link', () => {
+    for (const phrase of [
+      'This concern is tracked as a separate issue.',
+      'The richer surface was filed as an issue.',
+    ]) {
+      const r = validateSpec(parseSpec(rawSpec(phrase)), DEFAULT_CONFIG);
+      expect(r.violations.some((x) => x.rule === 'park-ref.dangling'), `"${phrase}"`).toBe(true);
+    }
+  });
+
+  it('does NOT warn on ordinary prose that merely mentions parking/tracking', () => {
+    // Must not flood: "tracked as OQ-1", "tracked separately if the team wants",
+    // "Park as issue" UI labels, "parking-lot action" — none is a dangling
+    // "as a separate issue" CLAIM, so none should trip.
+    for (const phrase of [
+      'Inline edit is tracked as OQ-1 (review surface), an in-spec open question.',
+      'File an issue per DR-023 if the team wants it tracked separately.',
+      'Drift warning offers a "Park as issue" / "Add to scope" action.',
+      'Out-of-scope edits prompt a parking-lot action.',
+    ]) {
+      const r = validateSpec(parseSpec(rawSpec(phrase)), DEFAULT_CONFIG);
+      expect(r.violations.some((x) => x.rule === 'park-ref.dangling'), `"${phrase}"`).toBe(false);
+    }
+  });
+
+  it('points the fix hint at adding the issue link', () => {
+    const r = validateSpec(parseSpec(rawSpec('Corrupt-file repair parked as a separate issue.')), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'park-ref.dangling');
+    expect(v?.fixHint).toMatch(/#NNN|issue/i);
+  });
+});

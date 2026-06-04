@@ -366,6 +366,43 @@ function checkClosedSetField(
   });
 }
 
+// ─── Dangling park-reference lint (#40) ──────────────────────────────────────
+//
+// SPEC-005 said "Corrupt-file repair parked as a separate issue" with no link, and
+// the issue never existed — parked work silently lost. This lints prose that CLAIMS
+// something is parked/tracked/filed *as a (separate) issue* but carries no `#NNN` or
+// issue URL nearby. Pure-local Tier 0 (DR-004): it does NOT verify the linked issue
+// exists (that is a network/`gh` check, Tier 1, explicitly out of scope — issue #40).
+//
+// Precision matters more than recall here: the corpus is full of legitimate
+// park-adjacent prose ("tracked as OQ-1", "tracked separately if the team wants",
+// "Park as issue" UI labels, "parking-lot action") that must NOT flood. So the
+// trigger requires an explicit park/track/file VERB + "as (a|an|separate|new|its own)
+// … issue|ticket" CLAIM, not a bare mention of parking.
+
+/** A claim that something is parked/tracked/filed AS a (separate) issue/ticket. */
+const PARK_CLAIM_RE =
+  /\b(?:park(?:ed)?|track(?:ed)?|fil(?:ed)?|mov(?:ed)?|split\s+out)\b[^.\n]{0,40}?\bas\b[^.\n]{0,30}?\b(?:separate|new|its\s+own|a|an)\b[^.\n]{0,15}?\b(?:issue|ticket)\b/i;
+
+/** An issue link: a `#NNN` ref or a `…/issues/NNN` URL. */
+const ISSUE_LINK_RE = /#\d+|\/issues\/\d+/i;
+
+/**
+ * Detect dangling park claims. For each line carrying a park claim, the issue link
+ * may sit on the same line OR the immediately adjacent line (markdown links are
+ * commonly wrapped onto the next line). A claim with no link in that window is
+ * dangling. Returns true when at least one dangling claim exists.
+ */
+function hasDanglingParkRef(raw: string): boolean {
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (!PARK_CLAIM_RE.test(lines[i])) continue;
+    const window = `${lines[i - 1] ?? ''}\n${lines[i]}\n${lines[i + 1] ?? ''}`;
+    if (!ISSUE_LINK_RE.test(window)) return true;
+  }
+  return false;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function validateSpec(
@@ -496,6 +533,18 @@ export function validateSpec(
         fixHint: ar.fixHint,
       });
     }
+  }
+
+  // 4. Dangling park reference (#40). A "parked/tracked/filed as a separate issue"
+  //    claim with no adjacent `#NNN` / issue URL silently loses parked work (SPEC-005).
+  //    WARN only — Tier 0, link-existence is a deferred network concern (DR-004).
+  if (hasDanglingParkRef(raw)) {
+    violations.push({
+      rule: 'park-ref.dangling',
+      severity: 'warning',
+      message: 'A "parked/tracked as a separate issue" claim has no linked issue.',
+      fixHint: 'Add the issue link inline (e.g. `(#NNN)` or a `.../issues/NNN` URL). A park claim with no link silently loses the parked work — file the issue (e.g. `gh issue create`) and link it.',
+    });
   }
 
   const complete = !violations.some((v) => v.severity === 'error');
