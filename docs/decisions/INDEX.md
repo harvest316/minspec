@@ -119,7 +119,7 @@ A session asked for "a prioritised list of docs / specs / epics / DRs I need to 
 
 ## [DR-020 — Risks & Mitigations required on every spec and DR, depth proportional to tier](DR-020.md)
 
-*Status: proposed · Date: 2026-06-01*
+*Status: accepted · Date: 2026-06-01*
 
 Specs and DRs were being written without an explicit **Risks & Mitigations** section — SPEC-012 shipped its first draft without one. An initial reading gated the section by tier (required only on DRs + T3/T4 specs) to honour MinSpec's **ceremony-proportional-to-tier** principle. That reading was **reversed**: the primary value of the section is not the document artifact — it is **forcing the author (human or LLM) to reason from the risk angle at all**. That cognitive prompt is *most* valuable exactly…
 
