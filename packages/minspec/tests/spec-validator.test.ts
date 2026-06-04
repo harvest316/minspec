@@ -320,3 +320,86 @@ no mockup here.
     expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup')).toBe(true);
   });
 });
+
+// T3 regression (#115 follow-up): the parser coerces an unrecognized `status`/
+// `tier` to a hardcoded default ('new'/'T2'). Post-parse that is indistinguishable
+// from a genuine default, so the SPECS pane shows a FALSE status (signpost-lie) with
+// no signal. The asymmetric gate: validateSpec asserts dangling/missing epic refs but
+// never that a PRESENT status/tier is a recognized enum member. This gate closes it —
+// re-reading the RAW frontmatter line (lossy after coercion) and WARNING (never
+// blocking — foreign vocabularies like Spec Kit's `draft` are legitimate, just not
+// MinSpec's) when a present value is unknown.
+describe('validateSpec — unrecognized closed-enum frontmatter (#115)', () => {
+  function rawSpec(fm: string): string {
+    return `---\n${fm}\ncreated: 2026-05-30\nphases:\n  specify: done\n  clarify: pending\n  plan: done\n  tasks: done\n  implement: in-progress\n---\n\n## Specify\nBuild it.\n- [ ] c1\n\n## Plan\nSteps.\n\n## Tasks\n- [ ] t\n\n## Implement\ncode.\n`;
+  }
+
+  it('warns when status is present but not a recognized SpecStatus (typo)', () => {
+    // 'implmenting' (typo) parses to 'new' silently — must be surfaced as a warning.
+    const r = validateSpec(
+      parseSpec(rawSpec('id: SPEC-009\ntitle: Y\ntier: T3\nstatus: implmenting')),
+      DEFAULT_CONFIG,
+    );
+    const v = r.violations.find((x) => x.rule === 'frontmatter.status.unknown');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    expect(v!.message).toContain('implmenting');
+    // Never an error — must not block approval.
+    expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown' && x.severity === 'error')).toBe(false);
+  });
+
+  it('warns on a foreign-but-present status (Spec Kit `draft`)', () => {
+    const r = validateSpec(
+      parseSpec(rawSpec('id: SK-001\ntitle: Z\ntier: T3\nstatus: draft')),
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown' && x.severity === 'warning')).toBe(true);
+  });
+
+  it('does NOT warn for a valid status', () => {
+    const r = validateSpec(
+      parseSpec(rawSpec('id: SPEC-001\ntitle: Y\ntier: T3\nstatus: implementing')),
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown')).toBe(false);
+  });
+
+  it('does NOT warn when status carries a valid value + inline comment', () => {
+    // The parser strips the comment; the gate must too, mirroring parse semantics.
+    const r = validateSpec(
+      parseSpec(rawSpec('id: SPEC-004\ntitle: Y\ntier: T3\nstatus: implementing  # built: harness done')),
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown')).toBe(false);
+  });
+
+  it('does NOT warn when status is absent (legitimate default)', () => {
+    // No status: line at all → parser defaults to 'new'; that is not a coercion of a
+    // present value, so no signpost-lie and no warning.
+    const r = validateSpec(
+      parseSpec(rawSpec('id: SK-002\ntitle: Y\ntier: T3')),
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown')).toBe(false);
+  });
+
+  it('warns when tier is present but not a recognized Tier (typo)', () => {
+    const r = validateSpec(
+      parseSpec(rawSpec('id: SPEC-009\ntitle: Y\ntier: T7\nstatus: implementing')),
+      DEFAULT_CONFIG,
+    );
+    const v = r.violations.find((x) => x.rule === 'frontmatter.tier.unknown');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    expect(v!.message).toContain('T7');
+  });
+
+  it('does NOT warn for a valid tier, and ignores a `status:` that appears only in the body', () => {
+    // A `status:` token in prose / a section heading must not be mistaken for the
+    // frontmatter field — only the top-level frontmatter line is inspected.
+    const withBodyStatus = `---\nid: SPEC-001\ntitle: Y\ntier: T3\nstatus: done\ncreated: 2026-05-30\nphases:\n  specify: done\n  clarify: pending\n  plan: done\n  tasks: done\n  implement: done\n---\n\n## Specify\nWe set status: bogus in the example below.\n- [ ] c1\n\n## Plan\nx\n\n## Tasks\n- [ ] t\n\n## Implement\nstatus: alsobogus\n`;
+    const r = validateSpec(parseSpec(withBodyStatus), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown')).toBe(false);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.unknown')).toBe(false);
+  });
+});

@@ -93,8 +93,13 @@ function firstH1Heading(body: string): string {
  *
  * Without this, `status: implementing  # note` parsed as the whole string, which
  * failed the SpecStatus enum check and silently became 'new' — a false status.
+ *
+ * Exported so `validateSpec` can re-strip the RAW frontmatter line with identical
+ * semantics when asserting a present `status`/`tier` is a recognized enum member
+ * (#115 follow-up gate): the parsed value is lossy after coercion, so the validator
+ * must re-read the raw line, and it must match exactly what the parser accepted.
  */
-function stripInlineComment(value: string): string {
+export function stripInlineComment(value: string): string {
   const v = value.trim();
   if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
     return v;

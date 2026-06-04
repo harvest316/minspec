@@ -209,7 +209,10 @@ vi.mock('../src/views/codelens-provider', () => ({
   goToCodeCommand: vi.fn(),
   linkToSpecCommand: vi.fn(),
 }));
-vi.mock('../src/lib/config', () => ({
+// Partial mock: stub the config loaders but forward real exports (TIERS,
+// DEFAULT_CONFIG, …) so spec-validator (via approve) resolves them (#115).
+vi.mock('../src/lib/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/config')>()),
   loadConfig: vi.fn(() => ({ specsDir: 'specs' })),
   applyVSCodeOverrides: vi.fn((c: any) => c),
   resolveAndValidate: vi.fn((root: string, sub: string) => `${root}/${sub}`),
@@ -234,7 +237,11 @@ vi.mock('../src/lib/parking-lot', () => ({
   ),
   createParkingLotEntry: vi.fn(() => ({})),
 }));
-vi.mock('../src/lib/spec', () => ({
+// Partial mock: stub parseSpec but forward all real exports (SPEC_STATUSES,
+// stripInlineComment, …) so downstream importers (spec-validator → approve)
+// still resolve them. A full replacement would drop those exports (#115).
+vi.mock('../src/lib/spec', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/spec')>()),
   parseSpec: vi.fn(() => ({
     frontmatter: { status: 'new' },
   })),

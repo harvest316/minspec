@@ -11,7 +11,9 @@
  */
 
 import type { ParsedSpec } from './spec';
+import { SPEC_STATUSES, stripInlineComment } from './spec';
 import type { Tier, MinspecConfig, Phase } from './config';
+import { TIERS } from './config';
 import { epicRefValue } from './epic-manager';
 
 /** A cross-cutting concern a spec may touch, each requiring a specific artifact. */
@@ -174,6 +176,69 @@ function hasAcceptanceCriteria(spec: ParsedSpec): boolean {
   return /- \[[ xX]\]/.test(specify);
 }
 
+// ─── Closed-enum frontmatter gate (#115) ─────────────────────────────────────
+
+const FRONTMATTER_BLOCK_RE = /^---\n([\s\S]*?)\n---/;
+
+/**
+ * Read a top-level scalar frontmatter field's RAW value from a spec's source,
+ * comment-stripped with the SAME semantics the parser uses (so a valid value
+ * carrying an inline `# comment` is not mistaken for an unknown one).
+ *
+ * Returns:
+ *  - `undefined` when the field is absent or has an empty value (a legitimate
+ *    default — not a coercion of a present value, so nothing to flag).
+ *  - the stripped string otherwise.
+ *
+ * Only the top-level frontmatter block is scanned: a `key:` token in the body or
+ * a nested (indented) line must never be read as the frontmatter field. This is
+ * the lossy raw read the gate needs — post-parse, an unknown value is already
+ * coerced to the default and indistinguishable from a genuine one.
+ */
+function rawFrontmatterField(raw: string, key: string): string | undefined {
+  const block = raw.match(FRONTMATTER_BLOCK_RE);
+  if (!block) return undefined;
+  // Top-level (column-0) key line only — skip indented (nested) and body lines.
+  const lineRe = new RegExp(`^${key}\\s*:\\s*(.*)$`, 'm');
+  const m = block[1].match(lineRe);
+  if (!m) return undefined;
+  const stripped = stripInlineComment(m[1]);
+  return stripped === '' ? undefined : stripped;
+}
+
+const SPEC_STATUS_SET = new Set<string>(SPEC_STATUSES);
+const TIER_SET = new Set<string>(TIERS);
+
+/**
+ * Assert a PRESENT closed-enum frontmatter value (`status`/`tier`) is a recognized
+ * member. The parser coerces any unrecognized value to a hardcoded default
+ * ('new'/'T2'), so by the time we hold a `ParsedSpec` the bad value is gone — the
+ * SPECS pane would show a FALSE status with no signal (signpost-lie, #115). This
+ * gate re-reads the RAW line and WARNS (never errors — a foreign-but-valid
+ * vocabulary like Spec Kit's `draft` is legitimate; we only surface that MinSpec
+ * does not recognize it) so the silent coercion becomes visible.
+ *
+ * Closes the asymmetry flagged in #115 / DR-003 Phase 4: the validator checked
+ * dangling/missing epic refs but never asserted a present enum value was valid.
+ */
+function checkClosedEnumField(
+  raw: string,
+  key: 'status' | 'tier',
+  valid: ReadonlySet<string>,
+  validList: readonly string[],
+  out: ValidationViolation[],
+): void {
+  const value = rawFrontmatterField(raw, key);
+  if (value === undefined) return; // absent/empty → legitimate default, no lie
+  if (valid.has(value)) return;
+  out.push({
+    rule: `frontmatter.${key}.unknown`,
+    severity: 'warning',
+    message: `Spec ${key} "${value}" is not a recognized ${key} — it is shown as the default "${key === 'status' ? 'new' : 'T2'}".`,
+    fixHint: `Set "${key}:" to one of: ${validList.join(', ')}. (An unrecognized value is silently displayed as the default, so the SPECS pane would otherwise show a false ${key}.)`,
+  });
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function validateSpec(
@@ -220,6 +285,14 @@ export function validateSpec(
       fixHint: 'Add an `epic: EPIC-NNN` frontmatter line (MinSpec: Create Epic, or run epic backfill). The spec stays grouped under "(no epic)" until then.',
     });
   }
+
+  // 0b. Closed-enum frontmatter (#115). A present-but-unrecognized `status`/`tier`
+  //     is coerced by the parser to a default ('new'/'T2') and shown as if real —
+  //     a signpost-lie with no signal. WARN (never block) so the coercion is
+  //     visible. Symmetric with the epic checks: assert a PRESENT value is valid,
+  //     not merely that a declared value resolves. Absent value = no warning.
+  checkClosedEnumField(raw, 'status', SPEC_STATUS_SET, SPEC_STATUSES, violations);
+  checkClosedEnumField(raw, 'tier', TIER_SET, TIERS, violations);
 
   // Split-layout (#93): a spec whose phases are split across sibling files
   // (`type: requirements | design | tasks`, one phase per file) does NOT carry
