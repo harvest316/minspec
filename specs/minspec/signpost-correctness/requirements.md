@@ -3,8 +3,10 @@ id: SPEC-010
 type: requirements
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
 status: specifying
+tier: T4  # foundational: 17 FRs, DAG model, shared multi-caller contract — full ceremony (manual classification; classifier under-tiers by diff size)
 product: minspec
 epic: EPIC-002  # Signpost Integrity
+relates_to: [SPEC-005, SPEC-006, SPEC-012, SPEC-013]  # repair trigger; predicate strength; global order (DR-019); traceability parse-grammar co-owner
 ---
 
 # MinSpec — Signpost Correctness (Requirements)
@@ -142,6 +144,45 @@ graph; topo-sort yields the global next step.
   (d) agent dispatch. One checker → one verdict everywhere; editor, commit, CI,
   and agent can never disagree about "complete".
 
+### Bug report — close the loop on a wrong signpost
+
+- **FR-17 (one-click bug report — *capture the wrongness*).** When a signpost is
+  wrong, the developer MUST be able to file it in **one action**: a **"Report wrong
+  signpost"** command that opens a **pre-filled GitHub issue** (`harvest316/minspec`,
+  labels `bug,signpost`) whose body is **FR-4's derivation evidence** (the exact state
+  that produced the signpost) plus the MinSpec version and a **sanitised** state
+  snapshot. The extension MUST NOT submit silently — it opens the pre-filled URL in the
+  browser; the developer **reviews and submits** (upholds INV-Tier-0: no extension-side
+  network; visible + opt-in per INV #5). FR-4 already produces the report *content*;
+  FR-17 is the *channel*. Rationale: a wrong signpost is the single highest-value signal
+  a never-wrong product can capture — this makes it captured **by default** rather than
+  lost to a manual copy-paste (or an uninstall). Verified by a **T2 feature test**:
+  derivation state → correctly pre-filled issue URL. (Not a state→signpost mapping, so
+  not a T0 case under FR-8.)
+
+## Costly to Refactor
+
+*Expensive-to-reverse commitments — read these closely; everything else is cheap to
+change. Ranked most→least costly.*
+
+1. **DAG coverage model — edges-not-presence (FR-1).** The entire correctness story keys
+   off "first incomplete node in topo order." Retreating to file-exists checks = re-deriving
+   every signpost and re-writing every T0 mapping test. *Check: coverage-not-presence
+   accepted before implement.*
+2. **Shared L1 checker — one pure fn, four callers (FR-16).** A near-public contract
+   consumed by extension, pre-commit, CI, and agent dispatch. A second implementation =
+   permanent drift; the four surfaces disagree about "complete." *Check: one function in
+   `packages/shared`, imported everywhere, no fork.*
+3. **L1 predicate grammar — traceability IDs (FR-3).** The `FR-N` → plan-ref → task grammar
+   the predicate greps; co-owned with SPEC-013's parse contract. Changing it = re-parse +
+   migrate every spec. *Check: grammar fixed before specs depend on it.*
+4. **Advisory boundary (FR-5, INV-Advisory).** Shipping advisory then later making the
+   signpost block = a behaviour reversal users feel. Blocking lives only in the separate
+   opt-in DR-012 gate. *Check: advisory-only confirmed; blocking stays in DR-012.*
+5. **Derive-on-demand, no cache (OQ2 resolved).** Pure-fs derivation is the contract; any
+   future DAG cache must stay an internal optimisation behind the same pure fn, never a
+   second source of truth. *Check: cache (if ever) cannot become a new way to be wrong.*
+
 ## Invariants (must hold)
 
 - **INV — Signpost correctness (T0).** The signpost MUST NOT present a next step
@@ -170,6 +211,7 @@ Explicit trace from the discussed mechanisms to FRs — nothing dropped.
 | 6. T0 test = invariant | FR-8, INV-correctness |
 | LLM escalation (recovery) | FR-6 trigger → SPEC-005 |
 | Partway-through-a-stage (DAG) | FR-1, FR-3 |
+| Capture the wrongness (one-click bug report) | FR-17 (channel) ← FR-4 (content) |
 
 | Nag-avoidance guardrail | FR |
 |---|---|
@@ -181,6 +223,58 @@ Explicit trace from the discussed mechanisms to FRs — nothing dropped.
 | Authorship branch (agent vs human) | FR-10 |
 | Save-time gate | FR-9 |
 | Shared checker (one fn, four callers) | FR-16 |
+| Bug-report channel | FR-17 |
+
+## Risks & Mitigations
+
+| # | Risk | Likelihood · Impact | Mitigation |
+|---|---|---|---|
+| R1 | **A wrong signpost ships — trust gone (the core threat).** A state→signpost mapping is incorrect; dev/agent is led astray. | Low · High | FR-8 T0 test per mapping; FR-2 pure derivation (testable, not predicted); FR-6 says "unclear" rather than guess; FR-17 captures any miss as a filed report. |
+| R2 | **Checker drift across the four callers (FR-16).** Editor, pre-commit, CI, agent disagree on "complete". | Med · High | One pure fn in `packages/shared`; INV — single checker; T1 contract test asserts identical verdict across all four callers. |
+| R3 | **Partial-coverage hole missed.** A presence check passes a plan covering FR-1..3 of FR-1..5. | Med · High | FR-1 DAG models coverage not presence; FR-3 greps every `FR-N` for a downstream ref; FR-8 T0 case for partway-through. |
+| R4 | **Nag fatigue.** Every-keystroke squiggles on a half-written draft → users disable the signpost. | High · Med | FR-11 holes are errors only at the ready/transition (`status: done`); FR-15 debounce, save-not-keystroke; FR-7 dismissible + sticky, never re-nag. |
+| R5 | **Incoherent state → confident-but-wrong next step.** Dangling/colliding IDs produce a fabricated "next". | Med · High | FR-6 honest degradation ("state unclear — open tasks.md") routes to SPEC-005 repair offer, never a guess. |
+| R6 | **Auto-fix clobbers unsaved work / loops forever.** | Low · High | FR-14 dirty-editor safety (confirmable `WorkspaceEdit`); FR-13 loop cap (default 3) → DR-355 escalation. |
+| R7 | **FR-17 leaks private spec content to GitHub.** Pre-filled issue body carries paths / spec text. | Med · Med | Sanitised snapshot; extension never auto-submits — opens pre-filled URL, dev reviews + submits (INV-Tier-0; INV #5 visible + opt-in). |
+| R8 | **Floor depends on unbuilt specs.** Predicate strength (SPEC-006) is `specifying`. | Med · Med | FR-3 ships with the L1 grammar today; SPEC-006 strengthens the predicate behind the same interface; SPEC-012/DR-019 already resolved global order (OQ1). Sequence SPEC-006 before the L4 layer is trusted. |
+
+## Consequences
+
+**Positive:**
+- A signpost **correct by construction** — derived (FR-2) and tested per-mapping (FR-8). The product's whole trust claim becomes *earnable*, not asserted.
+- One checker, four callers (FR-16) → editor / commit / CI / agent can never disagree about "complete".
+- The rare wrong signpost is **captured** (FR-17), not lost — it feeds back instead of churning a user.
+
+**Negative:**
+- A DAG + coverage grammar is more machinery than a file-exists check — more to build, test, and keep coherent with SPEC-006/SPEC-013's parse contract.
+- Derive-on-demand (no cache) trades per-query cost for correctness; very large repos may later need the optimisation (additive — OQ2).
+- The traceability `FR-N`-ref grammar becomes load-bearing: specs that don't follow it degrade to "unclear" (honest, but a real authoring constraint).
+
+## Alternatives Considered
+
+- **File-exists checklist (the naive impl).** Rejected (Context): can't see a partial-coverage hole — a plan covering FR-1..3 of FR-1..5 is neither "no plan" nor "planned". Correctness requires coverage, not presence (FR-1).
+- **LLM-judged "is the next step right?"** Rejected: breaks Tier-0 (DR-004) + derive-never-guess (FR-2); non-deterministic, un-T0-testable, costs tokens every save. The LLM is confined to *repair* (SPEC-005), never *detection*.
+- **Blocking the signpost (hard gate at every hole).** Rejected here: the signpost is advisory (FR-5 / INV-Advisory). Blocking is the separate opt-in DR-012 gate that *consumes* this contract; keeping them apart preserves "suggest, never block".
+- **Persisted DAG cache as source of truth.** Rejected (OQ2): adds a cache-coherence failure surface — a new way to be wrong — against a product whose one job is never being wrong. Derive on-demand; cache only ever as an internal optimisation behind the pure fn.
+- **FR-17 auto-submit telemetry.** Rejected: silent network breaks INV-Tier-0 / air-gap. Pre-filled URL + manual submit keeps capture visible + opt-in.
+
+## Dependencies
+
+- **`relates_to: SPEC-006`** (Stub & Completeness Gate) — strengthens the L1 completeness
+  predicate (FR-3, and the hollow-test layer) so stubs / placeholder prose can't pass as
+  complete. This spec defines the predicate *interface* and consumes it; SPEC-006 is
+  `specifying` — sequence it before that layer is trusted.
+- **`relates_to: SPEC-005`** (Auto-Structure Repair) — the honest-degradation state (FR-6)
+  is the trigger; SPEC-005's offer-never-silent (its FR-3) is the contract for any LLM
+  repair. Confirm-before-write + dirty-editor-safe (FR-14).
+- **`relates_to: SPEC-012`** (Next-Task Resolver) / **DR-019** — resolved OQ1: the
+  deterministic global order `(severity-class, epic.order, artifact-id)` when multiple
+  specs are simultaneously incomplete.
+- **`relates_to: SPEC-013`** (Self-Audit floor) — co-owns the traceability parse grammar
+  the L1 predicate greps; its FR-11 *consumes* this spec's DAG coverage edge (amended
+  under [#121](https://github.com/harvest316/minspec/issues/121)).
+- **DR-012** — the HITL approval gate *consumes* this completeness contract (blocking lives
+  there, not here). **DR-004** — Tier-0 pure-fs. **DR-355** — escalation for the FR-13 loop cap.
 
 ## Out of scope
 
@@ -202,7 +296,31 @@ Explicit trace from the discussed mechanisms to FRs — nothing dropped.
   [SPEC-012 Next-Task Resolver](../next-task-resolver/requirements.md) / DR-019:**
   deterministic total order `(severity-class, epic.order, artifact-id)`; subjective
   weight in explicit frontmatter, never inferred.
-- Where the coverage DAG lives: derived on demand from `.minspec/traceability.json`
-  + frontmatter, or cached. (Leans on-demand per DR-004 pure-fs.)
-- Exact "ready/transition" trigger set for FR-11 (reuse SPEC-006 RD-2
-  `status: done` transition vs a distinct signpost-ready signal).
+- ~~Where the coverage DAG lives: derived on demand from `.minspec/traceability.json`
+  + frontmatter, or cached.~~ **Resolved (this review): derive on-demand**, no persisted
+  cache — honours DR-004 pure-fs / FR-2 derive-never-guess and avoids a cache-coherence
+  failure surface. If perf demands it later, a cache is an additive optimisation behind
+  the same pure fn (Costly #5).
+- ~~Exact "ready/transition" trigger set for FR-11 (reuse SPEC-006 RD-2 `status: done`
+  transition vs a distinct signpost-ready signal).~~ **Resolved (this review): reuse
+  SPEC-006 RD-2 `status: done` transition** — no new signal. Holes are a forward-looking
+  checklist before `done`; they become errors at the `done`/gate transition. One trigger,
+  fewer dependencies (FR-11).
+
+**None open.**
+
+## Follow-ups (tracked)
+
+- **FR-17 "Report wrong signpost" command** — contributed command + pre-filled
+  `harvest316/minspec` issue body (labels `bug,signpost`); lands at implement with the
+  signpost surface — no separate issue (same spec/epic). The issue *template* is a
+  one-time repo setup → file a `harvest316/minspec` issue per DR-023 if the team wants it
+  tracked separately.
+- **SPEC-006 predicate strength** must land before the FR-9 L4 (hollow-test) layer is
+  trusted — sequencing note for SPEC-006's plan; not a new issue (same epic).
+- **[#121](https://github.com/harvest316/minspec/issues/121)** (approved-spec amend:
+  SPEC-013 FR-11 consumes this DAG coverage edge) — already tracked; this spec's edge
+  ships independently of #121.
+- **Site / marketplace copy** — "the signpost is never wrong, and the one time it is, you
+  report it in one click" is a positioning beat (FR-17); non-code → `harvest316/minspec`
+  issue per DR-023 forward rule if the team wants it surfaced.
