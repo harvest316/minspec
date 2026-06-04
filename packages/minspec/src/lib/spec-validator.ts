@@ -51,21 +51,50 @@ export interface ValidationResult {
 const ASPECT_KEYWORDS: Record<Aspect, string[]> = {
   ux: ['ui', 'ux', 'screen', 'page', 'component', 'button', 'modal', 'dialog',
     'layout', 'wireframe', 'frontend', 'css', 'view', 'form', 'menu', 'icon'],
-  api: ['endpoint', 'api', 'payload', 'request', 'response', 'route', 'http',
-    'rest', 'graphql', 'webhook', 'rpc'],
+  // See `API_AMBIGUOUS_KEYWORDS` below — the api aspect has a stricter rule and
+  // its keyword set is split into strong/weak; this entry is the strong set.
+  api: ['endpoint', 'api', 'payload', 'graphql', 'webhook', 'rpc', 'restful', 'openapi'],
   data: ['schema', 'table', 'migration', 'database', 'column', 'entity',
     'index', 'query', 'sql'],
   architecture: ['architecture', 'subsystem', 'service', 'integration',
     'cross-cutting', 'topology', 'pipeline', 'queue', 'broker'],
 };
 
+/**
+ * Ambiguous api keywords (#108). `request`, `response`, `route`, `http` are common
+ * English words; bare `rest` (now dropped — `restful` / `rest api` carry the real
+ * signal) collided with "the rest". A single ambiguous keyword is NOT enough to flag
+ * the api aspect: it needs a strong signal (`ASPECT_KEYWORDS.api`) OR ≥2 ambiguous
+ * keywords corroborating each other. This fixes SPEC-015 tripping `aspect.api.no-schema`
+ * on the prose "…the rest" while keeping genuine API specs (request+response, a route +
+ * payload, "REST API") detected.
+ */
+const API_AMBIGUOUS_KEYWORDS = ['request', 'response', 'route', 'http'] as const;
+
+/** Compile a case-insensitive word-boundary regex for a keyword. */
+function wordBoundaryRe(kw: string): RegExp {
+  return new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+}
+
+/**
+ * The api aspect's detection rule, separated from the generic any-keyword rule
+ * because its keywords are individually ambiguous (#108). Fires when there is at
+ * least one strong keyword, OR the phrase "rest api", OR ≥2 distinct ambiguous
+ * keywords. One ambiguous keyword alone never fires.
+ */
+function detectsApi(rawLower: string): boolean {
+  if (ASPECT_KEYWORDS.api.some((kw) => wordBoundaryRe(kw).test(rawLower))) return true;
+  if (/\brest\s+api\b/i.test(rawLower)) return true; // "REST API" as a phrase
+  const ambiguousHits = API_AMBIGUOUS_KEYWORDS.filter((kw) => wordBoundaryRe(kw).test(rawLower)).length;
+  return ambiguousHits >= 2;
+}
+
 function detectAspects(rawLower: string): Aspect[] {
   const found: Aspect[] = [];
   for (const aspect of ASPECTS) {
-    const hit = ASPECT_KEYWORDS[aspect].some((kw) => {
-      const re = new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
-      return re.test(rawLower);
-    });
+    const hit = aspect === 'api'
+      ? detectsApi(rawLower)
+      : ASPECT_KEYWORDS[aspect].some((kw) => wordBoundaryRe(kw).test(rawLower));
     if (hit) found.push(aspect);
   }
   return found;

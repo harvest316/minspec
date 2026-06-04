@@ -130,6 +130,60 @@ describe('validateSpec — aspect: api', () => {
   });
 });
 
+// T3 regression (#108): the api aspect keyword set included bare ambiguous English
+// words — `rest` (REST vs "the rest"), and similarly `route`/`request`/`response`/
+// `http` appear in everyday prose. Word-boundary matching alone can't tell REST from
+// rest, so SPEC-015 (status-lanes), which defines NO api, tripped `aspect.api.no-schema`
+// on the phrase "…the rest". Fix: bare `rest` dropped; a single *ambiguous* keyword no
+// longer triggers the aspect — it needs a real API signal (one *strong* keyword) OR
+// ≥2 corroborating keywords.
+describe('validateSpec — api aspect false-positives (#108)', () => {
+  it('prose "the rest" does NOT detect the api aspect (the SPEC-015 bug)', () => {
+    // Verbatim shape of the SPEC-015 prose that tripped the false positive.
+    const body = FULL_T3.replace(
+      'Build the thing.',
+      'Done and Archived lanes collapse by default; the rest stay expanded.',
+    );
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).not.toContain('api');
+    expect(r.violations.some((v) => v.rule === 'aspect.api.no-schema')).toBe(false);
+  });
+
+  it('a single ambiguous keyword in prose does not detect the api aspect', () => {
+    // 'route' / 'request' / 'response' / 'http' are each ambiguous English words;
+    // one alone (no corroboration) must not flag an api surface.
+    for (const word of ['route', 'request', 'response']) {
+      const body = FULL_T3.replace('Build the thing.', `The user can ${word} through the menu.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" alone tripped api`).not.toContain('api');
+    }
+  });
+
+  it('a single STRONG api keyword still detects the api aspect', () => {
+    // Unambiguous signals must keep working — one is enough.
+    for (const word of ['endpoint', 'webhook', 'graphql', 'payload']) {
+      const body = FULL_T3.replace('Build the thing.', `Add a ${word} to the service.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" failed to detect api`).toContain('api');
+    }
+  });
+
+  it('"REST API" / "RESTful" prose still detects the api aspect (real signal)', () => {
+    for (const phrase of ['Expose a REST API for clients.', 'A RESTful service.']) {
+      const body = FULL_T3.replace('Build the thing.', phrase);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${phrase}" failed to detect api`).toContain('api');
+    }
+  });
+
+  it('TWO corroborating ambiguous keywords do detect the api aspect', () => {
+    // request + response together is a genuine API signal even without a strong word.
+    const body = FULL_T3.replace('Build the thing.', 'Define the request and response shapes for the route.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).toContain('api');
+  });
+});
+
 describe('validateSpec — aspect: architecture', () => {
   it('declared architecture aspect without diagram errors at T4', () => {
     const body = FULL_T3.replace('Build the thing.', 'Introduce a new broker service and message queue subsystem.');
