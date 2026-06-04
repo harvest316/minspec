@@ -652,6 +652,68 @@ describe('SpecTreeProvider — epic grouping', () => {
     expect(g.contextValue).toBe('epicGroup.proposed');
   });
 
+  // ── #67 regression: member-less proposed/active epics must surface ──
+  it('renders a registered proposed epic that has ZERO member specs (#67)', () => {
+    const proposed: EpicSummary[] = [
+      { id: 'EPIC-009', slug: 'new-thing', title: 'New Thing', status: 'proposed', order: 1, filePath: '/e/EPIC-009.md' },
+    ];
+    // No spec references EPIC-009.
+    const specs: SpecSummary[] = [makeSpec({ id: 'SPEC-050', status: 'new' })];
+    const p = new SpecTreeProvider('/ws', () => specs, undefined, () => proposed);
+    const groups = epicGroups(p);
+    const node = groups.find(g => g.groupLabel.startsWith('New Thing'));
+    expect(node).toBeDefined();                              // it must exist (was pruned before)
+    expect(node!.members).toHaveLength(0);                   // truly member-less
+    expect(node!.contextValue).toBe('epicGroup.proposed');   // accept tick gate
+  });
+
+  it('a member-less proposed epic shows the status word, not a misleading 0/0, and a distinct icon (#67)', () => {
+    const proposed: EpicSummary[] = [
+      { id: 'EPIC-009', slug: 'new-thing', title: 'New Thing', status: 'proposed', order: 1, filePath: '/e/EPIC-009.md' },
+    ];
+    const p = new SpecTreeProvider('/ws', () => [makeSpec({ id: 'SPEC-050', status: 'new' })], undefined, () => proposed);
+    const node = epicGroups(p).find(g => g.groupLabel.startsWith('New Thing'))!;
+    expect(node.description).toBe('proposed');               // not '0/0'
+    expect((node.iconPath as { id: string }).id).toBe('lightbulb'); // distinct from 'milestone'
+    // a11y label carries the status too
+    expect((node as unknown as { accessibilityInformation: { label: string } }).accessibilityInformation.label)
+      .toContain('status proposed');
+  });
+
+  it('a populated proposed epic keeps the done/total badge but the proposed icon (#67)', () => {
+    const proposed: EpicSummary[] = [
+      { id: 'EPIC-009', slug: 'new-thing', title: 'New Thing', status: 'proposed', order: 1, filePath: '/e/EPIC-009.md' },
+    ];
+    const specs: SpecSummary[] = [
+      makeSpec({ id: 'SPEC-050', status: 'done', epic: 'new-thing' }),
+      makeSpec({ id: 'SPEC-051', status: 'new', epic: 'new-thing' }),
+    ];
+    const p = new SpecTreeProvider('/ws', () => specs, undefined, () => proposed);
+    const node = epicGroups(p).find(g => g.groupLabel.startsWith('New Thing'))!;
+    expect(node.description).toBe('1/2');                    // members present → real badge
+    expect((node.iconPath as { id: string }).id).toBe('lightbulb');
+  });
+
+  it('active/done epics WITH members render exactly as before — milestone icon + done/total (#67 no-regression)', () => {
+    const p = new SpecTreeProvider('/ws', () => SPECS, undefined, () => EPICS);
+    const telemetry = epicGroups(p).find(g => g.groupLabel.startsWith('Telemetry'))!;
+    expect(telemetry.description).toBe('1/2');
+    expect((telemetry.iconPath as { id: string }).id).toBe('milestone');
+    expect(telemetry.contextValue).toBe('epicGroup.active');
+  });
+
+  it('a member-less ACTIVE epic still renders (visible but no accept tick) (#67)', () => {
+    const epics: EpicSummary[] = [
+      { id: 'EPIC-009', slug: 'lonely', title: 'Lonely', status: 'active', order: 1, filePath: '/e/EPIC-009.md' },
+    ];
+    const p = new SpecTreeProvider('/ws', () => [makeSpec({ id: 'SPEC-050', status: 'new' })], undefined, () => epics);
+    const node = epicGroups(p).find(g => g.groupLabel.startsWith('Lonely'))!;
+    expect(node).toBeDefined();
+    expect(node.description).toBe('active');                 // status word, not 0/0
+    expect((node.iconPath as { id: string }).id).toBe('milestone');
+    expect(node.contextValue).toBe('epicGroup.active');      // accept tick does NOT show (only proposed)
+  });
+
   it('falls back to status groups when no epics are registered (FR-10)', () => {
     const p = new SpecTreeProvider('/ws', () => SPECS, undefined, () => []);
     const nodes = p.getChildren(undefined);

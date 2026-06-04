@@ -249,6 +249,28 @@ describe('epic-manager', () => {
       const items = [{ epic: 'EPIC-002' }, { epic: 'EPIC-001' }];
       expect([...groupByEpic(items, i => i.epic, epics).keys()]).toEqual(['EPIC-001', 'EPIC-002']);
     });
+
+    // ── #67 regression: registered member-less epics must NOT be pruned ──
+    it('retains a registered epic that has zero members (#67)', () => {
+      // Only EPIC-001 has a member; EPIC-002 is a registered-but-empty epic.
+      const items = [{ name: 'x', epic: 'EPIC-001' }];
+      const map = groupByEpic(items, i => i.epic, epics);
+      expect([...map.keys()]).toEqual(['EPIC-001', 'EPIC-002']);
+      expect(map.get('EPIC-002')).toEqual([]); // present, empty
+    });
+
+    it('retains ALL registered epics when none have members, NO_EPIC only when populated (#67)', () => {
+      // No items at all → both registered epics survive, no NO_EPIC bucket.
+      const empty = groupByEpic([] as { epic?: string }[], i => i.epic, epics);
+      expect([...empty.keys()]).toEqual(['EPIC-001', 'EPIC-002']);
+      expect(empty.has(NO_EPIC)).toBe(false);
+
+      // Only an unresolved item → registered epics survive empty, NO_EPIC last.
+      const orphan = groupByEpic([{ epic: 'ghost' }], i => i.epic, epics);
+      expect([...orphan.keys()]).toEqual(['EPIC-001', 'EPIC-002', NO_EPIC]);
+      expect(orphan.get('EPIC-001')).toEqual([]);
+      expect(orphan.get(NO_EPIC)).toHaveLength(1);
+    });
   });
 
   // ─── createEpic ─────────────────────────────────────────────────────

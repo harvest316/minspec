@@ -186,6 +186,14 @@ export function resolveEpic(ref: string | undefined, epics: EpicSummary[]): Epic
  * Bucket artifacts by their resolved epic id. Items whose ref is absent or does
  * not resolve land in the NO_EPIC bucket. The returned Map iterates epics in
  * `epics` order (i.e. order→id), with NO_EPIC last when present.
+ *
+ * EVERY registered epic gets a bucket — including those with zero members.
+ * A registered `proposed`/`active` epic that nothing references yet (e.g.
+ * minted by epic-backfill, DR-016) must still surface in the explorer so it can
+ * be reviewed/approved (#67); pruning it here made it invisible everywhere. The
+ * only sentinel that is conditionally present is NO_EPIC, which is added solely
+ * when one or more items fail to resolve — an unregistered/orphan key with no
+ * members produces no bucket because it never seeds one.
  */
 export function groupByEpic<T>(
   items: T[],
@@ -193,7 +201,8 @@ export function groupByEpic<T>(
   epics: EpicSummary[],
 ): Map<string, T[]> {
   const buckets = new Map<string, T[]>();
-  // Seed in epic order so iteration is deterministic; prune empties at the end.
+  // Seed in epic order so iteration is deterministic. Member-less registered
+  // epics are KEPT (see #67) — do not prune empty buckets.
   for (const epic of epics) buckets.set(epic.id, []);
 
   const noEpic: T[] = [];
@@ -206,10 +215,6 @@ export function groupByEpic<T>(
     }
   }
 
-  // Drop epics with no members to avoid empty groups in the tree.
-  for (const [id, members] of [...buckets]) {
-    if (members.length === 0) buckets.delete(id);
-  }
   if (noEpic.length > 0) buckets.set(NO_EPIC, noEpic);
   return buckets;
 }

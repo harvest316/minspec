@@ -15,6 +15,22 @@ import type { EpicSummary } from '../lib/epic-manager';
 export type ListEpicsFn = (rootDir: string) => EpicSummary[];
 
 /**
+ * Map an epic status to a ThemeIcon id. A `proposed` epic must read as visually
+ * distinct from active/done so a freshly-minted, member-less epic awaiting
+ * approval stands out (#67). Active epics keep the familiar `milestone` glyph.
+ * (`lightbulb` mirrors the "needs a decision" feel; cf. ADR proposed → question.)
+ */
+function epicStatusIcon(status: EpicSummary['status'] | undefined): string {
+  switch (status) {
+    case 'proposed': return 'lightbulb';
+    case 'done': return 'check';
+    case 'abandoned': return 'circle-slash';
+    case 'active':
+    default: return 'milestone';
+  }
+}
+
+/**
  * Per-panel "group by epic" toggle. Default ON (FR-7). Holds in-memory state;
  * extension.ts wires persistence to workspaceState and a refresh callback.
  */
@@ -58,7 +74,9 @@ export class EpicGroupNode<T> extends vscode.TreeItem {
     // Status-suffixed contextValue gates the inline accept tick: it shows only
     // on proposed epics (`epicGroup.proposed`). NO_EPIC has no epic to act on.
     this.contextValue = isNoEpic ? 'epicGroup.none' : `epicGroup.${epic?.status ?? 'proposed'}`;
-    this.iconPath = new vscode.ThemeIcon(isNoEpic ? 'circle-slash' : 'milestone');
+    // A status-specific glyph makes a proposed (often member-less) epic stand
+    // out from active/done ones (#67); NO_EPIC keeps its struck-circle.
+    this.iconPath = new vscode.ThemeIcon(isNoEpic ? 'circle-slash' : epicStatusIcon(epic?.status));
 
     // Selecting an epic header opens its EPIC-NNN.md.
     if (epic) {
@@ -67,7 +85,7 @@ export class EpicGroupNode<T> extends vscode.TreeItem {
         title: 'Open Epic',
         arguments: [vscode.Uri.file(epic.filePath)],
       };
-      this.tooltip = `${epic.id}: ${epic.title}\nStatus: ${epic.status}\n${badge} done`;
+      this.tooltip = `${epic.id}: ${epic.title}\nStatus: ${epic.status}\n${badge}`;
     }
 
     this.accessibilityInformation = {
@@ -106,9 +124,15 @@ export function buildEpicGroups<T>(
   const nodes: EpicGroupNode<T>[] = [];
   for (const [key, members] of buckets) {
     const isNoEpic = key === NO_EPIC;
-    const done = members.filter(isTerminal).length;
-    const badge = `${done}/${members.length}`;
     const epic = isNoEpic ? undefined : epicById.get(key);
+    // A member-less registered epic (#67) shows its lifecycle status word rather
+    // than a misleading `0/0` done/total — there is nothing to count yet, and the
+    // status (e.g. "proposed") is the signal the user needs to act on. Epics WITH
+    // members keep the done/total badge unchanged.
+    const done = members.filter(isTerminal).length;
+    const badge = !isNoEpic && members.length === 0
+      ? (epic?.status ?? 'proposed')
+      : `${done}/${members.length}`;
     const label = isNoEpic ? NO_EPIC : `${epic?.title ?? key} (${key})`;
     nodes.push(new EpicGroupNode(label, members, badge, isNoEpic, epic));
   }
