@@ -825,6 +825,61 @@ describe('commands', () => {
         'MinSpec: Generated example spec. Read through it to learn the tier system.',
       );
     });
+
+    // ── #153 bug 1: multi-root — write to the ACTIVE folder, not folders[0] ──
+    // Point the active editor at a given file (command-palette context).
+    function setActiveEditor(fsPath: string | undefined): void {
+      (vscode.window as { activeTextEditor: unknown }).activeTextEditor =
+        fsPath === undefined ? undefined : { document: { uri: { fsPath } } };
+    }
+
+    it('targets the resolved folder (active editor) in a multi-root workspace, not folders[0]', async () => {
+      // Two roots; the open file lives in the SECOND one. The legacy
+      // `workspaceFolders?.[0]` would wrongly target folder #1.
+      (
+        vscode.workspace as {
+          workspaceFolders: { uri: { fsPath: string } }[];
+        }
+      ).workspaceFolders = [
+        { uri: { fsPath: '/tmp/proj-a' } },
+        { uri: { fsPath: '/tmp/proj-b' } },
+      ];
+      setActiveEditor('/tmp/proj-b/src/index.ts');
+      vi.mocked(fs.existsSync).mockReturnValueOnce(false);
+      vi.mocked(vscode.workspace.openTextDocument).mockResolvedValueOnce(
+        {} as vscode.TextDocument,
+      );
+
+      await generateExampleCommand();
+
+      // resolveAndValidate mock returns `${root}/${sub}`, so the written path
+      // encodes the resolved root. It must be proj-b, never proj-a.
+      const writtenPath = vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[0] as string;
+      expect(writtenPath).toContain('/tmp/proj-b/');
+      expect(writtenPath).not.toContain('/tmp/proj-a/');
+
+      setActiveEditor(undefined);
+    });
+
+    // ── #153 bug 2: `created:` must reflect CALL time, not module-load time ──
+    it('stamps the example with the call-time date, not the module-load date', async () => {
+      // A fixed, far-future date that cannot equal the real module-load date.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2099-12-31T08:00:00.000Z'));
+      try {
+        vi.mocked(fs.existsSync).mockReturnValueOnce(false);
+        vi.mocked(vscode.workspace.openTextDocument).mockResolvedValueOnce(
+          {} as vscode.TextDocument,
+        );
+
+        await generateExampleCommand();
+
+        const written = vi.mocked(fs.writeFileSync).mock.calls.at(-1)?.[1] as string;
+        expect(written).toContain('created: 2099-12-31');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // ─── declareScopeCommand ──────────────────────────────────────────────────
