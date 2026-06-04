@@ -104,6 +104,77 @@ describe('nextSpecId()', () => {
   });
 });
 
+/**
+ * T3 regression for #57 — `nextSpecId()` naive global max+1 breaks per-product
+ * ranges. Two products share one specs/ tree (real nested layout:
+ * specs/<product>/<feature>/requirements.md). A new spec for product A must draw
+ * from A's own block, NOT from the global max — otherwise a higher-numbered
+ * product-B id pushes the next A id out of A's block (the in-tree symptom:
+ * agent-execute SPEC-016 landed between minspec SPEC-015 and SPEC-017).
+ */
+describe('nextSpecId() per-product scoping (#57)', () => {
+  let specsDir: string;
+
+  /** Write a nested spec at specs/<product>/<feature>/requirements.md. */
+  function writeNestedSpec(product: string, feature: string, id: string): void {
+    const dir = path.join(specsDir, product, feature);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'requirements.md'),
+      `---\nid: ${id}\ntitle: ${feature}\ntier: T2\nstatus: new\ncreated: 2026-01-01\nproduct: ${product}\nphases:\n  specify: pending\n  clarify: pending\n  plan: pending\n  tasks: pending\n  implement: pending\n---\n\n# ${feature}\n`,
+      'utf-8',
+    );
+  }
+
+  beforeEach(() => {
+    specsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'minspec-id-product-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(specsDir, { recursive: true, force: true });
+  });
+
+  it('scopes the next id to the target product, not the global max', () => {
+    // minspec owns 015 + 017; agent-execute owns the interleaved 016.
+    writeNestedSpec('minspec', 'status-lanes', 'SPEC-015');
+    writeNestedSpec('agent-execute', 'reality-check', 'SPEC-016');
+    writeNestedSpec('minspec', 'trust-dashboard', 'SPEC-017');
+
+    // Bug: global max+1 → SPEC-018 regardless of product.
+    // Fixed: next minspec id continues minspec's own block (max minspec = 017).
+    expect(nextSpecId(specsDir, 'minspec')).toBe('SPEC-018');
+    // And agent-execute draws from ITS block (max agent-execute = 016),
+    // NOT from the global max — independent ranges.
+    expect(nextSpecId(specsDir, 'agent-execute')).toBe('SPEC-017');
+  });
+
+  it('gives each product an independent range (no interleave collision)', () => {
+    // Product A in the low block, product B already pushed into a high block.
+    writeNestedSpec('minspec', 'a-one', 'SPEC-001');
+    writeNestedSpec('minspec', 'a-two', 'SPEC-002');
+    writeNestedSpec('scroogellm', 'b-one', 'SPEC-100');
+    writeNestedSpec('scroogellm', 'b-two', 'SPEC-101');
+
+    // minspec's next stays in minspec's block — unaffected by scrooge's 1xx ids.
+    expect(nextSpecId(specsDir, 'minspec')).toBe('SPEC-003');
+    // scrooge continues its own 1xx block.
+    expect(nextSpecId(specsDir, 'scroogellm')).toBe('SPEC-102');
+  });
+
+  it('returns the product block start when the product has no specs yet', () => {
+    writeNestedSpec('minspec', 'a-one', 'SPEC-009');
+    // A brand-new product shares the tree but owns nothing yet → SPEC-001.
+    expect(nextSpecId(specsDir, 'agent-execute')).toBe('SPEC-001');
+  });
+
+  it('falls back to global max when no product is given (back-compat)', () => {
+    writeNestedSpec('minspec', 'a-one', 'SPEC-005');
+    writeNestedSpec('scroogellm', 'b-one', 'SPEC-100');
+    // Unscoped call keeps the original global-counter contract.
+    expect(nextSpecId(specsDir)).toBe('SPEC-101');
+  });
+});
+
 describe('createSpec()', () => {
   let rootDir: string;
 
