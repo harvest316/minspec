@@ -7,7 +7,7 @@ product: minspec
 epic: EPIC-002  # Signpost Integrity
 aspects: [ux, data]
 depends_on: [DR-012]
-relates_to: [SPEC-014, SPEC-015, SPEC-004]
+relates_to: [SPEC-014, SPEC-015, SPEC-004, SPEC-018]
 ---
 
 # MinSpec — Trust Dashboard (Requirements)
@@ -143,7 +143,10 @@ not *fast-approve*. (Decided this session; recorded inline — no separate DR.)
   at lunch does not count as reading. This denoises M3's worst flaw (R7) but does **not**
   promote it: engaged time is still a *correlate*, still shown only crossed with rework
   (FR-9), never a comprehension score. Scroll/focus events are **content-free** telemetry
-  (positions + timestamps, never text), under the same opt-in as FR-8.
+  (positions + timestamps, never text), under the same opt-in as FR-8. The **richest**
+  source is [SPEC-018](../spec-custom-editor/requirements.md) (specs opened in MinSpec's own
+  webview editor → full-DOM events); the plain-editor path is the fallback when that editor
+  is off. This metric MUST work with **either** source — it never *requires* SPEC-018.
 - **FR-7b (engagement is a proxy, not comprehension — no scroll-verdict).** "Scrolled fast"
   / "didn't scroll to bottom" MUST NOT become a skimmed verdict. Scroll-to-bottom to unlock
   Approve defeats any such signal — the same proxy trap (§The proxy trap). Engagement is
@@ -312,6 +315,9 @@ diff library choice (FR-OQ2 shortlist); scatter bucketing for sparse data.
 - **Approval-store schema migration (FR-1/FR-7).** `approvals.json` gains fields; needs a
   back-compat read path (old records lack snapshot/reviewStart) → tracked at implement, T3
   regression test for the migration.
+- **SPEC-018 Spec Custom Editor** — the scoped, opt-in webview editor that opens specs in
+  MinSpec's surface (richer engagement source for FR-7a). Separate surface concern, its own
+  spec → [SPEC-018](../spec-custom-editor/requirements.md). M3 must not depend on it.
 - **Marketing / site copy** — "measure how much you're rubber-stamping" is a sharp
   positioning line (ties to the just-enough-human thesis). Non-code, never enters SDD →
   file a `harvest316/minspec` issue (or AIClarity site) per DR-023 forward rule. `None`
