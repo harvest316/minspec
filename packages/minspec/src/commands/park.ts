@@ -58,7 +58,14 @@ export async function parkCommand(): Promise<void> {
     async () => parkTopic(folder, entry),
   );
 
-  if (result.method === 'github') {
+  if (result.deduped) {
+    // A matching open issue / parking-lot entry already existed — reused it
+    // instead of creating a duplicate (issue #24).
+    const target = result.method === 'github' ? result.url : result.filePath;
+    vscode.window.showInformationMessage(
+      `MinSpec: Topic already parked — reused existing ${target}`,
+    );
+  } else if (result.method === 'github') {
     vscode.window.showInformationMessage(
       `MinSpec: Created GitHub issue — ${result.url}`,
     );
