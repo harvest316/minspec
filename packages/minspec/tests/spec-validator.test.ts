@@ -130,6 +130,60 @@ describe('validateSpec — aspect: api', () => {
   });
 });
 
+// T3 regression (#108): the api aspect keyword set included bare ambiguous English
+// words — `rest` (REST vs "the rest"), and similarly `route`/`request`/`response`/
+// `http` appear in everyday prose. Word-boundary matching alone can't tell REST from
+// rest, so SPEC-015 (status-lanes), which defines NO api, tripped `aspect.api.no-schema`
+// on the phrase "…the rest". Fix: bare `rest` dropped; a single *ambiguous* keyword no
+// longer triggers the aspect — it needs a real API signal (one *strong* keyword) OR
+// ≥2 corroborating keywords.
+describe('validateSpec — api aspect false-positives (#108)', () => {
+  it('prose "the rest" does NOT detect the api aspect (the SPEC-015 bug)', () => {
+    // Verbatim shape of the SPEC-015 prose that tripped the false positive.
+    const body = FULL_T3.replace(
+      'Build the thing.',
+      'Done and Archived lanes collapse by default; the rest stay expanded.',
+    );
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).not.toContain('api');
+    expect(r.violations.some((v) => v.rule === 'aspect.api.no-schema')).toBe(false);
+  });
+
+  it('a single ambiguous keyword in prose does not detect the api aspect', () => {
+    // 'route' / 'request' / 'response' / 'http' are each ambiguous English words;
+    // one alone (no corroboration) must not flag an api surface.
+    for (const word of ['route', 'request', 'response']) {
+      const body = FULL_T3.replace('Build the thing.', `The user can ${word} through the menu.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" alone tripped api`).not.toContain('api');
+    }
+  });
+
+  it('a single STRONG api keyword still detects the api aspect', () => {
+    // Unambiguous signals must keep working — one is enough.
+    for (const word of ['endpoint', 'webhook', 'graphql', 'payload']) {
+      const body = FULL_T3.replace('Build the thing.', `Add a ${word} to the service.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" failed to detect api`).toContain('api');
+    }
+  });
+
+  it('"REST API" / "RESTful" prose still detects the api aspect (real signal)', () => {
+    for (const phrase of ['Expose a REST API for clients.', 'A RESTful service.']) {
+      const body = FULL_T3.replace('Build the thing.', phrase);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${phrase}" failed to detect api`).toContain('api');
+    }
+  });
+
+  it('TWO corroborating ambiguous keywords do detect the api aspect', () => {
+    // request + response together is a genuine API signal even without a strong word.
+    const body = FULL_T3.replace('Build the thing.', 'Define the request and response shapes for the route.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).toContain('api');
+  });
+});
+
 describe('validateSpec — aspect: architecture', () => {
   it('declared architecture aspect without diagram errors at T4', () => {
     const body = FULL_T3.replace('Build the thing.', 'Introduce a new broker service and message queue subsystem.');
@@ -484,9 +538,11 @@ describe('validateSpec — symmetric frontmatter primitive (#137)', () => {
       expect(r.complete).toBe(true);
     });
 
-    it('does NOT warn missing for a non-required closed-set field (tier absent is fine)', () => {
-      // 10/21 real specs legitimately omit tier — requiring it would flood.
-      const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'status: done'])), DEFAULT_CONFIG);
+    it('does NOT warn missing tier for a secondary (split-layout) spec — design/tasks omit it', () => {
+      // 10/21 real specs legitimately omit tier — they are split-layout design/tasks
+      // files (secondary artifacts). Requiring tier on those would flood. (See the
+      // #103 block below for the primary-spec direction, which DOES warn.)
+      const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: design', 'status: done'])), DEFAULT_CONFIG);
       expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
     });
 
@@ -542,5 +598,132 @@ describe('validateSpec — symmetric frontmatter primitive (#137)', () => {
     );
     expect(frontmatterRules.length).toBeGreaterThan(0); // we did trip several
     expect(frontmatterRules.every((v) => v.severity === 'warning')).toBe(true);
+  });
+});
+
+// T3 regression (#103): a spec with no `tier:` is silently coerced to T2 by the
+// parser (spec.ts), so completeness requirements (required phase sections, aspect
+// severities) are computed for the WRONG tier — and nothing warns. This is the
+// #137 asymmetry: tier is checked present⇒valid but a missing tier is never flagged.
+// The catch: tier is required ONLY for a *primary* spec (a requirements artifact:
+// single-file, type absent; OR type: requirements). Split-layout design/tasks files
+// legitimately omit tier (they are secondary), so they must stay silent. Extends the
+// #137 CLOSED_SET_FIELDS model with a type-conditional required rule; warning-only.
+describe('validateSpec — missing tier silently coerced to T2 (#103)', () => {
+  function rawSpec(fmLines: string[], body = '## Specify\none-liner\n'): string {
+    return `---\n${fmLines.join('\n')}\n---\n\n${body}`;
+  }
+
+  it('warns when a single-file (primary) spec has no tier', () => {
+    // No `type:` → single-file primary spec → tier is required. A missing tier is
+    // silently shown as T2, so the SPECS pane would lie about the ceremony level.
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'status: implementing'])), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'frontmatter.tier.missing');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    // names the silent default it is shown as, so the fix is obvious
+    expect(v!.message).toContain('T2');
+  });
+
+  it('warns when a split requirements (primary) spec has no tier', () => {
+    // type: requirements is ALSO a primary artifact (the requirements live there).
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: requirements', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing' && x.severity === 'warning')).toBe(true);
+  });
+
+  it('does NOT warn when a split design (secondary) spec has no tier', () => {
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: design', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
+  });
+
+  it('does NOT warn when a split tasks (secondary) spec has no tier', () => {
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'type: tasks', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
+  });
+
+  it('does NOT warn when a primary spec DOES declare a tier', () => {
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'tier: T3', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing')).toBe(false);
+  });
+
+  it('the missing-tier warning never blocks approval (warning, not error)', () => {
+    // A T1 single-file spec with a Specify section is otherwise complete; a missing
+    // tier must surface but must not flip it to incomplete.
+    const r = validateSpec(parseSpec(rawSpec(['id: SPEC-001', 'status: implementing'])), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.missing' && x.severity === 'error')).toBe(false);
+    expect(r.complete).toBe(true);
+  });
+});
+
+// Feature (#40): a dangling park reference — prose claiming something is "parked /
+// tracked / filed as a separate issue" with NO adjacent `#NNN` or issue URL —
+// silently loses parked work (SPEC-005 lost "Corrupt-file repair parked as a separate
+// issue", and the issue never existed). This lint warns (never errors) on such a
+// claim with no link. It is pure-local Tier 0: it does NOT verify the linked issue
+// EXISTS (that is a network check, Tier 1 / DR-004 — explicitly out of scope here).
+describe('validateSpec — dangling park reference lint (#40)', () => {
+  function rawSpec(body: string): string {
+    return `---\nid: SPEC-001\ntier: T1\nstatus: implementing\n---\n\n## Specify\n${body}\n`;
+  }
+
+  it('warns when "parked as a separate issue" has no link', () => {
+    const r = validateSpec(parseSpec(rawSpec('Corrupt-file repair parked as a separate issue.')), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'park-ref.dangling');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    // never an error — must not block approval
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling' && x.severity === 'error')).toBe(false);
+    expect(r.complete).toBe(true);
+  });
+
+  it('does NOT warn when the park claim carries an adjacent #NNN', () => {
+    const r = validateSpec(parseSpec(rawSpec('Corrupt-file repair parked as a separate issue (#39).')), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling')).toBe(false);
+  });
+
+  it('does NOT warn when the park claim carries an adjacent issue URL', () => {
+    const r = validateSpec(parseSpec(rawSpec(
+      'Corrupt-file repair parked as a separate issue: https://github.com/harvest316/minspec/issues/39',
+    )), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling')).toBe(false);
+  });
+
+  it('accepts a link on the immediately adjacent line (multi-line park ref)', () => {
+    // Real specs put the markdown link on the following line — must not false-positive.
+    const r = validateSpec(parseSpec(rawSpec(
+      'Corrupt-file repair parked as a separate issue\n[#39](https://github.com/harvest316/minspec/issues/39).',
+    )), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule === 'park-ref.dangling')).toBe(false);
+  });
+
+  it('warns on "tracked as a separate issue" and "filed as an issue" with no link', () => {
+    for (const phrase of [
+      'This concern is tracked as a separate issue.',
+      'The richer surface was filed as an issue.',
+    ]) {
+      const r = validateSpec(parseSpec(rawSpec(phrase)), DEFAULT_CONFIG);
+      expect(r.violations.some((x) => x.rule === 'park-ref.dangling'), `"${phrase}"`).toBe(true);
+    }
+  });
+
+  it('does NOT warn on ordinary prose that merely mentions parking/tracking', () => {
+    // Must not flood: "tracked as OQ-1", "tracked separately if the team wants",
+    // "Park as issue" UI labels, "parking-lot action" — none is a dangling
+    // "as a separate issue" CLAIM, so none should trip.
+    for (const phrase of [
+      'Inline edit is tracked as OQ-1 (review surface), an in-spec open question.',
+      'File an issue per DR-023 if the team wants it tracked separately.',
+      'Drift warning offers a "Park as issue" / "Add to scope" action.',
+      'Out-of-scope edits prompt a parking-lot action.',
+    ]) {
+      const r = validateSpec(parseSpec(rawSpec(phrase)), DEFAULT_CONFIG);
+      expect(r.violations.some((x) => x.rule === 'park-ref.dangling'), `"${phrase}"`).toBe(false);
+    }
+  });
+
+  it('points the fix hint at adding the issue link', () => {
+    const r = validateSpec(parseSpec(rawSpec('Corrupt-file repair parked as a separate issue.')), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'park-ref.dangling');
+    expect(v?.fixHint).toMatch(/#NNN|issue/i);
   });
 });

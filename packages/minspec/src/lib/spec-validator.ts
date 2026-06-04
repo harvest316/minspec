@@ -51,21 +51,50 @@ export interface ValidationResult {
 const ASPECT_KEYWORDS: Record<Aspect, string[]> = {
   ux: ['ui', 'ux', 'screen', 'page', 'component', 'button', 'modal', 'dialog',
     'layout', 'wireframe', 'frontend', 'css', 'view', 'form', 'menu', 'icon'],
-  api: ['endpoint', 'api', 'payload', 'request', 'response', 'route', 'http',
-    'rest', 'graphql', 'webhook', 'rpc'],
+  // See `API_AMBIGUOUS_KEYWORDS` below — the api aspect has a stricter rule and
+  // its keyword set is split into strong/weak; this entry is the strong set.
+  api: ['endpoint', 'api', 'payload', 'graphql', 'webhook', 'rpc', 'restful', 'openapi'],
   data: ['schema', 'table', 'migration', 'database', 'column', 'entity',
     'index', 'query', 'sql'],
   architecture: ['architecture', 'subsystem', 'service', 'integration',
     'cross-cutting', 'topology', 'pipeline', 'queue', 'broker'],
 };
 
+/**
+ * Ambiguous api keywords (#108). `request`, `response`, `route`, `http` are common
+ * English words; bare `rest` (now dropped — `restful` / `rest api` carry the real
+ * signal) collided with "the rest". A single ambiguous keyword is NOT enough to flag
+ * the api aspect: it needs a strong signal (`ASPECT_KEYWORDS.api`) OR ≥2 ambiguous
+ * keywords corroborating each other. This fixes SPEC-015 tripping `aspect.api.no-schema`
+ * on the prose "…the rest" while keeping genuine API specs (request+response, a route +
+ * payload, "REST API") detected.
+ */
+const API_AMBIGUOUS_KEYWORDS = ['request', 'response', 'route', 'http'] as const;
+
+/** Compile a case-insensitive word-boundary regex for a keyword. */
+function wordBoundaryRe(kw: string): RegExp {
+  return new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+}
+
+/**
+ * The api aspect's detection rule, separated from the generic any-keyword rule
+ * because its keywords are individually ambiguous (#108). Fires when there is at
+ * least one strong keyword, OR the phrase "rest api", OR ≥2 distinct ambiguous
+ * keywords. One ambiguous keyword alone never fires.
+ */
+function detectsApi(rawLower: string): boolean {
+  if (ASPECT_KEYWORDS.api.some((kw) => wordBoundaryRe(kw).test(rawLower))) return true;
+  if (/\brest\s+api\b/i.test(rawLower)) return true; // "REST API" as a phrase
+  const ambiguousHits = API_AMBIGUOUS_KEYWORDS.filter((kw) => wordBoundaryRe(kw).test(rawLower)).length;
+  return ambiguousHits >= 2;
+}
+
 function detectAspects(rawLower: string): Aspect[] {
   const found: Aspect[] = [];
   for (const aspect of ASPECTS) {
-    const hit = ASPECT_KEYWORDS[aspect].some((kw) => {
-      const re = new RegExp(`\\b${kw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
-      return re.test(rawLower);
-    });
+    const hit = aspect === 'api'
+      ? detectsApi(rawLower)
+      : ASPECT_KEYWORDS[aspect].some((kw) => wordBoundaryRe(kw).test(rawLower));
     if (hit) found.push(aspect);
   }
   return found;
@@ -233,7 +262,11 @@ const SPLIT_LAYOUT_TYPES = SPEC_TYPE_SET;
 // hardcoded guess. Across the real specs/ corpus (21 files, 2026-06-04):
 //   - id      21/21 present  → required (identity; parser silently defaults to '')
 //   - status  21/21 present  → required (parser silently coerces absent → 'new')
-//   - tier    10/21 present  → NOT required (split-layout files omit it)
+//   - tier    primary specs (requirements artifacts: single-file OR type:requirements)
+//             carry it; split-layout design/tasks files omit it. The parser silently
+//             coerces an absent tier → 'T2', so a primary spec missing tier shows a
+//             FALSE ceremony level with no signal (#103). → required-when-primary
+//             (requiredWhen), NOT a flat `required` — secondary files stay silent.
 //   - type    single-file specs legitimately omit it (absence IS the single-file
 //             signal) → closed-set but NOT required
 // product has no canonical value-list anywhere in code, so it is intentionally
@@ -256,7 +289,24 @@ interface ClosedSetField {
   readonly coercesTo?: string;
   /** When true, a missing field warns (required ⇒ present). */
   readonly required: boolean;
+  /**
+   * Type-conditional required-ness (#103). When present it OVERRIDES `required`:
+   * the field is required only when this predicate, given the spec's `type`
+   * frontmatter (lowercased; `''` for a single-file spec with no `type`), returns
+   * true. Lets `tier` be required for *primary* specs (requirements artifacts)
+   * while staying optional for split-layout `design`/`tasks` files that omit it.
+   */
+  readonly requiredWhen?: (specType: string) => boolean;
 }
+
+/**
+ * A *primary* spec is the requirements artifact: a single-file spec (no `type`)
+ * or the split-layout `requirements` file. Split-layout `design`/`tasks` files are
+ * *secondary* and legitimately omit fields the requirements artifact carries (#103,
+ * mirrors the `isSplitLayout` branch). `specType` is the lowercased `type`, `''`
+ * when absent.
+ */
+const isPrimarySpec = (specType: string): boolean => specType === '' || specType === 'requirements';
 
 const CLOSED_SET_FIELDS: readonly ClosedSetField[] = [
   // `id` — identity, presence-only (values not enumerable). Required: 21/21 real
@@ -265,7 +315,11 @@ const CLOSED_SET_FIELDS: readonly ClosedSetField[] = [
   // scripts/validate-frontmatter.ts also blocks it; this is the in-extension warning.
   { key: 'id', required: true },
   { key: 'status', valid: SPEC_STATUS_SET, validList: SPEC_STATUSES, coercesTo: 'new', required: true },
-  { key: 'tier', valid: TIER_SET, validList: TIERS, coercesTo: 'T2', required: false },
+  // tier: required only for a PRIMARY spec (requirements artifact). A missing tier
+  // is silently coerced to 'T2' by the parser → wrong completeness requirements and
+  // a false ceremony level in the SPECS pane (#103). Secondary split design/tasks
+  // files legitimately omit it, so `requiredWhen` gates on the spec's `type`.
+  { key: 'tier', valid: TIER_SET, validList: TIERS, coercesTo: 'T2', required: false, requiredWhen: isPrimarySpec },
   { key: 'type', valid: SPEC_TYPE_SET, validList: SPEC_TYPES, required: false },
 ];
 
@@ -282,10 +336,17 @@ const CLOSED_SET_FIELDS: readonly ClosedSetField[] = [
  *   should *exist*. Only fires for `required` fields, so non-required closed-set
  *   fields (tier/type) stay silent when omitted.
  */
-function checkClosedSetField(raw: string, field: ClosedSetField, out: ValidationViolation[]): void {
+function checkClosedSetField(
+  raw: string,
+  field: ClosedSetField,
+  specType: string,
+  out: ValidationViolation[],
+): void {
   const value = rawFrontmatterField(raw, field.key);
+  // requiredWhen (type-conditional, #103) overrides the static `required` flag.
+  const required = field.requiredWhen ? field.requiredWhen(specType) : field.required;
   if (value === undefined) {
-    if (field.required) {
+    if (required) {
       const oneOf = field.validList ? `, one of: ${field.validList.join(', ')}` : '';
       out.push({
         rule: `frontmatter.${field.key}.missing`,
@@ -303,6 +364,43 @@ function checkClosedSetField(raw: string, field: ClosedSetField, out: Validation
     message: `Spec ${field.key} "${value}" is not a recognized ${field.key}${field.coercesTo ? ` — it is shown as the default "${field.coercesTo}"` : ''}.`,
     fixHint: `Set "${field.key}:" to one of: ${(field.validList ?? []).join(', ')}.${field.coercesTo ? ` (An unrecognized value is silently displayed as the default, so the SPECS pane would otherwise show a false ${field.key}.)` : ''}`,
   });
+}
+
+// ─── Dangling park-reference lint (#40) ──────────────────────────────────────
+//
+// SPEC-005 said "Corrupt-file repair parked as a separate issue" with no link, and
+// the issue never existed — parked work silently lost. This lints prose that CLAIMS
+// something is parked/tracked/filed *as a (separate) issue* but carries no `#NNN` or
+// issue URL nearby. Pure-local Tier 0 (DR-004): it does NOT verify the linked issue
+// exists (that is a network/`gh` check, Tier 1, explicitly out of scope — issue #40).
+//
+// Precision matters more than recall here: the corpus is full of legitimate
+// park-adjacent prose ("tracked as OQ-1", "tracked separately if the team wants",
+// "Park as issue" UI labels, "parking-lot action") that must NOT flood. So the
+// trigger requires an explicit park/track/file VERB + "as (a|an|separate|new|its own)
+// … issue|ticket" CLAIM, not a bare mention of parking.
+
+/** A claim that something is parked/tracked/filed AS a (separate) issue/ticket. */
+const PARK_CLAIM_RE =
+  /\b(?:park(?:ed)?|track(?:ed)?|fil(?:ed)?|mov(?:ed)?|split\s+out)\b[^.\n]{0,40}?\bas\b[^.\n]{0,30}?\b(?:separate|new|its\s+own|a|an)\b[^.\n]{0,15}?\b(?:issue|ticket)\b/i;
+
+/** An issue link: a `#NNN` ref or a `…/issues/NNN` URL. */
+const ISSUE_LINK_RE = /#\d+|\/issues\/\d+/i;
+
+/**
+ * Detect dangling park claims. For each line carrying a park claim, the issue link
+ * may sit on the same line OR the immediately adjacent line (markdown links are
+ * commonly wrapped onto the next line). A claim with no link in that window is
+ * dangling. Returns true when at least one dangling claim exists.
+ */
+function hasDanglingParkRef(raw: string): boolean {
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (!PARK_CLAIM_RE.test(lines[i])) continue;
+    const window = `${lines[i - 1] ?? ''}\n${lines[i]}\n${lines[i + 1] ?? ''}`;
+    if (!ISSUE_LINK_RE.test(window)) return true;
+  }
+  return false;
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -361,8 +459,14 @@ export function validateSpec(
   //     foreign-but-valid vocabularies (`draft`) and incremental authoring are
   //     legitimate. Field set is derived from the schema (CLOSED_SET_FIELDS),
   //     not scattered literals.
+  //
+  //     The spec's `type` (lowercased; `''` for a single-file spec) drives the
+  //     type-conditional `requiredWhen` rules — e.g. tier is required only for a
+  //     primary spec (#103), so the gate needs the type. It also drives the
+  //     split-layout phase/acceptance checks below, so it is computed once here.
+  const specType = (spec.frontmatter.type ?? '').toLowerCase();
   for (const field of CLOSED_SET_FIELDS) {
-    checkClosedSetField(raw, field, violations);
+    checkClosedSetField(raw, field, specType, violations);
   }
 
   // Split-layout (#93): a spec whose phases are split across sibling files
@@ -372,7 +476,6 @@ export function validateSpec(
   // a single-file spec, so they are skipped for split-layout phase files (the
   // sibling files carry those). Cross-file coverage (do all required phase files
   // exist for the tier?) is a separate, deferred concern.
-  const specType = (spec.frontmatter.type ?? '').toLowerCase();
   const isSplitLayout = SPLIT_LAYOUT_TYPES.has(specType);
 
   // 1. Required-phase sections must be present and non-empty (single-file only).
@@ -430,6 +533,18 @@ export function validateSpec(
         fixHint: ar.fixHint,
       });
     }
+  }
+
+  // 4. Dangling park reference (#40). A "parked/tracked/filed as a separate issue"
+  //    claim with no adjacent `#NNN` / issue URL silently loses parked work (SPEC-005).
+  //    WARN only — Tier 0, link-existence is a deferred network concern (DR-004).
+  if (hasDanglingParkRef(raw)) {
+    violations.push({
+      rule: 'park-ref.dangling',
+      severity: 'warning',
+      message: 'A "parked/tracked as a separate issue" claim has no linked issue.',
+      fixHint: 'Add the issue link inline (e.g. `(#NNN)` or a `.../issues/NNN` URL). A park claim with no link silently loses the parked work — file the issue (e.g. `gh issue create`) and link it.',
+    });
   }
 
   const complete = !violations.some((v) => v.severity === 'error');
