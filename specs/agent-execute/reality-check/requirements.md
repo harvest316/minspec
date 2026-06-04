@@ -73,10 +73,18 @@ into the doc (LLM authoring is the spec-author flow, DR-029).
 
 - **FR-6 (opt-in multi-lens, T3/T4).** Escalation of FR-1 to N lenses that debate;
   **opt-in**, **advisory**, never blocks. Default off; never runs unprompted.
-- **FR-7 (cost is explicit + metered).** Each round-table shows its cost
-  (Scrooge-metered: "round-table: $0.40, 3 concerns"); the user accepts before it
-  runs. Concurrency/quota bounded (DR-017 broker); a quota-exhausted run yields a
-  partial verdict clearly marked partial (never a partial latched as complete).
+- **FR-7 (cost is explicit + metered; resumable on quota-exhaust).** Each round-table
+  shows its cost (Scrooge-metered: "round-table: $0.40, 3 concerns") and the user
+  accepts before it runs; spend/concurrency is hard-bounded (DR-017 broker; the model
+  call carries `--max-budget-usd`). A quota-exhausted run yields a **partial verdict
+  clearly marked partial** (never a partial latched as complete) **plus a checkpoint** —
+  `{ specHash, lensesCompleted, concernsSoFar, roundIndex }` — so a later run **resumes
+  the remaining lenses instead of re-paying for the completed ones**. The checkpoint is
+  a *cache, not state of record*: resume only when `specHash` still matches the current
+  Zone A; on **any** mismatch the checkpoint is **discarded** and the round-table
+  restarts (a stale partial must never be stitched onto edited content — DR-012
+  hash-lock + INV-advisory). Resume is advisory and never blocks; a discarded checkpoint
+  is a silent no-op, not an error.
 
 ### Tier-1 mechanics (reuse SPEC-011) + isolation (DR-030)
 
@@ -95,11 +103,22 @@ into the doc (LLM authoring is the spec-author flow, DR-029).
   catches at the seam, logs, and degrades. With no AI installed, MinSpec is
   byte-for-byte the structure-only product; the only added surface is an "install
   agent-execute to enable review" affordance.
-- **FR-9 (untrusted input — DR-030).** Spec content is passed as **delimited DATA, not
-  instructions**; the system prompt states it may attempt injection and must be
-  reviewed, never obeyed. The agent runs **credential-free, no write, no network
-  beyond its single model call** (DR-008/DR-004). A hijacked verdict can at worst be a
-  bad **advisory** — never an action, approval, or write.
+- **FR-9 (untrusted input — DR-030; injection bounded structurally, not just textually).**
+  Spec content is passed as **delimited DATA, not instructions** (XML-tagged untrusted
+  envelope) via **stdin, not an argv string** (no shell/quoting surface; `execFile` per
+  FR-8); the system prompt states the content may attempt injection and must be reviewed,
+  never obeyed. Textual framing only bounds *quality*; the *integrity* bound is
+  **structural, enforced at the model-call parameters**: the reviewer is spawned
+  **tools-off** (`--tools ""`, no `--mcp-config`, `--strict-mcp-config`), **single-shot**
+  (`--max-turns 1`), **schema-bound** (`--output-format json` → Zod, FR-10), **default
+  permissions** (never `bypassPermissions`), and **`--bare`** (no CLAUDE.md / auto-memory /
+  keychain bleed into the untrusted context). Combined with **credential-free, no write,
+  no network beyond the single broker call** (DR-008/DR-004), a fully-successful injection
+  has **no tool to call, no credential to spend, no turn to chain, and no output channel
+  outside the schema** — so it can at worst bias one **advisory**, never an action,
+  approval, exfiltration, or write. *Honest limit: no parameter makes the model immune to
+  being persuaded toward a wrong advisory (R2, residual); parameters bound the blast
+  radius, two-lens decorrelation (FR-4) blunts the persuasion.*
 - **FR-10 (verdict contract).** The verdict is a **Zod-validated JSON contract**; its
   *type* may live in `packages/shared` (Tier-0 type only — no invocation), the
   *invocation* lives in agent-execute. Free text outside the schema is dropped. The
@@ -147,6 +166,51 @@ to change on live. Ranked most→least costly.*
 - **INV — Untrusted input is data (T0).** Spec content is never executed as
   instructions; the agent is credential-free and cannot act (FR-9; DR-030).
 
+## Acceptance Criteria
+
+*Definition-of-done — each item traces a concrete FR/invariant. Checked = built + its
+T0/T1 test green. Tier-scaled (T3); the deterministic-degradation criterion is the
+load-bearing one — it is the only guarantee that survives with no AI installed.*
+
+- [ ] **Reviewer is independent** — a different instance + different system prompt than
+  the author runs in the cross-checks phase; no path lets the author grade its own work.
+  *(FR-1)*
+- [ ] **Floor gaps passed as exclusions, not a to-do** — the Tier-0 report is injected as
+  "already covered, do NOT re-report"; the agent does not just close named gaps and stop.
+  *(FR-2)*
+- [ ] **Per-FR material checks** — for each FR the verdict can flag a missed *material*
+  risk, a specific-but-wrong mitigation/test, a Zone A↔B contradiction / violated
+  invariant, a false Assumption / unhandled edge case, or under-stated blast-radius vs the
+  codegraph import graph. *(FR-3)*
+- [ ] **Two decorrelated lenses by default at T3** — "find the bug" + "defend the spec"
+  run by default; single-lens only at lower opt-in tiers. *(FR-4)*
+- [ ] **Advisory only — never blocks, never auto-writes** — flagged items float to B2
+  "please read" with a provenance stamp (lenses + hash), add zero friction clicks, are not
+  logged/shamed, never block final-approve, and never write content into the artifact;
+  a suggested edit is confirm-before-write. *(FR-5, INV-advisory)*
+- [ ] **Round-table is opt-in and off by default** — N-lens debate never runs unprompted;
+  advisory, never blocks. *(FR-6)*
+- [ ] **Cost shown + accepted + resumable** — each round-table shows its metered cost and
+  is accepted before running; spend is `--max-budget-usd`-capped; a quota-exhausted run
+  emits a clearly-marked partial **and** a `{specHash,…}` checkpoint that resumes only the
+  remaining lenses, and is **discarded on any specHash mismatch** (no stale partial onto
+  edited content). *(FR-7)*
+- [ ] **Degradation is provable with AI absent** — with `claude` not installed (or forced
+  to time out / emit non-JSON / empty / non-zero), the reviewer returns a typed
+  `{ ok:false, reason }`, **never throws**, the SPEC-013 Tier-0 floor stands as the full
+  experience, and the swallowed reason is logged + UI-inspectable — **all verified by a T0
+  test that spawns no model** (the never-throw-contract test). *(FR-8, INV-Tier-1)*
+- [ ] **Injection is bounded structurally, not just textually** — the reviewer is spawned
+  tools-off, single-turn, schema-bound, default-permission, `--bare`, credential-free,
+  with content via stdin as delimited DATA; a successful injection has no tool/credential/
+  turn/out-of-schema channel, so its worst case is one bad advisory — never an action,
+  approval, exfiltration, or write. *(FR-9, INV-untrusted-input)*
+- [ ] **Zod verdict contract holds** — the verdict is Zod-validated, free text outside the
+  schema is dropped, and the verdict is never executed. *(FR-10)*
+- [ ] **No skim claim ships here** — the appendix label stays `Self-Audit · read what you
+  want` even when the agent ran; an agent-ran provenance stamp is allowed, a skim licence
+  is not. *(FR-11)*
+
 ## Risks & Mitigations
 
 | # | Risk | Likelihood · Impact | Mitigation |
@@ -155,7 +219,7 @@ to change on live. Ranked most→least costly.*
 | R2 | **Prompt injection** via untrusted spec → false "no concerns". | Med · Med | DATA-framing + injection-aware prompt + advisory-only + credential-free (FR-9, DR-030); two-lens decorrelation. Residual: degraded verdict (quality, not integrity). |
 | R3 | **Plausible-but-wrong fabricated risk** (Stella-Lorenzo) rubber-stamped in. | Med · Med | Verdict advisory; author/DR-012 review; structural normalise (FR-10) can't judge truth — residual, bounded by no-claim. |
 | R4 | **Degradation gap** — agent throws/blocks instead of falling back; or fails *silently* (bare null, no why) and can't be debugged. | Low · High | FR-8 `catch → log reason → typed fallback` ({ok:false,reason}) + Tier-0 floor as unconditional fallback; never-throw-contract T0 test (every failure path → typed fallback, never throws, reason logged); floor stands with claude absent. |
-| R5 | **Cost surprise** — round-table burns quota. | Med · Med | FR-7 metered + opt-in + bounded concurrency; partial verdicts marked partial. |
+| R5 | **Cost surprise** — round-table burns quota. | Med · Med | FR-7 metered + opt-in + `--max-budget-usd` cap + bounded concurrency; partial verdicts marked partial; hash-bound checkpoint resumes remaining lenses so exhaust doesn't waste completed ones (stale partial discarded on hash mismatch). |
 
 ## Out of scope
 
@@ -168,3 +232,7 @@ to change on live. Ranked most→least costly.*
 
 - **OQ-1 — verdict schema fields.** Exact Zod shape (per-FR findings? severity? evidence-ref required?). Resolve at plan; FR-10 fixes the contract before impl (CDD).
 - **OQ-2 — round-table lens set + count.** Which lenses, and the N cap per tier. Lean: 3 (correctness / security / repro) at T3, configurable; bounded by FR-7.
+- **OQ-3 — checkpoint persistence (FR-7 resume).** Where the partial-verdict checkpoint
+  lives (workspace `.minspec/` cache vs ephemeral), its TTL, and cleanup. Since it is a
+  cache discarded on any `specHash` mismatch, a missing/corrupt checkpoint must degrade to
+  "restart", never error. Resolve at plan; it is not state of record.
