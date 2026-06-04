@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { validateSpec } from '../src/lib/spec-validator';
+import { validateSpec, validateSplitLayoutCoverage } from '../src/lib/spec-validator';
+import type { SplitLayoutFile } from '../src/lib/spec-validator';
 import { parseSpec } from '../src/lib/spec';
 import { DEFAULT_CONFIG } from '../src/lib/config';
 
@@ -384,6 +385,93 @@ no mockup here.
 `;
     const r = validateSpec(parseSpec(splitDesignUx), DEFAULT_CONFIG);
     expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup')).toBe(true);
+  });
+});
+
+// #111: per-file #93 skip left the DIRECTORY-level question unasked — does the SET
+// of sibling split-layout files cover the tier's required, file-backed phases? A T3
+// dir with only requirements.md (no design.md / tasks.md) validated clean. This block
+// pins the new cross-file coverage gate: an incomplete split set is flagged (warning),
+// a complete one passes, and a non-split set is not its concern. WARNING severity is
+// load-bearing — mid-authoring dirs (requirements-only) must surface, not block.
+describe('validateSplitLayoutCoverage — split-layout cross-file coverage (#111)', () => {
+  const f = (type: string, tier?: string): SplitLayoutFile =>
+    ({ type, ...(tier ? { tier: tier as SplitLayoutFile['tier'] } : {}) });
+
+  it('flags an INCOMPLETE T3 split set: requirements only (missing design + tasks)', () => {
+    const r = validateSplitLayoutCoverage([f('requirements', 'T3')], DEFAULT_CONFIG);
+    expect(r.notSplitLayout).toBe(false);
+    const rules = r.violations.map((v) => v.rule).sort();
+    expect(rules).toEqual(['split-coverage.design.missing', 'split-coverage.tasks.missing']);
+    // Coverage gaps are warnings — they must NOT block (mid-authoring is legitimate).
+    expect(r.violations.every((v) => v.severity === 'warning')).toBe(true);
+  });
+
+  it('passes a COMPLETE T3 split set: requirements + design + tasks', () => {
+    const r = validateSplitLayoutCoverage(
+      [f('requirements', 'T3'), f('design'), f('tasks')],
+      DEFAULT_CONFIG,
+    );
+    expect(r.notSplitLayout).toBe(false);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('flags a T3 split set missing only tasks.md', () => {
+    const r = validateSplitLayoutCoverage(
+      [f('requirements', 'T3'), f('design')],
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations.map((v) => v.rule)).toEqual(['split-coverage.tasks.missing']);
+  });
+
+  it('passes a COMPLETE T2 split set: requirements + design (T2 needs specify + plan, not tasks)', () => {
+    const r = validateSplitLayoutCoverage(
+      [f('requirements', 'T2'), f('design')],
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('flags a T2 split set missing design.md (plan phase uncovered)', () => {
+    const r = validateSplitLayoutCoverage([f('requirements', 'T2')], DEFAULT_CONFIG);
+    expect(r.violations.map((v) => v.rule)).toEqual(['split-coverage.design.missing']);
+  });
+
+  it('passes a T1 split set: requirements only (T1 requires specify only)', () => {
+    const r = validateSplitLayoutCoverage([f('requirements', 'T1')], DEFAULT_CONFIG);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('reports notSplitLayout for a set with NO split `type:` files', () => {
+    const r = validateSplitLayoutCoverage([f(''), f('')], DEFAULT_CONFIG);
+    expect(r.notSplitLayout).toBe(true);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('takes the tier from requirements.md, not a secondary file', () => {
+    // requirements is T3 (needs design + tasks); a stray T1 design tier must not win.
+    const r = validateSplitLayoutCoverage(
+      [f('requirements', 'T3'), f('design', 'T1')],
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations.map((v) => v.rule)).toEqual(['split-coverage.tasks.missing']);
+  });
+
+  it('uses fallback tier when no file declares a tier', () => {
+    // No tier anywhere → fallback T2 (specify + plan). Only requirements present →
+    // design.md (plan) is the one missing file.
+    const r = validateSplitLayoutCoverage([f('requirements')], DEFAULT_CONFIG, 'T2');
+    expect(r.violations.map((v) => v.rule)).toEqual(['split-coverage.design.missing']);
+  });
+
+  it('a full T4 split set passes (clarify/implement are not separate files)', () => {
+    // T4 requires specify, clarify, plan, tasks, implement — but clarify lives in
+    // requirements.md and implement in tasks.md, so the file SET is the same three.
+    const r = validateSplitLayoutCoverage(
+      [f('requirements', 'T4'), f('design'), f('tasks')],
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations).toHaveLength(0);
   });
 });
 

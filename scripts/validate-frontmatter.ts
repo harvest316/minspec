@@ -10,8 +10,14 @@
  */
 
 import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
-import { join, relative } from 'path';
+import { join, relative, dirname } from 'path';
 import { validateDrSequence } from '../packages/minspec/src/lib/adr-manager';
+import {
+  validateSplitLayoutCoverage,
+  type SplitLayoutFile,
+} from '../packages/minspec/src/lib/spec-validator';
+import { DEFAULT_CONFIG } from '../packages/minspec/src/lib/config';
+import type { Tier } from '../packages/minspec/src/lib/config';
 
 const ROOT = process.cwd();
 let errors = 0;
@@ -149,6 +155,39 @@ try {
   }
 } catch {
   // specs/ doesn't exist yet — fine
+}
+
+// Rule 7 (non-fatal): split-layout cross-file coverage (#111). For each spec
+// DIRECTORY whose sibling files carry split `type:` frontmatter, warn when the
+// SET does not cover the tier's required, file-backed phases (a T3 dir with only
+// requirements.md is missing design.md + tasks.md). The #93 fix correctly skips
+// the in-FILE phase-section check per split file; this is the dir-level backstop
+// it deferred. WARNS only — matches the extension's warning severity, so a
+// mid-authoring requirements-only dir surfaces but never fails the build.
+try {
+  const specFiles = glob(specsDir, '.md');
+  // Group by containing directory; each dir is one split-layout unit.
+  const byDir = new Map<string, SplitLayoutFile[]>();
+  for (const file of specFiles) {
+    const fm = parseFrontmatter(readFileSync(file, 'utf-8'));
+    const type = (fm['type'] ?? '').toLowerCase();
+    const dir = dirname(file);
+    const list = byDir.get(dir) ?? [];
+    // epicRef() strips inline comments from epic; the tier value here may carry one
+    // too (e.g. `tier: T4  # rationale`) — take the first whitespace-delimited token.
+    const tierToken = (fm['tier'] ?? '').split(/\s+/)[0];
+    const tier = /^T[1-4]$/.test(tierToken) ? (tierToken as Tier) : undefined;
+    list.push({ type, ...(tier ? { tier } : {}) });
+    byDir.set(dir, list);
+  }
+  for (const [dir, files] of byDir) {
+    const result = validateSplitLayoutCoverage(files, DEFAULT_CONFIG);
+    for (const v of result.violations) {
+      warn(`split-coverage ${relative(ROOT, dir)}: ${v.message}`);
+    }
+  }
+} catch {
+  // specs/ unreadable / absent — nothing to validate, stay silent.
 }
 
 // Rule 6 (non-fatal): local DR-NNN sequence health (issue #41). WARNS — never

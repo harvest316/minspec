@@ -560,6 +560,118 @@ export function validateSpec(
   };
 }
 
+// ─── Split-layout cross-file coverage (#111) ─────────────────────────────────
+//
+// The #93 fix made validateSpec SKIP the in-file `## Phase` section + acceptance
+// + aspect checks for a split-layout phase file (`type: requirements|design|tasks`)
+// — correct, because a `design` file has no `## Plan` by design (the file IS its
+// phase, Model A). But that skip is per-FILE; nothing then asserts the directory's
+// SET of sibling files covers the tier's required phases. So a T3 spec dir holding
+// only requirements.md (no design.md / tasks.md) validated clean — the gate that
+// should reject a missing sibling phase FILE never existed (the asymmetry: per-file
+// "this file is fine" was checked, dir-level "are all required phase files here?"
+// was not). This closes that half.
+//
+// Severity is WARNING, never error — mirroring the #137/#103 frontmatter gates and
+// for the same reason: incremental authoring is legitimate. A spec mid-Specify
+// legitimately has only requirements.md; blocking its approval would punish normal
+// in-progress work (and would newly fail ~10 real, hand-authored T3/T4 spec dirs
+// that carry only requirements.md). We surface the missing-coverage gap so it can't
+// pass *silently*, without converting "in progress" into a hard block. The in-file
+// `section.*.empty` error still applies to SINGLE-FILE specs (unchanged).
+
+/** Split-layout `type` → the SDD phase that file embodies (Model A, #93/#111). */
+const SPLIT_TYPE_PHASE: Record<string, Phase> = {
+  requirements: 'specify',
+  design: 'plan',
+  tasks: 'tasks',
+};
+
+/**
+ * The required phases that map to a DEDICATED split-layout file, in tier order.
+ * Only specify/plan/tasks have their own sibling file (requirements/design/tasks).
+ * `clarify` lives inside requirements.md and `implement` inside tasks.md (see
+ * spec-layout PHASE_FILE_MAP), so they are NOT separately-required FILES — a dir
+ * is not "missing a clarify file". This keeps the coverage check to the three
+ * real artifacts and avoids demanding files the layout never produces.
+ */
+function requiredSplitPhases(tier: Tier, config: MinspecConfig): Phase[] {
+  const required = config.phaseMappings[tier]?.requiredPhases ?? [];
+  const fileBacked = new Set<Phase>(Object.values(SPLIT_TYPE_PHASE));
+  return required.filter((p) => fileBacked.has(p));
+}
+
+/** One sibling file in a split-layout spec directory, reduced to what coverage needs. */
+export interface SplitLayoutFile {
+  /** The file's `type:` frontmatter, lowercased (`requirements` | `design` | `tasks`). */
+  readonly type: string;
+  /** The file's `tier:` frontmatter, used to pick the tier when present. */
+  readonly tier?: Tier;
+}
+
+export interface SplitLayoutCoverageResult {
+  /** true when the file set is NOT a split layout at all (no `type:` files seen). */
+  readonly notSplitLayout: boolean;
+  /** Coverage violations (always warning severity). Empty when fully covered. */
+  readonly violations: ValidationViolation[];
+}
+
+/**
+ * Validate that a split-layout spec DIRECTORY's set of sibling files covers the
+ * tier's required, file-backed phases (#111). Pure: takes the already-parsed
+ * sibling files (their `type` + `tier`), no filesystem. Callers (the validate
+ * command, the CI frontmatter script) assemble the set per directory and pass it.
+ *
+ * - Returns `notSplitLayout: true` (and no violations) when NONE of the files carry
+ *   a split `type:` — a directory of single-file specs is not this check's concern;
+ *   each is validated in-file by validateSpec as before.
+ * - Otherwise, for each required file-backed phase whose `type` is absent from the
+ *   set, emits a WARNING `split-coverage.<type>.missing`. Warning (never error) so a
+ *   mid-authoring dir (only requirements.md) is surfaced but not blocked.
+ *
+ * The tier is taken from the requirements file's `tier:` when present (the primary
+ * artifact carries it, #103), else the first file that declares one, else falls
+ * back to the supplied `fallbackTier`. A dir with no declared tier anywhere uses
+ * the fallback so coverage still runs rather than silently skipping.
+ */
+export function validateSplitLayoutCoverage(
+  files: readonly SplitLayoutFile[],
+  config: MinspecConfig,
+  fallbackTier: Tier = 'T2',
+): SplitLayoutCoverageResult {
+  const splitFiles = files.filter((f) => SPLIT_LAYOUT_TYPES.has(f.type));
+  if (splitFiles.length === 0) {
+    return { notSplitLayout: true, violations: [] };
+  }
+
+  // Tier: prefer the requirements (primary) file's tier, then any file's tier, then
+  // the fallback. A split dir's authoritative ceremony level lives on requirements.
+  const requirementsFile = splitFiles.find((f) => f.type === 'requirements');
+  const tier: Tier =
+    requirementsFile?.tier ??
+    splitFiles.find((f) => f.tier)?.tier ??
+    fallbackTier;
+
+  const presentTypes = new Set(splitFiles.map((f) => f.type));
+  const violations: ValidationViolation[] = [];
+
+  for (const phase of requiredSplitPhases(tier, config)) {
+    // The split `type` whose file embodies this phase (specify→requirements, …).
+    const type = (Object.keys(SPLIT_TYPE_PHASE) as string[]).find(
+      (t) => SPLIT_TYPE_PHASE[t] === phase,
+    );
+    if (!type || presentTypes.has(type)) continue;
+    violations.push({
+      rule: `split-coverage.${type}.missing`,
+      severity: 'warning',
+      message: `Split-layout spec is missing its ${type}.md — ${tier} requires the ${cap(phase)} phase, which lives in ${type}.md.`,
+      fixHint: `Add a sibling "${type}.md" (\`type: ${type}\`) carrying the ${cap(phase)} phase. ${tier} requires ${requiredSplitPhases(tier, config).map((p) => cap(p)).join(' → ')}. A split spec missing a required phase file is incomplete — the phase isn't covered by any sibling.`,
+    });
+  }
+
+  return { notSplitLayout: false, violations };
+}
+
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
