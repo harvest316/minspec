@@ -72,37 +72,134 @@ export function slugify(title: string): string {
 const SPEC_ID_RE = /^SPEC-(\d+)/;
 const FLAT_DIR_NUM_RE = /^(\d{3,})-/;
 const SPEC_FILE_RE = /^SPEC-\d{3,}.*\.md$/;
+/** Match an `id: SPEC-NNN` / `product: slug` frontmatter line (value may carry an inline `# comment`). */
+const FM_ID_LINE_RE = /^id:\s*(SPEC-\d+)/m;
+const FM_PRODUCT_LINE_RE = /^product:\s*([^\s#]+)/m;
+
+/** One discovered spec id and the product that owns it (if known). */
+interface DiscoveredSpec {
+  readonly num: number;
+  /** Owning product slug, or null when no product signal exists. */
+  readonly product: string | null;
+}
 
 /**
- * Scan specs directory and return the next sequential SPEC ID.
- * Scans both flat files (`SPEC-NNN-…`) and spec-kit dirs (`NNN-…`)
- * so IDs stay unique across layouts.
+ * Walk a specs tree and collect every SPEC id with its owning product.
+ *
+ * Three id sources, so ids stay unique across every layout the repo uses:
+ *   1. flat files            `specs/SPEC-NNN-….md`
+ *   2. spec-kit dirs         `specs/NNN-…/`
+ *   3. nested product specs  `specs/<product>/<feature>/{requirements,spec,…}.md`
+ *
+ * Product attribution (the #57 scoping signal) prefers the authoritative
+ * `product:` frontmatter; when absent it falls back to the first path segment
+ * under `specsDir` (`specs/<product>/…`). Top-level flat/spec-kit entries that
+ * carry neither signal are recorded with `product: null` (global-only).
  */
-export function nextSpecId(specsDir: string): string {
-  let maxNum = 0;
+function collectSpecs(specsDir: string): DiscoveredSpec[] {
+  const found: DiscoveredSpec[] = [];
+  if (!fs.existsSync(specsDir)) return found;
 
-  if (fs.existsSync(specsDir)) {
-    const entries = fs.readdirSync(specsDir);
+  // Read `product:` from a markdown file's frontmatter, falling back to the
+  // top-level path segment under specsDir. Cheap: only the head is inspected.
+  const productOf = (filePath: string): string | null => {
+    let fmProduct: string | null = null;
+    try {
+      const head = fs.readFileSync(filePath, 'utf-8').slice(0, 2048);
+      const m = head.match(FM_PRODUCT_LINE_RE);
+      if (m) fmProduct = m[1].trim();
+    } catch {
+      /* unreadable → fall through to path-based attribution */
+    }
+    if (fmProduct) return fmProduct;
+    const rel = path.relative(specsDir, filePath);
+    const segs = rel.split(path.sep);
+    // Only a *nested* file (under a product subdir) gets path attribution;
+    // a file sitting directly in specsDir has no product segment.
+    return segs.length > 1 ? segs[0] : null;
+  };
+
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
     for (const entry of entries) {
-      const flatMatch = entry.match(SPEC_ID_RE);
-      if (flatMatch) {
-        const num = parseInt(flatMatch[1], 10);
-        if (num > maxNum) maxNum = num;
+      const full = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        // A spec-kit dir (`NNN-…`) contributes its number directly, attributed
+        // by its own (or its parent's) path segment. Still recurse so a nested
+        // spec.md inside is also seen and de-duplicated by number.
+        const dirMatch = entry.name.match(FLAT_DIR_NUM_RE);
+        if (dirMatch) {
+          const rel = path.relative(specsDir, full).split(path.sep);
+          found.push({
+            num: parseInt(dirMatch[1], 10),
+            product: rel.length > 1 ? rel[0] : null,
+          });
+        }
+        walk(full);
         continue;
       }
-      const dirMatch = entry.match(FLAT_DIR_NUM_RE);
-      if (dirMatch) {
-        const full = path.join(specsDir, entry);
+
+      if (!entry.isFile()) continue;
+
+      // Flat file: id (and product range) come from the filename.
+      const flatMatch = entry.name.match(SPEC_ID_RE);
+      if (flatMatch) {
+        found.push({ num: parseInt(flatMatch[1], 10), product: productOf(full) });
+        continue;
+      }
+
+      // Nested product spec files (requirements.md / design.md / tasks.md /
+      // spec.md / …): the id lives in `id:` frontmatter, not the filename.
+      if (entry.name.endsWith('.md')) {
         try {
-          if (fs.statSync(full).isDirectory()) {
-            const num = parseInt(dirMatch[1], 10);
-            if (num > maxNum) maxNum = num;
+          const head = fs.readFileSync(full, 'utf-8').slice(0, 2048);
+          const idMatch = head.match(FM_ID_LINE_RE);
+          if (idMatch) {
+            const numMatch = idMatch[1].match(SPEC_ID_RE);
+            if (numMatch) {
+              found.push({ num: parseInt(numMatch[1], 10), product: productOf(full) });
+            }
           }
         } catch {
-          /* ignore */
+          /* ignore unreadable file */
         }
       }
     }
+  };
+
+  walk(specsDir);
+  return found;
+}
+
+/**
+ * Scan a specs tree and return the next sequential SPEC ID.
+ *
+ * When `product` is given, the max is scoped to specs owned by that product
+ * (via `product:` frontmatter or the `specs/<product>/…` subpath) so each
+ * product keeps its own SPEC-NNN range — a higher-numbered sibling product no
+ * longer pushes the next id out of block (#57). A product with no specs yet
+ * starts a fresh range at SPEC-001.
+ *
+ * When `product` is omitted the original global-counter contract holds: the max
+ * is taken across every discovered id regardless of owner.
+ */
+export function nextSpecId(specsDir: string, product?: string): string {
+  const specs = collectSpecs(specsDir);
+
+  const relevant = product
+    ? specs.filter((s) => s.product === product)
+    : specs;
+
+  let maxNum = 0;
+  for (const s of relevant) {
+    if (s.num > maxNum) maxNum = s.num;
   }
 
   const nextNum = maxNum + 1;
@@ -207,13 +304,23 @@ function buildSummary(parsed: ParsedSpec, filePath: string): SpecSummary {
 /**
  * Create a new spec with auto-generated ID and optional tier.
  * Storage layout (flat file vs. spec-kit directory) follows config.specsLayout.
+ *
+ * `product` scopes the generated id to that product's own SPEC-NNN range (#57):
+ * the id continues the product's block instead of the global max, and the spec
+ * self-attributes via a `product:` frontmatter field so the next scan sees it.
+ * Omit it for single-product repos to keep the global-counter behavior.
  */
-export function createSpec(rootDir: string, title: string, tier: Tier = 'T2'): SpecSummary {
+export function createSpec(
+  rootDir: string,
+  title: string,
+  tier: Tier = 'T2',
+  product?: string,
+): SpecSummary {
   const config = loadConfig(rootDir);
   const specsDir = resolveAndValidate(rootDir, config.specsDir);
   fs.mkdirSync(specsDir, { recursive: true });
 
-  const id = nextSpecId(specsDir);
+  const id = nextSpecId(specsDir, product);
   const slug = slugify(title);
   const today = new Date().toISOString().slice(0, 10);
   const initialPhases = createInitialPhases();
@@ -225,6 +332,7 @@ export function createSpec(rootDir: string, title: string, tier: Tier = 'T2'): S
     status: 'new',
     created: today,
     phases: initialPhases as Record<Phase, import('./spec').PhaseStatus>,
+    ...(product ? { product } : {}),
   };
 
   const tierMapping = config.phaseMappings[tier];
@@ -272,6 +380,7 @@ export function createSpec(rootDir: string, title: string, tier: Tier = 'T2'): S
     filePath: displayPath,
     phasesDone: progress.done,
     phasesTotal: progress.total,
+    ...(product ? { product } : {}),
   };
 }
 
