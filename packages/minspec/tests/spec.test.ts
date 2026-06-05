@@ -250,6 +250,59 @@ No level-1 heading anywhere.
     expect(spec.frontmatter.title).toBe('');
   });
 
+  // T3 regression (#153.2): an empty-valued top-level key (`title:` with nothing
+  // after it) opened a nested block stored as `{}` even with no children. `{}` is
+  // not nullish, so the `?? firstH1Heading()` fallback never fired and `title`
+  // became an OBJECT — its consumers (slugify → title.toLowerCase) then crashed.
+  it('falls back to the body H1 when title: is empty (not an object)', () => {
+    const input = `---
+id: SPEC-007
+title:
+status: done
+---
+
+# The Real Title
+
+Body.
+`;
+    const spec = parseSpec(input);
+    expect(typeof spec.frontmatter.title).toBe('string');
+    expect(spec.frontmatter.title).toBe('The Real Title'); // H1 fallback fired
+  });
+
+  it('yields an empty string (never an object) for an empty title: with no H1', () => {
+    const input = `---
+id: SPEC-008
+title:
+status: done
+---
+
+## Requirements
+
+No level-1 heading anywhere.
+`;
+    const spec = parseSpec(input);
+    expect(typeof spec.frontmatter.title).toBe('string');
+    expect(spec.frontmatter.title).toBe('');
+  });
+
+  it('does not mistake a genuine nested block for an empty title', () => {
+    // `title:` here truly opens a nested block (indented child) — it must remain an
+    // object-shaped value, not be flattened to ''. Guards against over-correcting #153.2.
+    const input = `---
+id: SPEC-009
+phases:
+  specify: done
+  plan: pending
+---
+
+# H1 Title
+`;
+    const spec = parseSpec(input);
+    expect(spec.frontmatter.phases.specify).toBe('done');
+    expect(spec.frontmatter.phases.plan).toBe('pending');
+  });
+
   it('handles frontmatter-only (no body)', () => {
     const input = `---
 id: SPEC-099

@@ -165,9 +165,13 @@ function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
       continue;
     }
 
-    // Flush previous nested block
+    // Flush previous nested block. An empty-valued top-level key (e.g. `title:`
+    // with nothing after it) opened a nested block that gained no children — that
+    // is an empty scalar, NOT a nested object. Storing `{}` would defeat downstream
+    // `?? firstH1Heading()` fallbacks (`{}` isn't nullish) and crash slugify
+    // (`title.toLowerCase` is not a function) — #153.2. Store `''` instead.
     if (nested && currentKey) {
-      result[currentKey] = nested;
+      result[currentKey] = Object.keys(nested).length === 0 ? '' : nested;
       nested = null;
     }
 
@@ -186,9 +190,9 @@ function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
     }
   }
 
-  // Flush final nested block
+  // Flush final nested block (same empty-block-is-an-empty-scalar rule, #153.2).
   if (nested && currentKey) {
-    result[currentKey] = nested;
+    result[currentKey] = Object.keys(nested).length === 0 ? '' : nested;
   }
 
   return result;
@@ -240,9 +244,13 @@ export function parseSpec(content: string): ParsedSpec {
   // Build frontmatter with defaults
   const frontmatter: SpecFrontmatter = {
     id: (fmParsed.id as string) ?? '',
-    // Title comes from frontmatter when present; otherwise fall back to the
-    // first level-1 `# ` heading in the body (the human title for spec files).
-    title: (fmParsed.title as string) ?? firstH1Heading(bodyAfterFm),
+    // Title comes from frontmatter when present and non-empty; otherwise fall back
+    // to the first level-1 `# ` heading in the body (the human title for spec files).
+    // An empty `title:` is treated like an absent one (both fall back to the H1) so
+    // they behave identically. Defense-in-depth (#153.2): a non-string title (a
+    // malformed empty nested block that slipped through) is coerced to '' so the
+    // fallback fires instead of leaking an object that crashes slugify.
+    title: (typeof fmParsed.title === 'string' ? fmParsed.title : '') || firstH1Heading(bodyAfterFm),
     // Closed-enum fields strip inline comments before the membership check, so a
     // commented value (e.g. `status: implementing  # note`) isn't silently
     // coerced to the default. epic/title keep their raw form (epic carries its
