@@ -102,6 +102,48 @@ created: 2026-05-31
     expect(spec.frontmatter.epic).toBe('EPIC-003  # SDD Core Methodology');
   });
 
+  // T3 regression (#153.1): a quoted closed-enum scalar (`status: "done"`) was
+  // returned by stripInlineComment WITH its surrounding quotes, so the
+  // STATUSES_SET/TIERS_SET `.has()` membership check failed and the value was
+  // silently coerced to the default ('new'/'T2') — a false status/tier in the
+  // pane — AND the validator (which re-strips the raw line) emitted a spurious
+  // `frontmatter.*.unknown`. A matched quoted scalar must have its quotes stripped.
+  it('strips surrounding quotes from a matched quoted enum scalar', () => {
+    const dq = parseSpec(`---
+id: SPEC-001
+title: X
+tier: "T3"
+status: "done"
+---
+`);
+    expect(dq.frontmatter.status).toBe('done'); // not coerced to 'new'
+    expect(dq.frontmatter.tier).toBe('T3'); // not coerced to 'T2'
+
+    const sq = parseSpec(`---
+id: SPEC-001
+title: X
+tier: 'T1'
+status: 'implementing'
+---
+`);
+    expect(sq.frontmatter.status).toBe('implementing');
+    expect(sq.frontmatter.tier).toBe('T1');
+  });
+
+  // An empty quoted scalar ("" / '') is an explicitly-empty value, not a member:
+  // it must coerce to the default, not become a spurious enum hit.
+  it('treats an empty quoted enum scalar as empty (coerces to default)', () => {
+    const spec = parseSpec(`---
+id: SPEC-001
+title: X
+tier: ""
+status: ''
+---
+`);
+    expect(spec.frontmatter.status).toBe('new'); // empty → default, not a member
+    expect(spec.frontmatter.tier).toBe('T2');
+  });
+
   it('strips inline comments from nested (phase) values', () => {
     const spec = parseSpec(`---
 id: SPEC-004

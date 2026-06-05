@@ -105,7 +105,14 @@ function firstH1Heading(body: string): string {
 /**
  * Strip a YAML inline comment from a scalar value. A `#` begins a comment only
  * when preceded by whitespace (YAML spec); a `#` glued to preceding text is part
- * of the value. Quoted scalars are returned verbatim (their `#` is literal).
+ * of the value. A quoted scalar has NO inline comment stripped (its `#` is
+ * literal), but its surrounding quotes ARE removed so the inner value is returned
+ * — otherwise a quoted closed-enum value (`status: "done"`) carries its quotes
+ * into the STATUSES_SET/TIERS_SET membership check, which fails, silently coercing
+ * to the default ('new'/'T2') AND making `validateSpec` (which re-strips the raw
+ * line) emit a spurious `frontmatter.*.unknown` (#153.1). An empty quoted scalar
+ * (`""` / `''`) returns `''`, so it coerces to the default like any empty value —
+ * NOT a spurious enum member.
  *
  * Without this, `status: implementing  # note` parsed as the whole string, which
  * failed the SpecStatus enum check and silently became 'new' — a false status.
@@ -117,8 +124,13 @@ function firstH1Heading(body: string): string {
  */
 export function stripInlineComment(value: string): string {
   const v = value.trim();
-  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-    return v;
+  // A matched quoted scalar: strip the surrounding quotes (need ≥2 chars so a lone
+  // quote isn't treated as a matched pair). Inner `#` is literal — no comment strip.
+  if (
+    v.length >= 2 &&
+    ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))
+  ) {
+    return v.slice(1, -1);
   }
   const m = v.match(/\s#/);
   return m && m.index !== undefined ? v.slice(0, m.index).trim() : v;
