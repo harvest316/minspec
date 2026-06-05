@@ -20,7 +20,7 @@ relates_to: [SPEC-010, SPEC-006, SPEC-015]
 > EPIC-007 spec — never in this Tier-0 core. Slice 1 is pure file-system: **no AI, no
 > network** (Invariant #1).
 
-**Date:** 2026-06-01 · rewritten 2026-06-03 to DR-029
+**Date:** 2026-06-01 · rewritten 2026-06-03 to DR-029 · amended 2026-06-05 (stub-free Zone B, structural + canonically-ordered zones, lifecycle-gated floor; #132 resolved)
 **Decision:** [DR-029](../../../docs/decisions/DR-029.md) keystone · [DR-020](../../../docs/decisions/DR-020.md)+addendum (policy) · [DR-026](../../../docs/decisions/DR-026.md) (offer-never-silent) · [DR-028](../../../docs/decisions/DR-028.md) (cross-cutting) · [DR-030](../../../docs/decisions/DR-030.md) (untrusted input). Re-scopes to [DR-022](../../../docs/decisions/DR-022.md) (screen-gated) on its acceptance, gated on #91 per [DR-024](../../../docs/decisions/DR-024.md).
 **Epic:** [EPIC-003 SDD Core Methodology](../../../docs/epics/EPIC-003-sdd-core.md)
 
@@ -62,12 +62,14 @@ skim-safe claim** — Slice 1 ships the mechanism; the claim waits for evidence
   | Rollback / Reversibility | specs | T4 | undo mechanism + ADR-filter answer | yes |
   | Costly to Refactor | specs + DRs | T2 | ranked seam list, FR/decision-referenced ("Low — <reason>" valid) | yes |
 
-  **Placement exception (#132).** Every family member above renders in the Zone-B
-  skim appendix *except* **Costly to Refactor**, which renders in **Zone A**
-  (read-first), placed **after Requirements** (specs) / **after Decision** (DRs) so
-  the reader has the terms before the seam index. It is the standard seam-first read
-  aid — auto-aided by deterministic seam-candidate detection (contracts, cross-package,
-  new deps, data-model/API changes) + LLM ranking.
+  **Costly to Refactor is a first-class Zone-A citizen (resolves #132).** Every other
+  family member renders in the Zone-B skim appendix; **Costly to Refactor renders in
+  Zone A** (read-first), placed **after Requirements** (specs) / **after Decision** (DRs)
+  so the reader has the FR terms before the seam index — read the expensive-to-reverse
+  20% closely, skim the rest. It is the standard seam-first read aid, auto-aided by
+  deterministic seam-candidate detection (contracts, cross-package, new deps,
+  data-model/API changes) + LLM ranking. (Position settled after-Requirements over
+  #132's top-of-doc, precisely because the seams reference FR-ids.)
 
   Adding/removing a section is a registry edit, not new mechanism. **Tier scales
   *breadth* (which entries emit) + human attention — never LLM depth** (DR-029 §1).
@@ -97,43 +99,60 @@ skim-safe claim** — Slice 1 ships the mechanism; the claim waits for evidence
 
 ### Templates (prevent first)
 
-- **FR-5 (scaffolds emit the applicable stubs).** The `specify`/`plan` scaffolds and
-  the **Create ADR** template MUST emit a stub for each registry entry that
-  `appliesTo` the artifact (sized to tier). Cross-cutting stubs are emitted as
-  **deferred placeholders** — explicitly "⏳ complete in cross-checks — not yet
-  counted" — which are *neither missing nor satisfied* (FR-9). Consequences stubs
-  carry the `Positive:` / `Negative:` ± skeleton so a filled stub passes FR-4 (no
-  stub/checker drift, R1). Prevention is the primary line; the floor below is the net.
+- **FR-5 (scaffolds emit Zone A only — no Zone-B stubs).** The `specify`/`plan`
+  scaffolds and the **Create ADR** template emit **Zone A** (scope, Context,
+  Requirements/FRs, **Costly to Refactor**, Acceptance, Out-of-Scope, Open Questions,
+  Invariants) **+ the `<!-- minspec:core-end -->` divider** — and **nothing in Zone B.**
+  Empty Zone-B stubs are abolished: a human never fills a stub for a section that exists
+  only for the LLM to cross-check its own work, so a pre-emitted empty stub is pure
+  approval-time warning-noise (the flood — FR-13 lifecycle-gate; the very pain this spec
+  removes). The Zone-B family is authored later, **whole**, by the LLM — at the
+  cross-checks phase for T3/T4 (FR-13), or **inline while the LLM writes the spec** for
+  T1/T2 (no second gate). The `⏳ deferred placeholder` third state is **removed**:
+  before authoring, a Zone-B section is simply **absent**, and absence before
+  core-signoff is the expected lifecycle state (INV-no-premature-demand), never a
+  missing-section finding. When Zone B *is* authored the LLM emits canonical headings +
+  content together in one pass; MinSpec never leaves an empty stub as a resting state.
+  Prevention now = emit the right Zone A in canonical order; the floor (FR-9) is the net
+  once Zone B is due.
 
 ### Detect → offer (Tier-0; never silent, never block)
 
-- **FR-6 (detect + offer-stub, never silent, never block).** The validator
+- **FR-6 (detect + offer, lifecycle-gated, never silent, never block).** The validator
   (`scripts/validate-frontmatter.ts`) detects any artifact under-satisfying a registry
   entry that `appliesTo` it (FR-2/FR-3/FR-4), naming file + section. Surfaced as a
-  **visible one-click "add/complete stub" offer** ([DR-026](../../../docs/decisions/DR-026.md))
-  — never a silent rewrite, never a bare nag, never auto-on-save. **In Slice 1 the
-  offer inserts only the deterministic stub/skeleton (structure).** Section *content*
-  is written by the artifact's author — which, in the normal flow, is the **LLM
-  authoring the spec** (DR-029: author-flow, not a fill-service). LLM-*drafted* content
-  in the offer itself is Slice 2 (EPIC-007). MUST NOT exit non-zero on this rule
-  (mirrors the soft `epic:` rule, DR-013 §4) and MUST NOT block edits/commits — only
-  DR-012 approval blocks. Epics exempt.
+  **visible one-click offer** ([DR-026](../../../docs/decisions/DR-026.md)) — never a
+  silent rewrite, never a bare nag, never auto-on-save. **The floor is lifecycle-gated
+  (FR-13, INV-no-premature-demand): a Zone-B section is never demanded before
+  core-signoff** — pre-signoff absence is the expected state, not a finding, which is
+  what kills the approval-time flood. *After* core-signoff (T3/T4), an absent /
+  under-satisfied Zone-B section surfaces a finding whose remedy is **"author the
+  cross-checks"** (the LLM writes the family whole) — **not "insert an empty stub."**
+  Section *content* is always written by the artifact's author — the **LLM authoring the
+  spec** (DR-029: author-flow, not a fill-service); MinSpec stays Tier-0 — it gates the
+  lifecycle and validates, it does not generate text (LLM-*drafted* offer content is
+  Slice 2, EPIC-007). MUST NOT exit non-zero on this rule (mirrors the soft `epic:` rule,
+  DR-013 §4) and MUST NOT block edits/commits — only DR-012 approval blocks. Epics exempt.
 - **FR-7 (the offer is actionable).** Each finding gives id/path, section, a one-line
   remedy, and the one-click action where the surface supports it (CLI stdout v1;
   Problems-panel later, [#118](https://github.com/harvest316/minspec/issues/118)).
 
 ### Two-zone document + cross-checks lifecycle
 
-- **FR-8 (two-zone layout).** A spec splits at `<!-- minspec:core-end -->`:
-  **Zone A "read this"** (scope, Context, Requirements/FRs, Out-of-Scope, Open
-  Questions, Invariants) and **Zone B self-audit appendix** (the family). Zone B
-  renders two sub-zones by verification status: **B1 "skim"** (passed the floor) and
-  **B2 "please read"** (pulled to top, eyes-on) — a section is B2 when no deterministic
-  check can vouch for it (Assumptions, Alternatives, Rollback are *structurally*
-  always B2), it tripped specificity (FR-9 L1), it is stale (FR-10), or it is a
-  deferred placeholder. Degrade pushes *more* into B2 (read more, the safe direction).
-  **Slice-1 appendix heading = `## Appendix — Self-Audit · read what you want`** — no
-  skim/verified claim (FR-13).
+- **FR-8 (two-zone layout — structural + canonically ordered).** A spec splits at the
+  `<!-- minspec:core-end -->` divider, **actually placed in the file** (today it lives
+  only as prose — zero docs render it; the inconsistent section order this fixes is the
+  symptom). The order is **canonical**, not ad-hoc:
+  **Zone A "read this"** = scope → Context → Requirements/FRs → **Costly to Refactor**
+  (read-first seams, FR-1) → Acceptance Criteria → Out-of-Scope → Open Questions →
+  Invariants; **then the divider; then Zone B self-audit appendix** (the family, fixed
+  order). Zone B renders two sub-zones by verification status: **B1 "skim"** (passed the
+  floor) and **B2 "please read"** (pulled to top, eyes-on) — a section is B2 when no
+  deterministic check can vouch for it (Assumptions, Alternatives, Rollback are
+  *structurally* always B2), it tripped specificity (FR-9 L1), or it is stale (FR-10).
+  (The `deferred placeholder` B2 trigger is gone with stubs — FR-5.) Degrade pushes
+  *more* into B2 (read more, the safe direction). **Slice-1 appendix heading =
+  `## Appendix — Self-Audit · read what you want`** — no skim/verified claim (FR-13).
 - **FR-9 (deterministic floor — Tier-0 layers).** All pure file-system, no AI:
   - **L0 per-FR disposition coverage** (FR-3) — names naked FRs.
   - **L1 specificity** — a self-audit line referencing no concrete anchor (FR-id /
@@ -162,14 +181,19 @@ skim-safe claim** — Slice 1 ships the mechanism; the claim waits for evidence
   the `<!-- minspec:core-end -->` delimiter. `spec-validator.ts` today parses **none**
   of these — this is new Tier-0 parser work, contract defined here before
   implementation (CDD contracts-first).
-- **FR-13 (cross-checks lifecycle — T3/T4 only).**
-  `specify → core-signoff (human, freezes FRs via coreHash) → cross-checks (LLM authors
-  the family last, floor runs) → final-approve (DR-012 specHash, the sole blocking
-  gate) → done`. Core-signoff **void-then-offers** the cross-checks (never auto-on-save);
-  editing an FR after signoff voids it and waits for explicit re-signoff. **T1/T2 have
-  no core-signoff, no cross-checks phase, no second approval** — T1 keeps its one Risks
-  line. New `cross-checks` phase must propagate to SPEC-015 lanes + the classifier +
-  the signpost (DR-029 §Methodology #5).
+- **FR-13 (cross-checks lifecycle — two approvals, T3/T4).**
+  `specify (LLM writes Zone A) → core-signoff (human pre-approves; freezes FRs via
+  coreHash) → cross-checks (LLM authors the **whole** Zone-B family, floor runs) →
+  final-approve (human skims Zone B; DR-012 specHash, the sole blocking gate) → done`.
+  **Zone B does not exist before core-signoff** and is never demanded there
+  (INV-no-premature-demand) — pre-approval the human reads only Zone A, which is the
+  point of the split. Core-signoff **void-then-offers** the cross-checks (never
+  auto-on-save); editing an FR after signoff voids it and waits for explicit re-signoff.
+  **T1/T2 have no core-signoff, no cross-checks phase, no second approval** — their small
+  Zone-B family (T1: one Risks line; T2: + Assumptions + Test-thought) is authored
+  **inline by the LLM while it writes the spec**, never stubbed, skimmed at the single
+  approval. The new `cross-checks` phase must propagate to SPEC-015 lanes + the
+  classifier + the signpost (DR-029 §Methodology #5).
 
 ### Scope boundary
 
@@ -194,9 +218,10 @@ contracts, cross-package boundaries, new deps, data-model / public-API changes.)
 3. **Per-FR disposition shape + parse contract** (FR-3, FR-12) — the data-model the
    coverage layer keys off; changing the grammar = re-parse + migrate every existing
    spec. *Check: grammar fixed before specs adopt it.*
-4. **Two-zone delimiter `<!-- minspec:core-end -->` + `coreHash`** (FR-8, FR-13) — a
-   structural contract every doc adopts; moving it = re-delimit + rehash all. *Check:
-   Zone A/B boundary settled.*
+4. **Two-zone delimiter `<!-- minspec:core-end -->` + canonical section order +
+   `coreHash`** (FR-8, FR-13) — a structural contract every doc adopts; moving the
+   divider or reordering Zone A = re-delimit + rehash all. *Check: Zone A/B boundary +
+   section order settled.*
 5. **Freshness binds FR-body bytes** (FR-10) — changes staleness behaviour for every
    spec. *Check: you accept "cosmetic FR reword voids the section".*
 
@@ -204,14 +229,22 @@ contracts, cross-package boundaries, new deps, data-model / public-API changes.)
 
 - **INV — Tier-0 (T0).** Slice 1 is pure file-system: no AI, no network in
   `packages/minspec` / `packages/shared` (Invariant #1; DR-004).
-- **INV — Advisory, offer-never-silent (T0).** Detects + offers a one-click *stub*
-  fix; never silently writes the author's artifact, never auto-on-save, never blocks
-  (FR-6, DR-026). Only DR-012 blocks. Section *content* is written by the artifact's
-  author (human or the LLM authoring the spec) — never fabricated by the enforcement
-  tool into another author's artifact.
+- **INV — Advisory, offer-never-silent (T0).** Detects + offers a one-click fix (after
+  core-signoff the remedy is "author the cross-checks," not an empty stub); never
+  silently writes the author's artifact, never auto-on-save, never blocks (FR-6, DR-026).
+  Only DR-012 blocks. Section *content* is written by the artifact's author (the LLM
+  authoring the spec) — never fabricated by the enforcement tool into another author's
+  artifact.
+- **INV — Never demand Zone B before pre-approval (T0).** The floor (FR-6/FR-9) raises a
+  missing-Zone-B finding **only after core-signoff** (T3/T4) or, for T1/T2, as part of
+  the single authoring pass — never as a pre-signoff missing-section warning. A
+  pre-signoff spec with an empty Zone B is **clean, not flooded**. Detection without an
+  authoring flow is the approval-time flood this spec exists to remove (FR-5, FR-13):
+  shipping FR-6 detection without FR-13 lifecycle-gating is a regression, not a partial
+  win.
 - **INV — Single predicate (T0).** Exactly one `hasSection` (FR-2), parameterised by
   heading, used by validator and template self-check for every entry; no second
-  implementation (no stub/checker drift).
+  implementation (no heading/checker drift).
 - **INV — Never latch on presence (T0).** A cross-cutting section never reads
   "complete" on presence alone — FR-9 (disposition) + FR-10 (freshness) + FR-11
   (coverage) gate it (DR-028/DR-029).
@@ -233,15 +266,22 @@ its T0/T1 test green (see Test / Verification Strategy below).*
 - [ ] **Consequences ± shape enforced** — a Consequences section satisfies only with ≥1
   positive AND ≥1 negative (or an explicit one-sided "Negative: none"), detected via the
   polarity-cue set. *(FR-4)*
-- [ ] **Scaffolds emit tier-scoped stubs** — `specify`/`plan`/Create-ADR templates emit
-  one stub per `appliesTo` registry entry, cross-cutting ones as `⏳ not yet counted`
-  deferred placeholders; a filled Consequences stub passes FR-4 with no edit. *(FR-5)*
+- [ ] **Scaffolds emit Zone A only (no Zone-B stubs)** — `specify`/`plan`/Create-ADR
+  templates emit Zone A + the `<!-- minspec:core-end -->` divider and **zero** Zone-B
+  stubs; Zone B is authored whole by the LLM at cross-checks (T3/T4) or inline (T1/T2).
+  *(FR-5)*
 - [ ] **Detect → offer, never silent / never block** — the validator names file+section
-  on under-satisfaction, surfaces a one-click stub-insert offer, exits zero, and never
-  rewrites the author's content. *(FR-6, FR-7, INV-advisory)*
-- [ ] **Two-zone split renders** — a spec splits at `<!-- minspec:core-end -->` into
-  Zone A and the Zone-B self-audit appendix, with B1 (skim) / B2 (please read) ordered by
-  verification status; Assumptions/Alternatives/Rollback are structurally B2. *(FR-8)*
+  on under-satisfaction (after core-signoff for Zone B), surfaces a one-click "author the
+  cross-checks" offer, exits zero, and never rewrites the author's content. *(FR-6, FR-7,
+  INV-advisory)*
+- [ ] **Two-zone split renders in canonical order** — a spec places the
+  `<!-- minspec:core-end -->` divider and emits Zone A (… → Costly to Refactor →
+  Acceptance → Out-of-Scope → Open Questions → Invariants) then the Zone-B appendix, with
+  B1 (skim) / B2 (please read) by verification status; Assumptions/Alternatives/Rollback
+  structurally B2. *(FR-8)*
+- [ ] **No premature Zone-B demand** — the floor raises no missing-Zone-B finding before
+  core-signoff (T3/T4) and none outside the single authoring pass (T1/T2); a pre-signoff
+  spec with an empty Zone B is clean, not flooded. *(FR-13, INV-no-premature-demand)*
 - [ ] **Deterministic floor L0-L3 runs with no AI/network** — disposition (L0),
   specificity→B2 (L1), id-based consistency (L2), freshness (L3) all execute in
   `packages/minspec`/`packages/shared` with no `claude`/`http`/`fetch`. *(FR-9, INV-Tier-0)*
@@ -261,7 +301,7 @@ its T0/T1 test green (see Test / Verification Strategy below).*
 
 | # | Risk | Likelihood · Impact | Mitigation |
 |---|---|---|---|
-| R1 | **Stub/validator drift** — template emits a heading the predicate rejects. | Med · High | FR-2 single predicate + INV-single-predicate; T0 test scaffolds each tier and asserts the raw stub passes. |
+| R1 | **Heading/predicate drift** — an LLM-authored Zone-B heading the predicate rejects (case/format). | Low · Med | FR-2 single predicate + INV-single-predicate; the LLM authors against the canonical heading list (FR-8); T0 test asserts each canonical heading passes `hasSection`. Surface shrank when Zone-B stubs were abolished (FR-5). |
 | R2 | **Backfill warning-flood** — enabling FR-6 over existing DRs/specs floods warnings. | High · Med | RD-1 backfill-before-enable (the ~22 of 28 DRs whose Consequences are prose, not ±, need restructuring; DR-007/DR-010 lack Consequences entirely); advisory-only meanwhile. |
 | R3 | **Predicate too loose** — empty heading passes. | Med · Med | FR-2 requires ≥1 non-empty line; FR-3 disposition per FR. |
 | R4 | **Vacuity passes Tier-0** — specific-but-vacuous line clears the floor. | High · High | Floor catches omission, not vacuity (stated, DR-029 R1). Caught only by the Slice-2 reality-check; no skim claim until the study (FR-13/#127), so vacuity never earns a skim licence. Residual. |
@@ -284,12 +324,16 @@ its T0/T1 test green (see Test / Verification Strategy below).*
 
 ## Test-thought
 
-Verified by scaffolding a spec at each tier (T1-T4) and asserting (a) the raw emitted
-stubs pass the `hasSection` predicate (FR-2/FR-5, no stub/checker drift), (b) a spec with
-a naked `FR-N` is flagged by L0 (FR-3/FR-9), (c) a Consequences section missing a polarity
-side fails FR-4, and (d) the validator exits **zero** on every under-satisfaction (FR-6,
-INV-advisory). No-AI/network is verified by a grep-gate over `packages/minspec` /
-`packages/shared` (INV-Tier-0). Full per-FR matrix in Test / Verification Strategy below.
+Verified by scaffolding a spec at each tier (T1-T4) and asserting (a) the scaffold emits
+**Zone A + the `<!-- minspec:core-end -->` divider and zero Zone-B stubs** (FR-5), and the
+canonical Zone-B headings the LLM authors against all pass `hasSection` (FR-2/FR-8, no
+heading/checker drift), (b) a pre-signoff spec with an empty Zone B raises **no**
+missing-section finding while a post-signoff one does (FR-13, INV-no-premature-demand),
+(c) a spec with a naked `FR-N` is flagged by L0 (FR-3/FR-9), (d) a Consequences section
+missing a polarity side fails FR-4, and (e) the validator exits **zero** on every
+under-satisfaction (FR-6, INV-advisory). No-AI/network is verified by a grep-gate over
+`packages/minspec` / `packages/shared` (INV-Tier-0). Full per-FR matrix in Test /
+Verification Strategy below.
 
 ## Coverage Map
 
@@ -302,16 +346,18 @@ inverse of the per-FR disposition, used to confirm no concern is orphaned.*
 | Single `hasSection` predicate | FR-2 |
 | Per-FR disposition (anti-gaming) | FR-3 |
 | Per-entry satisfaction shape (Risks forms, Consequences ±) | FR-4 |
-| Scaffold/template stub emission | FR-5 |
+| Scaffold emits Zone A only (no Zone-B stubs) | FR-5 |
 | Detect → offer (never silent / never block) | FR-6, FR-7 |
-| Two-zone document + B1/B2 sub-zones | FR-8 |
+| Two-zone document (structural divider + canonical order) + B1/B2 sub-zones | FR-8 |
+| Stub-free Zone B (no deferred placeholders) | FR-5 |
+| Lifecycle-gated floor (no premature Zone-B demand) | FR-13, INV-no-premature-demand |
 | Deterministic floor L0-L4 | FR-9 (+ FR-10 = L3) |
 | Freshness (FR-body-byte binding) | FR-10 |
 | FR→section coverage (consumes SPEC-010) | FR-11 |
 | Parse contract / grammar | FR-12 |
-| Cross-checks lifecycle (T3/T4) | FR-13 |
+| Cross-checks lifecycle (T3/T4, two approvals) | FR-13 |
 | Policy + LLM scope boundary | FR-14 |
-| Costly-to-Refactor Zone-A seam aid | FR-1 placement exception (#132) |
+| Costly-to-Refactor as first-class Zone-A citizen (#132 resolved) | FR-1 |
 
 ## Consequences
 
@@ -324,12 +370,20 @@ inverse of the per-FR disposition, used to confirm no concern is orphaned.*
 - Slice 1 ships a real mechanism with **no AI and no trust claim** (FR-14, FR-13), so the
   air-gap invariant (#1) and the never-wrong positioning are preserved while evidence is
   gathered (#127).
+- Killing Zone-B stubs (FR-5) + lifecycle-gating the floor (FR-13/INV-no-premature-demand)
+  removes the approval-time missing-section flood **at its mechanism**: nothing demands a
+  section the human was never going to fill, and the LLM authors Zone B *before*
+  final-approve — so the second approval is a skim of filled sections, not a wall of warnings.
 
 **Negative:**
 
 - Backfill is mandatory before FR-6 enables (RD-1): Risks onto every DR/spec lacking it
   *and* restructuring the ~22 of 28 DRs whose Consequences are prose (only ~6 already use
   ± polarity cues) into ± shape — real one-time toil (R2).
+- The canonical zone order + structural divider (FR-8) must be back-filled across the 13
+  existing specs + 30 DRs (several still carry Out-of-Scope / Open-Questions *after* Zone B,
+  the inconsistency that surfaced this amendment) — tracked as a re-layout chore on SPEC-005
+  auto-structure-repair + RD-1, not hand-edited.
 - Freshness binding FR-body bytes (FR-10) means a cosmetic FR reword voids the section —
   an accepted false-positive we deliberately chose over substance-rot (R6).
 - The floor's strongest layers (L4 hollow-test, FR-11 coverage) are **debt** until SPEC-006
@@ -342,9 +396,11 @@ inverse of the per-FR disposition, used to confirm no concern is orphaned.*
 2. **Specific-but-vacuous line** — a line citing a real FR but saying nothing true clears
    the Tier-0 floor (L1 only checks anchor presence). Accepted residual: caught only by
    the Slice-2 reality-check, and no skim licence is granted until #127 (R4).
-3. **Deferred placeholder counted as missing OR satisfied** — a `⏳ not yet counted` stub
-   (FR-5) must be *neither*; mis-bucketing it either floods FR-6 warnings or lets an empty
-   section pass. It is explicitly a third state (FR-9).
+3. **Zone B absent before core-signoff read as "missing"** — pre-signoff a Zone-B section
+   simply is not present; the floor must treat that absence as the **expected lifecycle
+   state** (INV-no-premature-demand, FR-13), not a missing-section finding. Mis-gating it
+   reintroduces the approval-time flood (FR-5). *After* core-signoff, absence *is* a
+   finding ("author the cross-checks").
 4. **One-sided Consequences** — only `Positive:` filled: fails FR-4 unless the author
    writes the explicit `Negative: none` judgement (the written judgement is the value).
 5. **FR renumbered/removed after sign-off** — the FR-set hash changes (FR-10); every
@@ -363,15 +419,15 @@ inverse of the per-FR disposition, used to confirm no concern is orphaned.*
 | FR-2 | T0 | `hasSection` accepts `##`/`###` heading + ≥1 content line; empty body → false; one impl only. |
 | FR-3 | T0 | Spec with a naked `FR-N` (no row/escape) → L0 names it; every FR paired → passes. |
 | FR-4 | T0 | Consequences with only `Positive:` → fail; `Negative: none` added → pass; polarity cues table-driven. |
-| FR-5 | T2 | Scaffold each tier; raw emitted stubs all pass `hasSection`; Consequences stub carries ± skeleton. |
+| FR-5 | T2 | Scaffold each tier → emits Zone A + `core-end` divider, **zero** Zone-B stubs; the canonical Zone-B headings the LLM authors against all pass `hasSection`. |
 | FR-6 | T0 | Under-satisfied artifact → validator names file+section AND `exit 0` (never non-zero, never rewrite). |
 | FR-7 | T2 | Each finding yields id/path + section + one-line remedy (+ action where surface supports). |
-| FR-8 | T2 | Spec splits at `<!-- minspec:core-end -->`; Assumptions/Alternatives/Rollback land in B2. |
+| FR-8 | T2 | Spec places `<!-- minspec:core-end -->`; Zone A in canonical order (Costly-to-Refactor after Requirements); Assumptions/Alternatives/Rollback land in B2. |
 | FR-9 | T0 | L0-L2 each fire on a crafted fixture; L1 flags an anchor-free line to B2 (never drops it). |
 | FR-10 | T0 | Edit an FR body after section written → section marked stale; FR-ref present clears the cell. |
 | FR-11 | T4 | Consumes SPEC-010 predicate; uncovered FR named — gated on #121, ships after. |
 | FR-12 | T1 | Parser extracts `FR-N`, disposition block, polarity cues, delimiter from a fixture spec. |
-| FR-13 | T2 | T3/T4 spec walks `specify→core-signoff→cross-checks→final-approve→done`; T1/T2 skip the phase. |
+| FR-13 | T2 | T3/T4 walks `specify→core-signoff→cross-checks→final-approve`; empty Zone B is clean pre-signoff, flagged post-signoff; T1/T2 skip the phase (Zone B inline). |
 | FR-14 | T0 | Grep-gate: no `claude`/`http`/`fetch` and no DR-020-depth policy in `packages/minspec`/`packages/shared`. |
 
 ## Alternatives Considered
@@ -399,7 +455,8 @@ inverse of the per-FR disposition, used to confirm no concern is orphaned.*
 - **`hasSection` predicate** (FR-2) — consumed by validator *and* every template self-check;
   a signature/semantics change ripples to all callers + every emitted stub (INV-single-predicate).
 - **`specify`/`plan` scaffolds + Create-ADR template** (FR-5) — every new spec/DR inherits
-  their stubs; a stub that fails `hasSection` reintroduces R1 drift across all future docs.
+  their Zone-A layout + canonical heading order (no Zone-B stubs); a canonical Zone-B heading
+  that fails `hasSection` reintroduces R1 drift across all future docs.
 - **SPEC-010 coverage DAG (#121)** (FR-11) — amended, not silently edited; FR-11 is dead until
   it lands. **SPEC-006 hollow-test scanner** (FR-9 L4) — same: L4 stays unbuilt until SPEC-006.
 - **SPEC-015 lanes + classifier + signpost** (FR-13) — the new `cross-checks` phase must
@@ -411,8 +468,9 @@ inverse of the per-FR disposition, used to confirm no concern is orphaned.*
 
 - **Undo mechanism.** Slice 1 is advisory-only and exits zero (FR-6, INV-advisory): disabling
   it is a config/flag flip on the validator's detect-offer path — no doc rewrite to revert,
-  nothing blocks in the meantime. The scaffold stubs (FR-5) are inert text; removing them is a
-  template edit. The genuinely hard-to-reverse pieces are catalogued in **Costly to Refactor**
+  nothing blocks in the meantime. The Zone-A scaffold + `core-end` divider (FR-5) is inert
+  text; reverting it is a template edit (and there are no Zone-B stubs to remove). The
+  genuinely hard-to-reverse pieces are catalogued in **Costly to Refactor**
   (the `hasSection` predicate, the Tier-0 boundary, the parse grammar, the `core-end` delimiter).
 - **ADR-filter (undo in <1 day?).** **No** — the registry + predicate + parse contract + two-zone
   delimiter are foundational seams adopted across every spec/DR (Costly items 1, 3, 4); they are
@@ -436,9 +494,17 @@ inverse of the per-FR disposition, used to confirm no concern is orphaned.*
 - **RD-2 — CLI stdout v1.** Problems-panel parked #118.
 - **RD-3 — Consequences policy home = DR-020 addendum.**
 - **RD-4 — Consequences shape = minimal ±.**
-- **RD-5 — detect → offer-stub, never silent; LLM-drafted content deferred to Slice 2.**
+- **RD-5 — detect → offer, never silent; remedy is "author the cross-checks," not an empty stub; LLM-drafted offer content deferred to Slice 2.**
 - **RD-6 — cross-cutting complete-last + never latch on presence** (FR-9/10/11, DR-028/029).
 - **RD-7 — no trust claim in Slice 1** (DR-029 §6); appendix label = "Self-Audit · read what you want".
+- **RD-8 — Zone B is stub-free + lifecycle-gated (decided 2026-06-05).** No Zone-B stubs at
+  scaffold time; Zone B authored whole by the LLM after core-signoff (T3/T4) or inline
+  (T1/T2). The floor never demands Zone B before pre-approval (INV-no-premature-demand) —
+  the fix for the approval-time missing-section flood. The two zones become **structural**
+  (the `<!-- minspec:core-end -->` divider is actually placed) and **canonically ordered**
+  (FR-8). **Costly to Refactor is a first-class Zone-A citizen** (resolves #132), placed
+  after Requirements (not top-of-doc, since seams reference FR-ids). Amends DR-029's
+  two-zone model — see DR-029 addendum.
 
 ## Open questions
 
@@ -469,9 +535,19 @@ Slice 2-3 work and tracked on their own spec.*
   acceptance (frontmatter, Out of scope, R8); the reach/consequence risk-screen axis
   is gated on [#91](https://github.com/harvest316/minspec/issues/91) per DR-024. Not a
   doc-section concern of this spec.
-- **Costly-to-Refactor Zone-A placement exception** — the one family member that
-  renders in Zone A (FR-1 placement exception, Coverage Map). Tracked:
-  [#132](https://github.com/harvest316/minspec/issues/132).
+- **Costly-to-Refactor as a first-class Zone-A citizen** — resolves
+  [#132](https://github.com/harvest316/minspec/issues/132) (placed after Requirements,
+  not top-of-doc, since seams reference FR-ids). FR-1, Coverage Map, RD-8. Close #132 on
+  this spec's approval.
+- **Re-layout the 13 existing specs + 30 DRs to the canonical zone order + structural
+  divider (FR-8)** — they predate the split (several carry Out-of-Scope / Open-Questions
+  *after* Zone B, the symptom that surfaced this amendment). Mechanical re-ordering tracked
+  on **SPEC-005 auto-structure-repair** + RD-1 backfill, not hand-edited here. → file issue
+  if SPEC-005's scope doesn't already cover doc re-layout.
+- **Web/README copy for the stub-free, pre-approve → LLM-writes → skim flow** — a
+  positioning change (cross-repo, non-code; a prose-only leak otherwise). Tracked:
+  [#165](https://github.com/harvest316/minspec/issues/165); Paul reviews copy before
+  publishing.
 - **Reality-check agent + round-table + LLM-drafted offer content + Zod verdict
   contract + untrusted-input handling** — Tier-1, explicitly out of this Tier-0 core
   (FR-14, Out of scope, isolation per DR-030). Tracked on the **EPIC-007 spec
