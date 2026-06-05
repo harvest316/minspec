@@ -63,6 +63,13 @@ if [[ -d "$WORKTREE" ]]; then
   git branch -D "$BRANCH" 2>/dev/null || true
 fi
 
+# Spec-gate (HITL) reliance — DR-031 D3:
+# We deliberately do NOT set MINSPEC_GATE_OFF and do NOT seed approvals into the
+# worktree. As a linked worktree, its spec-gate resolves the CANONICAL approval
+# store from the main checkout (via `git rev-parse --git-common-dir`), so a
+# genuinely human-approved spec passes the gate inside the worktree, while an
+# unapproved/stale spec correctly BLOCKS the dispatched edit (surfaced, never
+# bypassed). The bypass kill-switch is human-only; the pipeline must never use it.
 git worktree add -b "$BRANCH" "$WORKTREE" main
 
 echo "Launching $ROLE agent for: $ISSUE_TITLE"
