@@ -175,6 +175,95 @@ describe('validateSpec — aspect: ux', () => {
   });
 });
 
+// T3 regression (#153.3): TWO coupled defects in the ux aspect/mockup gate.
+//  (1) DEAD section clause + operator precedence. `aspect.ux.no-mockup` was
+//      `hasImage || hasSection(…) && (…) || hasAsciiBox || hasMermaid`. With `&&`
+//      binding tighter than `||`, the trailing `|| hasAsciiBox || hasMermaid` made ANY
+//      box/mermaid ANYWHERE satisfy the rule — the section-scoped clause never
+//      enforced. So a UX spec whose only "mockup" was an unrelated architecture box
+//      passed. Fix: parenthesize so a box/mermaid counts ONLY under a mockup section.
+//  (2) ux OVER-detection. `component`/`view`/`page`/`layout`/`form`/`icon` were STRONG
+//      single-hit keywords, so a software "component", a `*-view.ts` filename, or a
+//      titlebar "icon" flagged architecture/data design specs as a UX surface with no
+//      mockup. Fix (the #108/#153.4 pattern): strong/ambiguous split + scan
+//      code-stripped prose, so a code identifier or a lone ambiguous word never fires.
+//  Naively fixing (1) alone re-flagged 3 real design specs (SPEC-002/004/008); the cure
+//  for the over-detection (2) plus broadening the mockup-section allowlist to the REAL
+//  headings those specs use (e.g. `## UI Components`) keeps the real corpus clean.
+describe('validateSpec — ux mockup gate enforcement + over-detection cure (#153.3)', () => {
+  const uxBody = FULL_T3.replace('Build the thing.', 'Build the new settings screen with a toggle button.');
+
+  // ── (1) the section requirement now actually enforces (was dead) ──
+  it('a declared ux spec with an ASCII box NOT under a mockup section is FLAGGED (dead clause cured)', () => {
+    // The box lives under the Plan section, not a UX/UI/mockup heading. Before the
+    // precedence fix, the bare box satisfied the rule and the spec passed.
+    const body = uxBody + '\n## Plan\n```\n┌────────┐\n│ thing  │\n└────────┘\n```\n';
+    const r = validateSpec(parseSpec(spec({ tier: 'T3', aspects: 'ux' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup' && v.severity === 'error')).toBe(true);
+  });
+
+  it('a declared ux spec with a real ASCII mockup UNDER a "## UX" section passes', () => {
+    const body = uxBody + '\n## UX\n```\n┌────────┐\n│ Button │\n└────────┘\n```\n';
+    const r = validateSpec(parseSpec(spec({ tier: 'T3', aspects: 'ux' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup')).toBe(false);
+  });
+
+  it('a real ASCII mockup under a broadened "## UI Components" heading satisfies the gate (SPEC-002 shape)', () => {
+    // SPEC-002 carries its sidebar tree-view mockup under `## UI Components`, which the
+    // original narrow ux|mockup|wireframe|design allowlist missed.
+    const body = uxBody + '\n## UI Components\n```\nMINSPEC\n├─ Specs\n│  └─ SPEC-001\n└─ Settings\n```\n';
+    const r = validateSpec(parseSpec(spec({ tier: 'T3', aspects: 'ux' }, body)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup')).toBe(false);
+  });
+
+  it('a declared ux spec with NO mockup at all is still FLAGGED (true positive preserved)', () => {
+    const r = validateSpec(parseSpec(spec({ tier: 'T3', aspects: 'ux' }, uxBody)), DEFAULT_CONFIG);
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup' && v.severity === 'error')).toBe(true);
+  });
+
+  // ── (2) over-detection cure: ambiguous words / code identifiers no longer trip ux ──
+  it('a lone "component" in prose does NOT detect ux (SPEC-004: "network-only component")', () => {
+    const body = FULL_T3.replace('Build the thing.', 'A network-only component fetches the dataset.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects, '"component" alone tripped ux').not.toContain('ux');
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup')).toBe(false);
+  });
+
+  it('a lone "view"/"page"/"icon"/"layout"/"form" in prose does NOT detect ux', () => {
+    for (const word of ['view', 'page', 'icon', 'layout', 'form']) {
+      const body = FULL_T3.replace('Build the thing.', `The ${word} is computed from existing data.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" alone tripped ux`).not.toContain('ux');
+    }
+  });
+
+  it('a code identifier (`backlog-view.ts`) in a code span does NOT detect ux (SPEC-008 shape)', () => {
+    // "view" + "icon" both arrive via code/incidental tokens; stripping code spans
+    // leaves only "icon" (one ambiguous), so ux does not fire.
+    const body = FULL_T3.replace(
+      'Build the thing.',
+      'The `backlog-view.ts` module resolves the epic, flipped by a titlebar nav icon.',
+    );
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects, 'code-span view + lone icon tripped ux').not.toContain('ux');
+    expect(r.violations.some((v) => v.rule === 'aspect.ux.no-mockup')).toBe(false);
+  });
+
+  it('a single STRONG ux keyword still detects the ux aspect (no regression)', () => {
+    for (const word of ['screen', 'button', 'modal', 'dialog', 'wireframe', 'menu']) {
+      const body = FULL_T3.replace('Build the thing.', `Add a ${word} to the app.`);
+      const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+      expect(r.detectedAspects, `"${word}" failed to detect ux`).toContain('ux');
+    }
+  });
+
+  it('TWO corroborating ambiguous ux keywords do detect the ux aspect', () => {
+    const body = FULL_T3.replace('Build the thing.', 'The page layout arranges the form fields.');
+    const r = validateSpec(parseSpec(spec({ tier: 'T3' }, body)), DEFAULT_CONFIG);
+    expect(r.detectedAspects).toContain('ux');
+  });
+});
+
 describe('validateSpec — aspect: api', () => {
   const apiBody = FULL_T3.replace('Build the thing.', 'Add a POST /users endpoint returning a response payload.');
 

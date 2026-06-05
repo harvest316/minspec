@@ -54,8 +54,15 @@ export interface ValidationResult {
  * their entries here are the strong sets only.
  */
 const ASPECT_KEYWORDS: Record<Aspect, string[]> = {
-  ux: ['ui', 'ux', 'screen', 'page', 'component', 'button', 'modal', 'dialog',
-    'layout', 'wireframe', 'frontend', 'css', 'view', 'form', 'menu', 'icon'],
+  // See `UX_AMBIGUOUS_KEYWORDS` below — the ux aspect now has a stricter rule and a
+  // strong/ambiguous split (#153.3, the ux sibling of #108/#153.4). This entry is the
+  // STRONG, unambiguous set: words that are almost never anything but a UI surface.
+  // The polysemous ones (`component`/`view`/`page`/`layout`/`form`/`icon`) moved to
+  // the ambiguous set — they were spuriously flagging architecture/data design specs
+  // ("network-only component", `backlog-view.ts`, a titlebar "icon") as having a UX
+  // surface with no mockup.
+  ux: ['ui', 'ux', 'screen', 'button', 'modal', 'dialog', 'wireframe', 'frontend',
+    'css', 'menu'],
   // See `API_AMBIGUOUS_KEYWORDS` below — the api aspect has a stricter rule and
   // its keyword set is split into strong/weak; this entry is the strong set.
   api: ['endpoint', 'api', 'payload', 'graphql', 'webhook', 'rpc', 'restful', 'openapi'],
@@ -65,6 +72,17 @@ const ASPECT_KEYWORDS: Record<Aspect, string[]> = {
   architecture: ['architecture', 'subsystem', 'service', 'integration',
     'cross-cutting', 'topology', 'pipeline', 'queue', 'broker'],
 };
+
+/**
+ * Ambiguous ux keywords (#153.3, the ux sibling of #108/#153.4). `component`
+ * (React/software component), `view` (SQL view, a `*-view.ts` filename, "a view over
+ * data"), `page` (memory page, "page through"), `layout` (memory/file layout), `form`
+ * (the verb "to form"), and `icon` are each individually polysemous, so ONE alone must
+ * not flag the ux aspect — it tripped architecture/data design specs that merely
+ * mentioned a software "component" or a `*-view.ts` module. A single ambiguous keyword
+ * never fires; the aspect needs a strong ux keyword OR ≥2 distinct ambiguous ones.
+ */
+const UX_AMBIGUOUS_KEYWORDS = ['page', 'component', 'layout', 'view', 'form', 'icon'] as const;
 
 /**
  * Ambiguous api keywords (#108). `request`, `response`, `route`, `http` are common
@@ -98,6 +116,34 @@ function wordBoundaryRe(kw: string): RegExp {
 }
 
 /**
+ * Strip fenced code blocks and inline `code` spans from spec text (#153.3). UX
+ * keyword detection scans PROSE: a UI surface is something the spec *describes*, not
+ * an identifier it happens to name. `backlog-view.ts`, a `component` in a code
+ * comment, or `class Form {}` inside a ```ts``` fence are code tokens, not a UX
+ * surface — counting them spuriously flagged architecture/data design specs. Strong
+ * artifact detection (`hasFence`, `hasMermaid`, …) still reads the RAW text; only the
+ * ux *keyword* signal is taken from the code-stripped prose.
+ */
+function stripCodeSpans(s: string): string {
+  return s
+    .replace(/```[\s\S]*?```/g, ' ') // fenced code blocks
+    .replace(/`[^`]*`/g, ' '); // inline code spans
+}
+
+/**
+ * The ux aspect's detection rule (#153.3), separated from the generic any-keyword
+ * rule because its keywords are individually ambiguous — the same shape as the api
+ * (#108) and data (#153.4) rules. Scans the CODE-STRIPPED prose (a `*-view.ts`
+ * filename in backticks is not a UX surface). Fires when there is at least one strong
+ * ux keyword, OR ≥2 distinct ambiguous ones. One ambiguous keyword alone never fires.
+ */
+function detectsUx(strippedLower: string): boolean {
+  if (ASPECT_KEYWORDS.ux.some((kw) => wordBoundaryRe(kw).test(strippedLower))) return true;
+  const ambiguousHits = UX_AMBIGUOUS_KEYWORDS.filter((kw) => wordBoundaryRe(kw).test(strippedLower)).length;
+  return ambiguousHits >= 2;
+}
+
+/**
  * The api aspect's detection rule, separated from the generic any-keyword rule
  * because its keywords are individually ambiguous (#108, #153.4). Fires when there is
  * at least one strong keyword, OR the phrase "rest api", OR ≥2 distinct ambiguous
@@ -125,10 +171,16 @@ function detectsData(rawLower: string): boolean {
 }
 
 function detectAspects(rawLower: string): Aspect[] {
+  // ux scans CODE-STRIPPED prose (#153.3) — a `*-view.ts` filename or a `component`
+  // in a code fence is not a UX surface. The other aspects keep reading raw text:
+  // their strong keywords (`endpoint`, `sql`, `mermaid`) legitimately live in code,
+  // and their artifact rules are satisfied by exactly those fenced blocks.
+  const strippedLower = stripCodeSpans(rawLower);
   const found: Aspect[] = [];
   for (const aspect of ASPECTS) {
     let hit: boolean;
-    if (aspect === 'api') hit = detectsApi(rawLower);
+    if (aspect === 'ux') hit = detectsUx(strippedLower);
+    else if (aspect === 'api') hit = detectsApi(rawLower);
     else if (aspect === 'data') hit = detectsData(rawLower);
     else hit = ASPECT_KEYWORDS[aspect].some((kw) => wordBoundaryRe(kw).test(rawLower));
     if (hit) found.push(aspect);
@@ -238,13 +290,33 @@ interface AspectRule {
   readonly fixHint: string;
 }
 
+/**
+ * Section headings that genuinely introduce a mockup / wireframe (#153.3). Broadened
+ * beyond the original `ux|mockup|wireframe|design` to the REAL headings the live design
+ * specs use for their UI mockups — e.g. SPEC-002's `## UI Components` carries an ASCII
+ * sidebar tree mockup, which the narrow set missed (so the section-scoped clause never
+ * matched a real spec). Matched as a heading prefix (word-boundary), case-insensitive,
+ * so `## UI Components` and `## User Interface` both qualify.
+ */
+const MOCKUP_SECTION_NAMES = [
+  'ux', 'ui', 'mockup', 'mock-up', 'wireframe', 'design',
+  'interface', 'user interface',
+];
+
 const ASPECT_RULES: AspectRule[] = [
   {
     aspect: 'ux',
     rule: 'aspect.ux.no-mockup',
+    // An image anywhere is a mockup on its own. Otherwise an ASCII box / mermaid
+    // diagram counts ONLY when it sits under a mockup-ish section heading — a bare box
+    // elsewhere (e.g. an architecture dataflow diagram) is not a UI wireframe. The
+    // explicit parentheses fix the dead-clause bug (#153.3): without them `&&` bound
+    // tighter than `||`, and a trailing `|| hasAsciiBox(s) || hasMermaid(s)` made ANY
+    // box/mermaid satisfy the rule regardless of section — the section requirement
+    // never enforced.
     satisfied: (s) =>
-      hasImage(s) || hasSection(s, ['ux', 'mockup', 'wireframe', 'design']) &&
-        (hasImage(s) || hasAsciiBox(s) || hasMermaid(s)) || hasAsciiBox(s) || hasMermaid(s),
+      hasImage(s) ||
+      (hasSection(s, MOCKUP_SECTION_NAMES) && (hasAsciiBox(s) || hasMermaid(s))),
     message: 'Spec has a UX surface but no mockup.',
     fixHint: 'Add a "## UX" section with a wireframe — an image (![…](…)), an ASCII layout box, or a ```mermaid``` diagram — before implementation.',
   },
