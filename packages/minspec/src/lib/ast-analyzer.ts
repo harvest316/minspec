@@ -1,3 +1,16 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// DEFERRED — AST-complexity augmentation is NOT wired into the classifier.
+//
+// DR-021 (Decision 4) dropped AST-complexity augmentation as a proven dead end.
+// SWE-bench validation (n=120, κ=0.80) showed the classifier's misses are median
+// 1 file / 5 lines — there is no *local* complexity for an AST pass to measure,
+// so it would score those subtle fixes low too. `analyzeAstSignals` is therefore
+// intentionally NOT called from `classify()` or the classify command; it remains
+// here, exercised only by its own unit tests, as a parked building block. Do NOT
+// wire it into the classification path — difficulty detection is deferred to an
+// opt-in, AI-consented Tier-1+ feature (DR-021 Decision 5), not this regex pass.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import type { ClassificationSignal } from './classifier';
 export type { ClassificationSignal };
 
@@ -245,9 +258,14 @@ function detectDependencyChanges(content: string, oldContent?: string): number {
 /**
  * Analyze changed files and produce classification signals.
  *
- * This is the primary entry point for the AST analysis layer.
- * Currently uses regex-based heuristics; designed for future tree-sitter swap-in.
+ * @deprecated DEFERRED (DR-021 Decision 4): not wired into `classify()`. The
+ * AST-complexity augmentation it was built for is a measured dead end — the
+ * classifier's misses are median 1 file / 5 lines, with no local complexity to
+ * detect. Kept as a parked building block, exercised only by unit tests. Do not
+ * add it to the classification path; difficulty detection is an opt-in Tier-1+
+ * concern (DR-021 Decision 5), not this regex pass.
  *
+ * Currently uses regex-based heuristics; designed for future tree-sitter swap-in.
  * Gracefully returns empty signals for unsupported file types or invalid input.
  */
 export async function analyzeAstSignals(

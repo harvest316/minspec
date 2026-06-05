@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
 import { analyzeGitDiff } from '../lib/git-analyzer';
-import { classify, applyCalibration, loadCalibration } from '../lib/classifier';
-import { loadConfig, applyVSCodeOverrides } from '../lib/config';
+import { classify, applyFloor } from '../lib/classifier';
+import { loadConfig, applyVSCodeOverrides, TIERS } from '../lib/config';
+import type { Tier } from '../lib/config';
 import { resolveTargetFolder } from '../lib/resolve-folder';
+
+/** Tier the next-higher one above `tier`, or `tier` itself if already T4. */
+function nextTierUp(tier: Tier): Tier {
+  const idx = TIERS.indexOf(tier);
+  return idx >= 0 && idx < TIERS.length - 1 ? TIERS[idx + 1] : tier;
+}
 
 export async function classifyCommand(folderArg?: string): Promise<void> {
   const workspaceRoot = folderArg ?? (await resolveTargetFolder());
@@ -31,9 +38,12 @@ export async function classifyCommand(folderArg?: string): Promise<void> {
     return;
   }
 
-  const calibration = loadCalibration(workspaceRoot);
-  const calibratedSignals = applyCalibration(signals, calibration);
-  const result = classify(calibratedSignals, config);
+  const result = classify(signals, config);
+
+  // DR-021 Decision 1: the predicted tier is an upward-only ceremony FLOOR.
+  // With no user-set tier here, the effective tier is the floor itself; the
+  // affordances below only ever ratchet it UP, never below `result.tier`.
+  const predictedTier = applyFloor(result.tier);
 
   const confidencePct = Math.round(result.confidence * 100);
   const phaseList = result.suggestedPhases.join(' → ');
@@ -42,44 +52,69 @@ export async function classifyCommand(folderArg?: string): Promise<void> {
     .map((s) => `${s.name}=${s.value}`)
     .join(', ');
 
+  // DR-021 Decision 2: bump-up affordance. Advisory, never blocking. Tier is a
+  // mechanical-scope floor, not a difficulty read, and the classifier
+  // systematically under-tiers subtle small fixes (validated, n=120). Offer a
+  // one-click "harder than it looks → raise tier" ONLY at the boundary where
+  // that miss lives — predicted-T1 — to avoid nag fatigue (DR-021 Risk 2).
+  // Dismissible like any MinSpec toast.
+  const showBumpUp = predictedTier === 'T1';
+  const bumpUpLabel = 'Harder than it looks — raise tier';
+  const actions = ['Show Details', 'Override Tier'];
+  if (showBumpUp) actions.push(bumpUpLabel);
+
   const choice = await vscode.window.showInformationMessage(
-    `MinSpec: ${result.tier} (${confidencePct}% confidence) · ${phaseList}`,
+    `MinSpec: ${predictedTier} (${confidencePct}% confidence) · ${phaseList}`,
     { detail: `Signals: ${signalSummary || 'none'}`, modal: false },
-    'Show Details',
-    'Override Tier',
+    ...actions,
   );
 
   if (choice === 'Show Details') {
     const channel = vscode.window.createOutputChannel('MinSpec Classification');
-    channel.appendLine(`Tier: ${result.tier}`);
+    channel.appendLine(`Tier: ${predictedTier}`);
     channel.appendLine(`Confidence: ${confidencePct}%`);
     channel.appendLine(`Suggested phases: ${phaseList}`);
+    channel.appendLine('');
+    channel.appendLine(
+      'Note: tier reflects mechanical scope (blast radius), not how hard the change is.',
+    );
     channel.appendLine('');
     channel.appendLine('Signals:');
     for (const s of result.signals) {
       channel.appendLine(`  ${s.name} (${s.tierContribution}, weight ${s.weight}): ${s.value}`);
     }
     channel.show();
+  } else if (choice === bumpUpLabel) {
+    // One-click ratchet up by a single tier (the floor only ever moves up).
+    const raised = nextTierUp(predictedTier);
+    const { recordOverride } = await import('../lib/classifier.js');
+    recordOverride(
+      workspaceRoot,
+      predictedTier,
+      raised,
+      result.signals.map((s) => s.name),
+    );
+    vscode.window.showInformationMessage(`MinSpec: Raised to ${raised}.`);
   } else if (choice === 'Override Tier') {
-    const tiers: Array<{ label: string; value: 'T1' | 'T2' | 'T3' | 'T4' }> = [
+    const tiers: Array<{ label: string; value: Tier }> = [
       { label: 'T1 — Trivial', value: 'T1' },
       { label: 'T2 — Standard', value: 'T2' },
       { label: 'T3 — Complex', value: 'T3' },
       { label: 'T4 — Architectural', value: 'T4' },
     ];
     const picked = await vscode.window.showQuickPick(tiers, {
-      placeHolder: `Override ${result.tier}?`,
+      placeHolder: `Override ${predictedTier}?`,
     });
     if (picked) {
       const { recordOverride } = await import('../lib/classifier.js');
       recordOverride(
         workspaceRoot,
-        result.tier,
+        predictedTier,
         picked.value,
         result.signals.map((s) => s.name),
       );
       vscode.window.showInformationMessage(
-        `MinSpec: Overridden to ${picked.value}. Calibration saved.`,
+        `MinSpec: Overridden to ${picked.value}.`,
       );
     }
   }

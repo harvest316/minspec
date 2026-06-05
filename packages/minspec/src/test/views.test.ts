@@ -98,9 +98,12 @@ suite('View Providers', () => {
     const props = config.properties;
     assert.ok(props['minspec.specsDir'], 'Should have specsDir setting');
     assert.ok(props['minspec.decisionsDir'], 'Should have decisionsDir setting');
-    assert.ok(props['minspec.thresholds.t1Max'], 'Should have t1Max threshold');
-    assert.ok(props['minspec.thresholds.t2Max'], 'Should have t2Max threshold');
-    assert.ok(props['minspec.thresholds.t3Max'], 'Should have t3Max threshold');
+    // DR-021: scoring-threshold settings (t1Max/t2Max/t3Max) were dead config and
+    // are removed — the classifier ships as an upward-only floor, not a tunable score.
+    assert.ok(
+      !props['minspec.thresholds.t1Max'],
+      'Should NOT contribute the removed t1Max threshold (DR-021)',
+    );
     assert.ok(props['minspec.codelens.enabled'], 'Should have codelens.enabled');
   });
 });

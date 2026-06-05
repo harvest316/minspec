@@ -5,14 +5,14 @@ import * as os from 'os';
 import {
   classify,
   overrideClassification,
+  applyFloor,
   loadCalibration,
   saveCalibration,
   recordOverride,
-  applyCalibration,
   type ClassificationSignal,
   type CalibrationData,
 } from '../src/lib/classifier';
-import { DEFAULT_CONFIG, type MinspecConfig } from '../src/lib/config';
+import { DEFAULT_CONFIG, TIERS, type Tier, type MinspecConfig } from '../src/lib/config';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -206,9 +206,49 @@ describe('overrideClassification()', () => {
   });
 });
 
-// ─── Calibration Persistence Tests ───────────────────────────────────────────
+// ─── T0 Tests: Upward-only ceremony floor (DR-021 Decision 1) ────────────────
 
-describe('Calibration persistence', () => {
+describe('applyFloor() — predicted tier is an upward-only ceremony floor', () => {
+  it('returns the predicted tier unchanged when no user tier is set', () => {
+    for (const tier of TIERS) {
+      expect(applyFloor(tier)).toBe(tier);
+    }
+  });
+
+  it('NEVER lowers below the predicted tier — floor wins over a lower user tier', () => {
+    // Predicted T3, user asks for T1 → effective stays T3 (no auto-down).
+    expect(applyFloor('T3', 'T1')).toBe('T3');
+    expect(applyFloor('T3', 'T2')).toBe('T3');
+    expect(applyFloor('T2', 'T1')).toBe('T2');
+    expect(applyFloor('T4', 'T1')).toBe('T4');
+  });
+
+  it('ratchets UP when the user tier is higher than the prediction', () => {
+    expect(applyFloor('T1', 'T2')).toBe('T2');
+    expect(applyFloor('T1', 'T4')).toBe('T4');
+    expect(applyFloor('T2', 'T3')).toBe('T3');
+  });
+
+  it('is the maximum of predicted and user tier for every pair', () => {
+    for (const predicted of TIERS) {
+      for (const user of TIERS) {
+        const expected: Tier =
+          TIERS.indexOf(user) > TIERS.indexOf(predicted) ? user : predicted;
+        expect(applyFloor(predicted, user)).toBe(expected);
+      }
+    }
+  });
+
+  it('equal predicted and user tier returns that tier', () => {
+    for (const tier of TIERS) {
+      expect(applyFloor(tier, tier)).toBe(tier);
+    }
+  });
+});
+
+// ─── Override Log Persistence Tests ──────────────────────────────────────────
+
+describe('Override-log persistence', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -220,34 +260,55 @@ describe('Calibration persistence', () => {
   });
 
   describe('loadCalibration()', () => {
-    it('returns empty calibration when no file exists', () => {
+    it('returns an empty override log when no file exists', () => {
       const data = loadCalibration(tmpDir);
       expect(data.overrides).toEqual([]);
-      expect(data.weightAdjustments).toEqual({});
     });
 
-    it('returns empty calibration when file is invalid JSON', () => {
+    it('returns an empty override log when file is invalid JSON', () => {
       const dir = path.join(tmpDir, '.minspec');
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'calibration.json'), 'not json!!');
       const data = loadCalibration(tmpDir);
       expect(data.overrides).toEqual([]);
-      expect(data.weightAdjustments).toEqual({});
     });
 
-    it('returns empty calibration when file has wrong shape', () => {
+    it('returns an empty override log when file has wrong shape', () => {
       const dir = path.join(tmpDir, '.minspec');
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(
         path.join(dir, 'calibration.json'),
-        JSON.stringify({ overrides: 'not an array', weightAdjustments: 42 }),
+        JSON.stringify({ overrides: 'not an array' }),
       );
       const data = loadCalibration(tmpDir);
       expect(data.overrides).toEqual([]);
-      expect(data.weightAdjustments).toEqual({});
     });
 
-    it('loads valid calibration data', () => {
+    it('drops any legacy weightAdjustments field (DR-021: difficulty-calibration removed)', () => {
+      const dir = path.join(tmpDir, '.minspec');
+      fs.mkdirSync(dir, { recursive: true });
+      // An old on-disk file may still carry weightAdjustments — it must be dropped,
+      // never surfaced back as part of the loaded shape.
+      fs.writeFileSync(
+        path.join(dir, 'calibration.json'),
+        JSON.stringify({
+          overrides: [
+            {
+              timestamp: '2026-01-01T00:00:00Z',
+              originalTier: 'T3',
+              overriddenTier: 'T1',
+              signals: ['files_changed'],
+            },
+          ],
+          weightAdjustments: { files_changed: 0.7 },
+        }),
+      );
+      const data = loadCalibration(tmpDir) as Record<string, unknown>;
+      expect((data.overrides as unknown[]).length).toBe(1);
+      expect(data.weightAdjustments).toBeUndefined();
+    });
+
+    it('loads a valid override log', () => {
       const dir = path.join(tmpDir, '.minspec');
       fs.mkdirSync(dir, { recursive: true });
       const calibration: CalibrationData = {
@@ -259,7 +320,6 @@ describe('Calibration persistence', () => {
             signals: ['files_changed'],
           },
         ],
-        weightAdjustments: { files_changed: 0.7 },
       };
       fs.writeFileSync(
         path.join(dir, 'calibration.json'),
@@ -268,13 +328,12 @@ describe('Calibration persistence', () => {
       const data = loadCalibration(tmpDir);
       expect(data.overrides).toHaveLength(1);
       expect(data.overrides[0].originalTier).toBe('T3');
-      expect(data.weightAdjustments.files_changed).toBe(0.7);
     });
   });
 
   describe('saveCalibration()', () => {
     it('creates .minspec directory if missing', () => {
-      const data: CalibrationData = { overrides: [], weightAdjustments: {} };
+      const data: CalibrationData = { overrides: [] };
       saveCalibration(tmpDir, data);
       expect(fs.existsSync(path.join(tmpDir, '.minspec', 'calibration.json'))).toBe(true);
     });
@@ -289,7 +348,6 @@ describe('Calibration persistence', () => {
             signals: ['schema_change'],
           },
         ],
-        weightAdjustments: { schema_change: 1.2 },
       };
       saveCalibration(tmpDir, data);
       const raw = fs.readFileSync(
@@ -298,12 +356,11 @@ describe('Calibration persistence', () => {
       );
       const parsed = JSON.parse(raw);
       expect(parsed.overrides).toHaveLength(1);
-      expect(parsed.weightAdjustments.schema_change).toBe(1.2);
     });
   });
 
   describe('recordOverride()', () => {
-    it('appends override to calibration', () => {
+    it('appends an override event to the log', () => {
       const data = recordOverride(tmpDir, 'T3', 'T1', ['files_changed', 'lines_changed']);
       expect(data.overrides).toHaveLength(1);
       expect(data.overrides[0].originalTier).toBe('T3');
@@ -319,100 +376,15 @@ describe('Calibration persistence', () => {
       expect(data.overrides).toHaveLength(3);
     });
 
-    it('does not adjust weights before threshold (20 overrides)', () => {
-      for (let i = 0; i < 19; i++) {
-        recordOverride(tmpDir, 'T3', 'T1', ['signal_a']);
-      }
-      const data = loadCalibration(tmpDir);
-      expect(Object.keys(data.weightAdjustments)).toHaveLength(0);
-    });
-
-    it('adjusts weights after reaching threshold (20 overrides)', () => {
-      // Record 20 overrides where user consistently downgrades T3 → T1
-      for (let i = 0; i < 20; i++) {
+    it('only logs — never derives weight adjustments (DR-021: difficulty-calibration removed)', () => {
+      // Many same-direction overrides used to trigger weight recalculation; DR-021
+      // removed that dead machinery. The log must stay a pure event list.
+      for (let i = 0; i < 30; i++) {
         recordOverride(tmpDir, 'T3', 'T1', ['overestimated_signal']);
       }
-      const data = loadCalibration(tmpDir);
-      // Signal should have reduced weight (multiplier < 1) because user always downgraded
-      expect(data.weightAdjustments.overestimated_signal).toBeDefined();
-      expect(data.weightAdjustments.overestimated_signal).toBeLessThan(1);
+      const data = loadCalibration(tmpDir) as Record<string, unknown>;
+      expect((data.overrides as unknown[]).length).toBe(30);
+      expect(data.weightAdjustments).toBeUndefined();
     });
-
-    it('increases weight for signals when user consistently upgrades', () => {
-      for (let i = 0; i < 20; i++) {
-        recordOverride(tmpDir, 'T1', 'T3', ['underestimated_signal']);
-      }
-      const data = loadCalibration(tmpDir);
-      expect(data.weightAdjustments.underestimated_signal).toBeGreaterThan(1);
-    });
-
-    it('weight adjustments are clamped to [0.1, 3.0]', () => {
-      // Extreme downgrade: T4 → T1 repeatedly (direction = -3 each time)
-      for (let i = 0; i < 30; i++) {
-        recordOverride(tmpDir, 'T4', 'T1', ['extreme_signal']);
-      }
-      const data = loadCalibration(tmpDir);
-      expect(data.weightAdjustments.extreme_signal).toBeGreaterThanOrEqual(0.1);
-      expect(data.weightAdjustments.extreme_signal).toBeLessThanOrEqual(3.0);
-    });
-  });
-});
-
-// ─── Calibration Application Tests ───────────────────────────────────────────
-
-describe('applyCalibration()', () => {
-  it('returns signals unchanged when no adjustments exist', () => {
-    const signals: ClassificationSignal[] = [
-      makeSignal({ name: 'a', tierContribution: 'T1', weight: 1 }),
-    ];
-    const calibration: CalibrationData = { overrides: [], weightAdjustments: {} };
-    const adjusted = applyCalibration(signals, calibration);
-    expect(adjusted).toEqual(signals);
-  });
-
-  it('multiplies weight by adjustment factor', () => {
-    const signals: ClassificationSignal[] = [
-      makeSignal({ name: 'a', tierContribution: 'T2', weight: 0.8 }),
-      makeSignal({ name: 'b', tierContribution: 'T1', weight: 1.0 }),
-    ];
-    const calibration: CalibrationData = {
-      overrides: [],
-      weightAdjustments: { a: 0.5 }, // halve weight of signal 'a'
-    };
-    const adjusted = applyCalibration(signals, calibration);
-    expect(adjusted[0].weight).toBeCloseTo(0.4, 5);
-    expect(adjusted[1].weight).toBe(1.0); // 'b' unchanged
-  });
-
-  it('does not mutate original signals', () => {
-    const signals: ClassificationSignal[] = [
-      makeSignal({ name: 'a', tierContribution: 'T2', weight: 1 }),
-    ];
-    const calibration: CalibrationData = {
-      overrides: [],
-      weightAdjustments: { a: 2.0 },
-    };
-    applyCalibration(signals, calibration);
-    expect(signals[0].weight).toBe(1); // unchanged
-  });
-});
-
-// ─── Integration: Classify + Calibration ─────────────────────────────────────
-
-describe('Integration: classify with calibration', () => {
-  it('calibration-adjusted signals still classify correctly', () => {
-    const signals: ClassificationSignal[] = [
-      makeSignal({ name: 'a', tierContribution: 'T1', weight: 1 }),
-      makeSignal({ name: 'b', tierContribution: 'T3', weight: 1 }),
-    ];
-    const calibration: CalibrationData = {
-      overrides: [],
-      weightAdjustments: { b: 0.5 }, // reduce b's weight, but tier algorithm is "highest wins"
-    };
-
-    // Even with reduced weight, T3 still wins because algorithm is "highest tier wins"
-    const adjusted = applyCalibration(signals, calibration);
-    const result = classify(adjusted, DEFAULT_CONFIG);
-    expect(result.tier).toBe('T3');
   });
 });

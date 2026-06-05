@@ -19,15 +19,13 @@ export interface TierPhaseMapping {
   readonly optionalPhases: Phase[];
 }
 
-/** Scoring thresholds for classification */
-export interface TierThresholds {
-  /** Max score for T1 (inclusive). Above this = T2+ */
-  readonly t1Max: number;
-  /** Max score for T2 (inclusive). Above this = T3+ */
-  readonly t2Max: number;
-  /** Max score for T3 (inclusive). Above this = T4 */
-  readonly t3Max: number;
-}
+// NOTE: there is no scoring-threshold config. The classifier ranks signals by
+// `tierContribution` ("highest tier wins"); it never sums a score against a
+// t1Max/t2Max/t3Max cutoff. The old `TierThresholds` config was dead — never
+// read by `classify()` — and SWE-bench validation (n=120, κ=0.80) showed tuning
+// size thresholds is the wrong axis (orthogonal to difficulty). Removed in
+// DR-021 (Decision 5). The predicted tier ships as an upward-only floor instead;
+// see `applyFloor` in classifier.ts.
 
 /**
  * Spec storage layout.
@@ -43,7 +41,6 @@ export interface MinspecConfig {
   readonly decisionsDir: string;
   readonly epicsDir: string;
   readonly specsLayout: SpecsLayout;
-  readonly thresholds: TierThresholds;
   readonly phaseMappings: Record<Tier, TierPhaseMapping>;
 }
 
@@ -58,11 +55,6 @@ export const DEFAULT_CONFIG: MinspecConfig = {
   decisionsDir: 'docs/decisions',
   epicsDir: 'docs/epics',
   specsLayout: 'flat',
-  thresholds: {
-    t1Max: 3,
-    t2Max: 7,
-    t3Max: 14,
-  },
   phaseMappings: {
     T1: { requiredPhases: ['specify'], optionalPhases: [] },
     T2: { requiredPhases: ['specify', 'plan'], optionalPhases: ['clarify'] },
@@ -132,9 +124,6 @@ export function applyVSCodeOverrides(
     decisionsDir?: string;
     epicsDir?: string;
     specsLayout?: SpecsLayout;
-    t1Max?: number;
-    t2Max?: number;
-    t3Max?: number;
   },
 ): MinspecConfig {
   return {
@@ -143,10 +132,5 @@ export function applyVSCodeOverrides(
     decisionsDir: overrides.decisionsDir ?? config.decisionsDir,
     epicsDir: overrides.epicsDir ?? config.epicsDir,
     specsLayout: overrides.specsLayout ?? config.specsLayout,
-    thresholds: {
-      t1Max: overrides.t1Max ?? config.thresholds.t1Max,
-      t2Max: overrides.t2Max ?? config.thresholds.t2Max,
-      t3Max: overrides.t3Max ?? config.thresholds.t3Max,
-    },
   };
 }

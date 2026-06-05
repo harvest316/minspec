@@ -13,7 +13,7 @@
 
 Every [specification-driven development](https://github.com/spec-kit/spec-kit) tool applies the same ceremony to every change. A one-line bug fix gets the same multi-page spec treatment as a full architecture rewrite. Developers try SDD, hit the overhead on small changes, and abandon it.
 
-MinSpec fixes this. It classifies each change by complexity and applies proportional ceremony -- a trivial fix needs one sentence of spec, while an architectural change gets a full design document. You get the discipline of specification-driven development without the bureaucracy.
+MinSpec fixes this. It classifies each change by its mechanical scope -- the blast radius of files, lines, and boundaries it touches -- and applies proportional ceremony: a small, contained change needs one sentence of spec, while a far-reaching architectural change gets a full design document. The tier reflects *how far a change reaches, not how hard it is to think through*, and it acts as a floor you can always raise. You get the discipline of specification-driven development without the bureaucracy.
 
 > **More info:** [**minspec.dev**](https://minspec.dev) — full methodology, FAQ, stack diagram, and the case for adaptive ceremony.
 
@@ -61,7 +61,7 @@ When you accept the "Initialize" toast, MinSpec scaffolds the SDD structure for 
 | `.minspec/config.json` | Tier thresholds, phase mappings, spec dir | MinSpec extension |
 | `.minspec/session.json` | Current session scope + file allowlist | MinSpec drift detection |
 | `.minspec/preferences.json` | Auto-bootstrap prompt preferences | MinSpec extension |
-| `.minspec/calibration.json` | Persisted user overrides for classifier learning | MinSpec classifier |
+| `.minspec/calibration.json` | Audit log of your tier overrides (so a bump is never silent) | MinSpec classifier |
 | `.minspec/traceability.json` | Code-to-spec requirement mappings | MinSpec CodeLens |
 | `.minspec/parking-lot.md` | Out-of-scope items when `gh` CLI unavailable | MinSpec park command |
 | `specs/SPEC-NNN-*.md` | Individual spec files (markdown, Spec Kit-compatible) | MinSpec + Spec Kit + humans |
@@ -74,9 +74,11 @@ Accepting the "Refresh" toast later merges template updates with your edits via 
 
 ## Features
 
-### Complexity Classifier
+### Scope Classifier
 
-MinSpec analyzes your git diff and classifies each change into one of four tiers. The classifier examines file count, line count, new exports, schema changes, dependency additions, and more -- then recommends the right level of specification ceremony.
+MinSpec analyzes your git diff and classifies each change into one of four tiers by its **mechanical scope** -- the blast radius of the change. The classifier examines file count, line count, new exports, schema changes, dependency additions, cross-directory spread, and more, then recommends the right level of specification ceremony.
+
+A tier measures *how far a change reaches, not how hard it is to think through* -- a subtle one-line fix and a trivial one-line fix look identical to a structural analyzer, so the predicted tier is applied as an upward-only **floor** (it only ever ratchets ceremony up, never down) rather than a difficulty verdict. When a change is harder than its size suggests, one click raises the tier. Detecting cognitive difficulty would require reading your issue text with an AI model; that is deliberately out of the zero-AI core and deferred to an opt-in feature.
 
 [![Complexity Classification](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/classification.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/classification.png)
 ### Adaptive Phase Lifecycle
@@ -123,16 +125,16 @@ The status bar shows the active spec's tier, current phase, and task progress at
 [![Status Bar](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/status-bar.png)](https://raw.githubusercontent.com/harvest316/minspec/main/packages/minspec/media/screenshots/status-bar.png)
 ## Tier System
 
-MinSpec classifies every change into one of four complexity tiers:
+MinSpec classifies every change into one of four **scope** tiers. A tier is a measure of mechanical blast radius (files, lines, boundaries crossed), **not** a measure of how hard the change is to reason about:
 
-| Tier | Label | Ceremony | When |
+| Tier | Label | Ceremony | When (mechanical scope) |
 |------|-------|----------|------|
-| **T1** | Trivial | One-sentence spec, no planning | Single file, <50 lines, no new exports or schema changes |
+| **T1** | Contained | One-sentence spec, no planning | Single file, <50 lines, no new exports or schema changes |
 | **T2** | Standard | Requirements list, lightweight plan | 2-5 files, <200 lines, no cross-boundary changes |
-| **T3** | Complex | Full requirements, design doc, task DAG | 6+ files, new APIs, schema migrations, new dependencies |
+| **T3** | Wide | Full requirements, design doc, task DAG | 6+ files, new APIs, schema migrations, new dependencies |
 | **T4** | Architectural | Full spec + ADR + stakeholder review | Cross-project impact, new services, breaking API changes |
 
-The classifier suggests a tier. You always have the final say -- override any classification with a single click.
+The predicted tier is applied as an upward-only **floor**: MinSpec never auto-lowers ceremony below what it predicts (the prediction is a near-perfect lower bound), and it never claims a change is easy. Because a subtle one-line fix is size-identical to a trivial one, the classifier cannot see difficulty -- so when something is harder than its footprint suggests, one click raises the tier. You always have the final say: override any classification with a single click.
 
 ## Phase Lifecycle
 
@@ -156,12 +158,7 @@ All settings are under the `minspec.*` namespace in VS Code Settings.
 |---------|------|---------|-------------|
 | `minspec.specsDir` | `string` | `"specs"` | Directory for spec files, relative to workspace root |
 | `minspec.decisionsDir` | `string` | `"docs/decisions"` | Directory for Architecture Decision Records, relative to workspace root |
-| `minspec.thresholds.t1Max` | `number` | `3` | Maximum complexity score for T1 (trivial) classification |
-| `minspec.thresholds.t2Max` | `number` | `7` | Maximum complexity score for T2 (standard) classification |
-| `minspec.thresholds.t3Max` | `number` | `14` | Maximum complexity score for T3 (complex) classification |
 | `minspec.codelens.enabled` | `boolean` | `true` | Enable/disable CodeLens annotations showing spec requirement mappings |
-
-Tier thresholds are tunable per project. Scores above `t3Max` classify as T4 (architectural).
 
 ## Commands
 
@@ -238,7 +235,7 @@ You keep everything. Specs are plain markdown. Harness files (CLAUDE.md, AGENTS.
 
 ### How does the classifier work?
 
-The classifier is a deterministic, multi-signal heuristic engine -- not ML. It analyzes your git diff for file count, line count, new exports, schema changes, dependency additions, cross-directory changes, and more. Each signal contributes to a complexity score that maps to a tier. You can override any classification, and MinSpec learns from your overrides over time.
+The classifier is a deterministic, multi-signal heuristic engine -- not ML. It analyzes your git diff for file count, line count, new exports, schema changes, dependency additions, cross-directory changes, and more. Every one of those signals measures *mechanical scope* -- the blast radius of the change -- so the tier reflects how far a change reaches, **not how hard it is to think through**. The highest-scope signal sets the tier, which is then applied as an upward-only floor: MinSpec never auto-lowers ceremony below its prediction. You can override any classification with a single click (the override is logged so a bump is never silent). Detecting cognitive difficulty would mean reading your issue text with an AI model -- deliberately kept out of the zero-AI core and deferred to an opt-in feature.
 
 ## Contributing
 

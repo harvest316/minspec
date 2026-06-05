@@ -20,7 +20,7 @@ Monorepo for the open **MinSpec** VS Code extension, the shared classifier engin
 
 ## What is this?
 
-**MinSpec** — complexity-adaptive spec-driven development. Classifies changes into tiers and applies proportional ceremony. One-line fix = one sentence of spec. Architecture rewrite = full treatment. Works with zero AI tools installed.
+**MinSpec** — scope-adaptive spec-driven development. Classifies each change by its mechanical scope (blast radius — files touched, lines, cross-boundary spread) into a tier, then applies proportional ceremony. A tier measures *how far a change reaches*, not how hard it is to think through. One-file fix = one sentence of spec. Architecture rewrite = full treatment. The predicted tier is a *floor* (ceremony only ratchets up); you can always raise it. Works with zero AI tools installed.
 
 **ScroogeLLM** — LLM proxy that minimises token spend. Anonymises PII, caches aggressively, downgrades models when the task allows. Every token counts.
 

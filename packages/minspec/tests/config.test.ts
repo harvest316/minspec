@@ -39,21 +39,14 @@ describe('loadConfig()', () => {
     expect(config.specsDir).toBe('my-specs');
     // Non-overridden values use defaults
     expect(config.decisionsDir).toBe('docs/decisions');
-    expect(config.thresholds).toEqual(DEFAULT_CONFIG.thresholds);
     expect(config.phaseMappings).toEqual(DEFAULT_CONFIG.phaseMappings);
   });
 
-  it('deep merges nested thresholds', () => {
-    const dir = path.join(tmpDir, '.minspec');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'config.json'),
-      JSON.stringify({ thresholds: { t1Max: 5 } }),
-    );
-    const config = loadConfig(tmpDir);
-    expect(config.thresholds.t1Max).toBe(5);
-    expect(config.thresholds.t2Max).toBe(DEFAULT_CONFIG.thresholds.t2Max);
-    expect(config.thresholds.t3Max).toBe(DEFAULT_CONFIG.thresholds.t3Max);
+  it('carries no scoring-threshold config (DR-021: dead t1Max/t2Max/t3Max removed)', () => {
+    // The classifier ranks by tierContribution ("highest wins"), never sums a
+    // score against a threshold. The old thresholds field was never read; DR-021
+    // removed it. Guard against it creeping back into the config shape.
+    expect((DEFAULT_CONFIG as Record<string, unknown>).thresholds).toBeUndefined();
   });
 
   it('deep merges phaseMappings partially', () => {

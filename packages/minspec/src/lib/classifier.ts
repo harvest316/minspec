@@ -21,10 +21,20 @@ export interface ClassificationResult {
   readonly overriddenBy?: 'user';
 }
 
-/** Persistent calibration data stored in .minspec/calibration.json */
+/**
+ * Persistent override log stored in .minspec/calibration.json.
+ *
+ * This is an *event log* of the human override path (invariant #5: user override
+ * wins), NOT a difficulty-calibration store. DR-021 removed the weight-tuning
+ * machinery (`recalculateWeights`/`applyCalibration` + `weightAdjustments`): it
+ * fed a difficulty prediction that `classify()` never read, and SWE-bench
+ * validation (n=120, κ=0.80) proved difficulty is orthogonal to the mechanical
+ * scope this classifier measures. The override log is retained so a future
+ * opt-in difficulty layer (DR-021 Decision 5, AI-consented Tier-1+) has raw
+ * signal — but nothing in the Tier-0 core consumes it.
+ */
 export interface CalibrationData {
   overrides: CalibrationOverride[];
-  weightAdjustments: Record<string, number>; // signal name → weight multiplier
 }
 
 /** A single user override event */
@@ -42,6 +52,27 @@ const TIER_INDEX: Record<Tier, number> = { T1: 0, T2: 1, T3: 2, T4: 3 };
 /** Compare two tiers. Returns positive if a > b, negative if a < b, 0 if equal. */
 function compareTiers(a: Tier, b: Tier): number {
   return TIER_INDEX[a] - TIER_INDEX[b];
+}
+
+/**
+ * Apply the predicted tier as an upward-only ceremony FLOOR (DR-021 Decision 1).
+ *
+ * The classifier's predicted tier is a 100%-precise lower bound on ceremony
+ * (`pred ≥ T2 → true ≥ T2` was 31/31 in SWE-bench validation, n=120). So the
+ * effective tier is the MAXIMUM of the predicted floor and a user-set tier:
+ * ceremony ratchets UP, never auto-down. A human can always raise the tier
+ * (invariant #5); the tool itself never silently lowers below its own
+ * prediction.
+ *
+ * Pure function — no side effects.
+ *
+ * @param predicted The classifier's predicted tier (the floor).
+ * @param userTier  A user-requested tier, or undefined when none is set.
+ * @returns max(predicted, userTier) — never below `predicted`.
+ */
+export function applyFloor(predicted: Tier, userTier?: Tier): Tier {
+  if (userTier === undefined) return predicted;
+  return compareTiers(userTier, predicted) > 0 ? userTier : predicted;
 }
 
 // ─── Core Classification ─────────────────────────────────────────────────────
@@ -132,17 +163,15 @@ export function overrideClassification(
 // ─── Calibration Persistence ─────────────────────────────────────────────────
 
 const CALIBRATION_FILE = 'calibration.json';
-const CALIBRATION_THRESHOLD = 20; // overrides before weight adjustment kicks in
-const EMA_ALPHA = 0.3; // exponential moving average smoothing factor
 
-/** Create an empty calibration data object */
+/** Create an empty override-log object */
 function emptyCalibration(): CalibrationData {
-  return { overrides: [], weightAdjustments: {} };
+  return { overrides: [] };
 }
 
 /**
- * Load calibration data from `.minspec/calibration.json`.
- * Returns empty calibration if file is missing or invalid.
+ * Load the override log from `.minspec/calibration.json`.
+ * Returns an empty log if the file is missing or invalid.
  */
 export function loadCalibration(rootDir: string): CalibrationData {
   const filePath = path.join(rootDir, '.minspec', CALIBRATION_FILE);
@@ -153,17 +182,17 @@ export function loadCalibration(rootDir: string): CalibrationData {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw) as CalibrationData;
     // Basic shape validation
-    if (!Array.isArray(parsed.overrides) || typeof parsed.weightAdjustments !== 'object') {
+    if (!Array.isArray(parsed.overrides)) {
       return emptyCalibration();
     }
-    return parsed;
+    return { overrides: parsed.overrides };
   } catch {
     return emptyCalibration();
   }
 }
 
 /**
- * Save calibration data to `.minspec/calibration.json`.
+ * Save the override log to `.minspec/calibration.json`.
  * Creates the `.minspec/` directory if it does not exist.
  */
 export function saveCalibration(rootDir: string, data: CalibrationData): void {
@@ -176,12 +205,18 @@ export function saveCalibration(rootDir: string, data: CalibrationData): void {
 }
 
 /**
- * Record a user override and update calibration.
+ * Record a user override in the override log.
  *
- * After CALIBRATION_THRESHOLD overrides, recalculates weight adjustments
- * using an exponential moving average. Signals that frequently appear
- * when the user overrides to a LOWER tier get their weights reduced;
- * signals present when user overrides to a HIGHER tier get increased.
+ * This is the human-override path (invariant #5: user override wins) — it
+ * appends an audit event so the bump (or any explicit re-tier) is never silent.
+ *
+ * DR-021 removed the difficulty-calibration that used to run here: the old
+ * `recalculateWeights` step adjusted `signal.weight` multipliers that
+ * `classify()` never read (it ranks by `tierContribution`, "highest wins"), so
+ * the weight tuning could not change a single classification. SWE-bench
+ * validation (n=120, κ=0.80) confirmed the axis was wrong — difficulty is
+ * orthogonal to mechanical scope — so the machinery was measured-and-rejected,
+ * not merely unused. The override is now logged only.
  */
 export function recordOverride(
   rootDir: string,
@@ -198,67 +233,6 @@ export function recordOverride(
     signals: [...signalNames],
   });
 
-  // Recalculate weight adjustments after threshold
-  if (data.overrides.length >= CALIBRATION_THRESHOLD) {
-    recalculateWeights(data);
-  }
-
   saveCalibration(rootDir, data);
   return data;
-}
-
-/**
- * Recalculate weight adjustments from override history.
- *
- * For each signal that appears in overrides:
- * - If user consistently overrides DOWN (classifier over-estimated), reduce weight.
- * - If user consistently overrides UP (classifier under-estimated), increase weight.
- *
- * Uses EMA so recent overrides matter more than old ones.
- * Weight multiplier is clamped to [0.1, 3.0].
- */
-function recalculateWeights(data: CalibrationData): void {
-  // Track per-signal direction bias
-  const signalBias: Record<string, number> = {};
-
-  for (const override of data.overrides) {
-    const direction = TIER_INDEX[override.overriddenTier] - TIER_INDEX[override.originalTier];
-    // direction > 0 → user bumped UP, direction < 0 → user bumped DOWN
-
-    for (const signalName of override.signals) {
-      const prev = signalBias[signalName] ?? 0;
-      // EMA: new = alpha * sample + (1 - alpha) * previous
-      signalBias[signalName] = EMA_ALPHA * direction + (1 - EMA_ALPHA) * prev;
-    }
-  }
-
-  // Convert bias to weight multiplier
-  // Positive bias (user bumps UP) → increase weight (multiplier > 1)
-  // Negative bias (user bumps DOWN) → decrease weight (multiplier < 1)
-  for (const [signalName, bias] of Object.entries(signalBias)) {
-    // Map bias [-3, 3] range to multiplier [0.1, 3.0]
-    // bias 0 → multiplier 1.0 (no change)
-    const multiplier = Math.max(0.1, Math.min(3.0, 1.0 + bias * 0.3));
-    data.weightAdjustments[signalName] = Math.round(multiplier * 1000) / 1000;
-  }
-}
-
-/**
- * Apply calibration weight adjustments to a set of signals.
- * Returns new signal array with adjusted weights. Does not mutate input.
- */
-export function applyCalibration(
-  signals: ClassificationSignal[],
-  calibration: CalibrationData,
-): ClassificationSignal[] {
-  if (Object.keys(calibration.weightAdjustments).length === 0) {
-    return signals;
-  }
-  return signals.map((signal) => {
-    const multiplier = calibration.weightAdjustments[signal.name];
-    if (multiplier === undefined) {
-      return signal;
-    }
-    return { ...signal, weight: signal.weight * multiplier };
-  });
 }

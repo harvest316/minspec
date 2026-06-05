@@ -47,7 +47,7 @@ These rules must never be violated. All changes must preserve them.
 
 ## SDD Methodology
 
-This project uses Specification-Driven Development. Tasks are classified by complexity tier:
+This project uses Specification-Driven Development. Tasks are classified by **mechanical scope** (blast radius — files, lines, boundaries touched), not by how hard they are to reason about. The predicted tier is an upward-only floor: it never lowers ceremony on its own, and you can always raise it.
 
 | Tier | Ceremony | Phases Required |
 |------|----------|-----------------|
@@ -84,9 +84,9 @@ const AGENTS_MD_TEMPLATE = `# {{projectName}} — Agent Instructions
 
 This project uses MinSpec SDD (Specification-Driven Development). Before implementing any change:
 
-1. **Check complexity** — Is this T1 (trivial) or does it need more ceremony?
+1. **Check scope** — How far does this change reach (files, lines, boundaries)? That sets the tier — not how hard the change feels.
 2. **Read the spec** — Check \`{{specsDir}}/\` for existing specs related to your task.
-3. **Follow the tier** — Don't over-specify T1 tasks. Don't under-specify T3/T4 tasks.
+3. **Follow the tier** — Don't over-specify small-scope tasks. Don't under-specify wide-scope ones. The predicted tier is a floor: raise it (never lower it) if a small change is subtler than its footprint.
 
 ## Specs Directory
 
@@ -110,18 +110,20 @@ Project invariants, principles, and constraints are in \`.minspec/constitution.m
 
 ## Task Classification Guide
 
-Before starting work, classify the task:
+Before starting work, classify the task by its **mechanical scope** (blast radius), not by how hard it is to think through:
 
-- **T1 (Trivial):** One-line fix, typo, config change. One sentence of spec is enough.
-- **T2 (Small):** Simple feature, clear scope. Needs spec + plan.
-- **T3 (Medium):** Multi-file change, some ambiguity. Full spec cycle.
-- **T4 (Complex):** Architectural change, cross-cutting concerns. Complete ceremony required.
+- **T1 (Contained):** Single file, one-line fix, typo, config change. One sentence of spec is enough.
+- **T2 (Standard):** A few files, contained feature, no cross-boundary changes. Needs spec + plan.
+- **T3 (Wide):** Many files, new APIs, schema/dependency changes. Full spec cycle.
+- **T4 (Architectural):** Cross-project impact, new services, breaking changes. Complete ceremony required.
+
+The classifier sees scope, not difficulty. A subtle one-line fix and a trivial one are the same size — so the predicted tier is a **floor**: raise it when a change is harder than its footprint, never lower it below the prediction.
 
 ## Rules
 
 1. Never skip the spec phase, even for T1.
-2. User override always wins — if the human says "just do it," do it.
-3. Ceremony must be proportional to complexity — don't over-engineer T1 tasks.
+2. User override always wins — if the human says "just do it," do it. The predicted tier only ratchets up, never auto-down.
+3. Ceremony must be proportional to scope — don't over-engineer small-scope tasks.
 `;
 
 const CURSORRULES_TEMPLATE = `# {{projectName}} — Cursor Rules
@@ -147,7 +149,7 @@ This project uses MinSpec SDD methodology. Specs in \`{{specsDir}}/\`, decisions
 - {{this}}
 {{/each}}
 {{else}}
-- Ceremony proportional to complexity
+- Ceremony proportional to scope (blast radius), not to perceived difficulty
 - User override always wins
 - Specs are living documents
 {{/if}}
@@ -155,8 +157,8 @@ This project uses MinSpec SDD methodology. Specs in \`{{specsDir}}/\`, decisions
 ## Before Making Changes
 
 1. Check if a spec exists for the area you're modifying
-2. Classify the change complexity (T1-T4)
-3. Follow the appropriate ceremony level
+2. Classify the change by mechanical scope (T1-T4) — how far it reaches, not how hard it feels
+3. Follow the appropriate ceremony level (the predicted tier is a floor — raise it, never lower it)
 4. Never violate the invariants listed above
 
 ## Coding Standards
@@ -225,7 +227,7 @@ Guidelines that should be followed. Can be bent in exceptional circumstances wit
 {{/each}}
 {{else}}
 <!-- Add principles here. Example: -->
-<!-- 1. Ceremony proportional to complexity -->
+<!-- 1. Ceremony proportional to scope (blast radius), not perceived difficulty -->
 <!-- 2. User override always wins -->
 <!-- 3. Specs are living documents, not bureaucracy -->
 {{/if}}

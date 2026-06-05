@@ -33,14 +33,20 @@ vi.mock('../src/lib/git-analyzer', () => ({
 
 vi.mock('../src/lib/classifier', () => ({
   classify: vi.fn(),
-  applyCalibration: vi.fn(),
-  loadCalibration: vi.fn(),
+  // applyFloor is pure; use the real upward-only-max behaviour so the command's
+  // floor logic is exercised, not stubbed out.
+  applyFloor: (predicted: string, user?: string) => {
+    const order = ['T1', 'T2', 'T3', 'T4'];
+    if (user === undefined) return predicted;
+    return order.indexOf(user) > order.indexOf(predicted) ? user : predicted;
+  },
   recordOverride: vi.fn(),
 }));
 
 vi.mock('../src/lib/config', () => ({
   loadConfig: vi.fn(),
   applyVSCodeOverrides: vi.fn((config: unknown) => config),
+  TIERS: ['T1', 'T2', 'T3', 'T4'],
 }));
 
 // ─── Imports ──────────────────────────────────────────────────────────────────
@@ -49,7 +55,7 @@ import * as vscode from 'vscode';
 import { classifyCommand } from '../src/commands/classify';
 import { resolveTargetFolder } from '../src/lib/resolve-folder';
 import { analyzeGitDiff } from '../src/lib/git-analyzer';
-import { classify, applyCalibration, loadCalibration, recordOverride } from '../src/lib/classifier';
+import { classify, recordOverride } from '../src/lib/classifier';
 import { loadConfig, applyVSCodeOverrides } from '../src/lib/config';
 import type { ClassificationSignal, ClassificationResult } from '../src/lib/classifier';
 import type { MinspecConfig } from '../src/lib/config';
@@ -57,6 +63,8 @@ import type { MinspecConfig } from '../src/lib/config';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const WS = '/tmp/ws';
+
+const BUMP_UP_LABEL = 'Harder than it looks — raise tier';
 
 const FAKE_CONFIG = {
   specsDir: 'specs',
@@ -68,8 +76,6 @@ const FAKE_CONFIG = {
     T4: { requiredPhases: ['specify', 'plan', 'tasks', 'implement'], optionalPhases: [] },
   },
 } as unknown as MinspecConfig;
-
-const FAKE_CALIBRATION = { overrides: [], weightAdjustments: {} };
 
 function makeSignal(
   name: string,
@@ -104,8 +110,6 @@ describe('classifyCommand()', () => {
     vi.mocked(resolveTargetFolder).mockResolvedValue(WS);
     vi.mocked(loadConfig).mockReturnValue(FAKE_CONFIG);
     vi.mocked(applyVSCodeOverrides).mockImplementation((cfg: unknown) => cfg as MinspecConfig);
-    vi.mocked(loadCalibration).mockReturnValue(FAKE_CALIBRATION);
-    vi.mocked(applyCalibration).mockImplementation((sigs) => sigs);
     vi.mocked(analyzeGitDiff).mockResolvedValue([]);
     vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
       get: vi.fn(),
@@ -191,19 +195,17 @@ describe('classifyCommand()', () => {
     expect(classify).not.toHaveBeenCalled();
   });
 
-  // ── Lines 34-50: happy path — shows classification result ─────────────────
+  // ── Happy path — classifies raw signals (no weight calibration) ───────────
 
-  it('calls classify with calibrated signals and shows the tier/confidence/phases message', async () => {
+  it('calls classify with the raw signals and shows the tier/confidence/phases message', async () => {
     const signals = [makeSignal('fileCount', 4, 'T2', 1)];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     const result = makeResult('T2', signals, 0.75, ['specify', 'plan']);
     vi.mocked(classify).mockReturnValue(result);
 
     await classifyCommand(WS);
 
-    expect(loadCalibration).toHaveBeenCalledWith(WS);
-    expect(applyCalibration).toHaveBeenCalledWith(signals, FAKE_CALIBRATION);
+    // DR-021: no applyCalibration step — signals go straight to classify.
     expect(classify).toHaveBeenCalledWith(signals, FAKE_CONFIG);
 
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
@@ -223,7 +225,6 @@ describe('classifyCommand()', () => {
       makeSignal('e', 5, 'T3'), // 5th — must NOT appear
     ];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     vi.mocked(classify).mockReturnValue(makeResult('T3', signals, 1, ['specify', 'plan', 'tasks']));
 
     await classifyCommand(WS);
@@ -236,10 +237,9 @@ describe('classifyCommand()', () => {
   });
 
   it('shows "none" in detail when there are no signals in the result', async () => {
-    // signals array still non-empty to pass line 27 check, but classify returns empty signals
+    // signals array still non-empty to pass the no-changes check, but classify returns empty signals
     const rawSignals = [makeSignal('x', 1, 'T1')];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(rawSignals);
-    vi.mocked(applyCalibration).mockReturnValue(rawSignals);
     vi.mocked(classify).mockReturnValue(makeResult('T1', [], 0, ['specify']));
 
     await classifyCommand(WS);
@@ -252,7 +252,6 @@ describe('classifyCommand()', () => {
   it('rounds confidence to nearest integer percent', async () => {
     const signals = [makeSignal('s', 1, 'T1')];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     vi.mocked(classify).mockReturnValue(makeResult('T1', signals, 0.334, ['specify']));
 
     await classifyCommand(WS);
@@ -261,7 +260,69 @@ describe('classifyCommand()', () => {
     expect(firstArg).toContain('(33% confidence)');
   });
 
-  // ── Lines 52-62: "Show Details" branch ───────────────────────────────────
+  // ── DR-021 Decision 2: bump-up affordance ─────────────────────────────────
+
+  it('offers the bump-up affordance at the boundary (predicted-T1)', async () => {
+    const signals = [makeSignal('fileCount', 1, 'T1')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(makeResult('T1', signals, 1, ['specify']));
+
+    await classifyCommand(WS);
+
+    const call = vi.mocked(vscode.window.showInformationMessage).mock.calls[0];
+    // The bump-up action is present among the toast buttons.
+    expect(call).toContain(BUMP_UP_LABEL);
+  });
+
+  it('does NOT offer the bump-up affordance at the top tier (predicted-T4)', async () => {
+    const signals = [makeSignal('fileCount', 12, 'T4')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(
+      makeResult('T4', signals, 1, ['specify', 'plan', 'tasks', 'implement']),
+    );
+
+    await classifyCommand(WS);
+
+    const call = vi.mocked(vscode.window.showInformationMessage).mock.calls[0];
+    expect(call).not.toContain(BUMP_UP_LABEL);
+  });
+
+  it('the bump-up affordance is dismissible — dismissing it records nothing', async () => {
+    const signals = [makeSignal('fileCount', 1, 'T1')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(makeResult('T1', signals, 1, ['specify']));
+    // User dismisses the toast (returns undefined).
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(undefined);
+
+    await classifyCommand(WS);
+
+    expect(recordOverride).not.toHaveBeenCalled();
+    expect(vscode.window.showQuickPick).not.toHaveBeenCalled();
+  });
+
+  it('ratchets UP by one tier and logs the override when bump-up is clicked', async () => {
+    const signals = [makeSignal('fileCount', 1, 'T1'), makeSignal('lineCount', 4, 'T1')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(makeResult('T1', signals, 1, ['specify']));
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
+      BUMP_UP_LABEL as unknown as undefined,
+    );
+
+    await classifyCommand(WS);
+
+    // T1 → T2 (one tier up — never down).
+    expect(recordOverride).toHaveBeenCalledWith(
+      WS,
+      'T1',
+      'T2',
+      ['fileCount', 'lineCount'],
+    );
+    expect(vscode.window.showInformationMessage).toHaveBeenLastCalledWith(
+      'MinSpec: Raised to T2.',
+    );
+  });
+
+  // ── "Show Details" branch ─────────────────────────────────────────────────
 
   it('opens an output channel with full signal details when user picks "Show Details"', async () => {
     const signals = [
@@ -269,7 +330,6 @@ describe('classifyCommand()', () => {
       makeSignal('lineCount', 120, 'T3', 3),
     ];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     vi.mocked(classify).mockReturnValue(makeResult('T3', signals, 0.5, ['specify', 'plan', 'tasks']));
     vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
       'Show Details' as unknown as undefined,
@@ -281,6 +341,10 @@ describe('classifyCommand()', () => {
     expect(mockChannel.appendLine).toHaveBeenCalledWith('Tier: T3');
     expect(mockChannel.appendLine).toHaveBeenCalledWith('Confidence: 50%');
     expect(mockChannel.appendLine).toHaveBeenCalledWith('Suggested phases: specify → plan → tasks');
+    // DR-021 Decision 3: details state tier = scope, not difficulty.
+    expect(mockChannel.appendLine).toHaveBeenCalledWith(
+      'Note: tier reflects mechanical scope (blast radius), not how hard the change is.',
+    );
     expect(mockChannel.appendLine).toHaveBeenCalledWith('Signals:');
     expect(mockChannel.appendLine).toHaveBeenCalledWith(
       '  fileCount (T2, weight 2): 5',
@@ -291,12 +355,11 @@ describe('classifyCommand()', () => {
     expect(mockChannel.show).toHaveBeenCalled();
   });
 
-  // ── Lines 63-84: "Override Tier" branch ──────────────────────────────────
+  // ── "Override Tier" branch ────────────────────────────────────────────────
 
   it('shows tier quick-pick when user picks "Override Tier"', async () => {
     const signals = [makeSignal('fileCount', 3, 'T2')];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     const result = makeResult('T2', signals);
     vi.mocked(classify).mockReturnValue(result);
     vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
@@ -320,7 +383,6 @@ describe('classifyCommand()', () => {
   it('does nothing further when user cancels the tier quick-pick', async () => {
     const signals = [makeSignal('fileCount', 3, 'T2')];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     vi.mocked(classify).mockReturnValue(makeResult('T2', signals));
     vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
       'Override Tier' as unknown as undefined,
@@ -338,7 +400,6 @@ describe('classifyCommand()', () => {
       makeSignal('lineCount', 50, 'T2'),
     ];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     vi.mocked(classify).mockReturnValue(makeResult('T2', signals));
     vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
       'Override Tier' as unknown as undefined,
@@ -356,7 +417,7 @@ describe('classifyCommand()', () => {
       ['fileCount', 'lineCount'],
     );
     expect(vscode.window.showInformationMessage).toHaveBeenLastCalledWith(
-      'MinSpec: Overridden to T4. Calibration saved.',
+      'MinSpec: Overridden to T4.',
     );
   });
 
@@ -367,7 +428,6 @@ describe('classifyCommand()', () => {
       makeSignal('configFiles', 2, 'T2'),
     ];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     vi.mocked(classify).mockReturnValue(makeResult('T3', signals));
     vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
       'Override Tier' as unknown as undefined,
@@ -378,6 +438,8 @@ describe('classifyCommand()', () => {
 
     await classifyCommand(WS);
 
+    // Invariant #5: an explicit human override wins even below the predicted
+    // floor — the choice is honoured and logged (never silent).
     expect(recordOverride).toHaveBeenCalledWith(
       WS,
       'T3',
@@ -386,12 +448,11 @@ describe('classifyCommand()', () => {
     );
   });
 
-  // ── "Show Details" and "Override Tier" branches don't fire when dismissed ──
+  // ── Dismissal does not fire any branch ────────────────────────────────────
 
   it('does not open output channel or quick-pick when user dismisses the result message', async () => {
     const signals = [makeSignal('fileCount', 2, 'T1')];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(applyCalibration).mockReturnValue(signals);
     vi.mocked(classify).mockReturnValue(makeResult('T1', signals));
     vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(undefined);
 

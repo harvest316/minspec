@@ -371,21 +371,6 @@
           "default": "flat",
           "description": "How spec files are stored. 'flat': one file per spec (specs/SPEC-NNN-slug.md). 'spec-kit': one directory per spec with separate spec.md/plan.md/tasks.md — strict GitHub Spec Kit compatibility."
         },
-        "minspec.thresholds.t1Max": {
-          "type": "number",
-          "default": 3,
-          "description": "Maximum complexity score for T1 (trivial) classification"
-        },
-        "minspec.thresholds.t2Max": {
-          "type": "number",
-          "default": 7,
-          "description": "Maximum complexity score for T2 (standard) classification"
-        },
-        "minspec.thresholds.t3Max": {
-          "type": "number",
-          "default": 14,
-          "description": "Maximum complexity score for T3 (medium) classification"
-        },
         "minspec.codelens.enabled": {
           "type": "boolean",
           "default": true,
