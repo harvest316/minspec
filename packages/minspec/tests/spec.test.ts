@@ -102,6 +102,48 @@ created: 2026-05-31
     expect(spec.frontmatter.epic).toBe('EPIC-003  # SDD Core Methodology');
   });
 
+  // T3 regression (#153.1): a quoted closed-enum scalar (`status: "done"`) was
+  // returned by stripInlineComment WITH its surrounding quotes, so the
+  // STATUSES_SET/TIERS_SET `.has()` membership check failed and the value was
+  // silently coerced to the default ('new'/'T2') — a false status/tier in the
+  // pane — AND the validator (which re-strips the raw line) emitted a spurious
+  // `frontmatter.*.unknown`. A matched quoted scalar must have its quotes stripped.
+  it('strips surrounding quotes from a matched quoted enum scalar', () => {
+    const dq = parseSpec(`---
+id: SPEC-001
+title: X
+tier: "T3"
+status: "done"
+---
+`);
+    expect(dq.frontmatter.status).toBe('done'); // not coerced to 'new'
+    expect(dq.frontmatter.tier).toBe('T3'); // not coerced to 'T2'
+
+    const sq = parseSpec(`---
+id: SPEC-001
+title: X
+tier: 'T1'
+status: 'implementing'
+---
+`);
+    expect(sq.frontmatter.status).toBe('implementing');
+    expect(sq.frontmatter.tier).toBe('T1');
+  });
+
+  // An empty quoted scalar ("" / '') is an explicitly-empty value, not a member:
+  // it must coerce to the default, not become a spurious enum hit.
+  it('treats an empty quoted enum scalar as empty (coerces to default)', () => {
+    const spec = parseSpec(`---
+id: SPEC-001
+title: X
+tier: ""
+status: ''
+---
+`);
+    expect(spec.frontmatter.status).toBe('new'); // empty → default, not a member
+    expect(spec.frontmatter.tier).toBe('T2');
+  });
+
   it('strips inline comments from nested (phase) values', () => {
     const spec = parseSpec(`---
 id: SPEC-004
@@ -128,6 +170,30 @@ status: done
 ---
 `);
     expect(spec.frontmatter.title).toBe('Issue#42 hotfix');
+  });
+
+  // T3 regression (#153.3): FRONTMATTER_RE anchored on `^---\n`, so a CRLF spec
+  // (`---\r\n…`) never matched — the frontmatter block was unparsed, id came out
+  // '', and listSpecs silently dropped the spec with no error. parseSpec must
+  // normalize CRLF→LF so a Windows-authored spec parses identically to a LF one.
+  it('parses a CRLF spec identically to LF (frontmatter not dropped)', () => {
+    const crlf = EXAMPLE_SPEC.replace(/\n/g, '\r\n');
+    const spec = parseSpec(crlf);
+    expect(spec.frontmatter.id).toBe('SPEC-001'); // was '' → dropped from listSpecs
+    expect(spec.frontmatter.title).toBe('Add rate limiting to /api/health');
+    expect(spec.frontmatter.status).toBe('implementing');
+    expect(spec.frontmatter.phases.specify).toBe('done');
+    // Body sections parse too; no stray \r leaks into section text.
+    expect(spec.phaseSections.specify!.body).toContain('rate limiting');
+    expect(spec.phaseSections.specify!.body).not.toContain('\r');
+    expect(spec.phaseSections.tasks!.tasks).toHaveLength(2);
+  });
+
+  it('parses a lone-CR (old Mac) spec frontmatter', () => {
+    // Defensive: normalize bare \r too, so an old-Mac line ending also parses.
+    const cr = EXAMPLE_SPEC.replace(/\n/g, '\r');
+    const spec = parseSpec(cr);
+    expect(spec.frontmatter.id).toBe('SPEC-001');
   });
 
   it('handles minimal Spec Kit format (no MinSpec extensions)', () => {
@@ -208,6 +274,59 @@ No level-1 heading anywhere.
     expect(spec.frontmatter.title).toBe('');
   });
 
+  // T3 regression (#153.2): an empty-valued top-level key (`title:` with nothing
+  // after it) opened a nested block stored as `{}` even with no children. `{}` is
+  // not nullish, so the `?? firstH1Heading()` fallback never fired and `title`
+  // became an OBJECT — its consumers (slugify → title.toLowerCase) then crashed.
+  it('falls back to the body H1 when title: is empty (not an object)', () => {
+    const input = `---
+id: SPEC-007
+title:
+status: done
+---
+
+# The Real Title
+
+Body.
+`;
+    const spec = parseSpec(input);
+    expect(typeof spec.frontmatter.title).toBe('string');
+    expect(spec.frontmatter.title).toBe('The Real Title'); // H1 fallback fired
+  });
+
+  it('yields an empty string (never an object) for an empty title: with no H1', () => {
+    const input = `---
+id: SPEC-008
+title:
+status: done
+---
+
+## Requirements
+
+No level-1 heading anywhere.
+`;
+    const spec = parseSpec(input);
+    expect(typeof spec.frontmatter.title).toBe('string');
+    expect(spec.frontmatter.title).toBe('');
+  });
+
+  it('does not mistake a genuine nested block for an empty title', () => {
+    // `title:` here truly opens a nested block (indented child) — it must remain an
+    // object-shaped value, not be flattened to ''. Guards against over-correcting #153.2.
+    const input = `---
+id: SPEC-009
+phases:
+  specify: done
+  plan: pending
+---
+
+# H1 Title
+`;
+    const spec = parseSpec(input);
+    expect(spec.frontmatter.phases.specify).toBe('done');
+    expect(spec.frontmatter.phases.plan).toBe('pending');
+  });
+
   it('handles frontmatter-only (no body)', () => {
     const input = `---
 id: SPEC-099
@@ -238,6 +357,40 @@ describe('writeSpec()', () => {
     expect(reparsed.frontmatter).toEqual(parsed.frontmatter);
     expect(reparsed.phaseSections.specify!.body).toEqual(parsed.phaseSections.specify!.body);
     expect(reparsed.phaseSections.tasks!.tasks).toEqual(parsed.phaseSections.tasks!.tasks);
+  });
+
+  // T3 regression (#153.4): serializeFrontmatter emitted id/title/tier/status/
+  // created/epic/phases but NEVER product or type, so every write round-trip
+  // silently dropped those two fields — a split-layout spec lost its `type`
+  // (its single-file-vs-split signal) and a multi-product spec lost its `product`
+  // (the SPECS-pane prefix-strip key). Both must survive a writeSpec round-trip.
+  it('round-trips product and type without dropping them', () => {
+    const input = `---
+id: SPEC-001
+title: X
+type: requirements
+tier: T2
+status: new
+product: minspec
+created: 2026-06-05
+---
+
+# X
+
+## Specify
+
+Body.
+`;
+    const reparsed = parseSpec(writeSpec(parseSpec(input)));
+    expect(reparsed.frontmatter.product).toBe('minspec');
+    expect(reparsed.frontmatter.type).toBe('requirements');
+  });
+
+  it('omits product/type lines when absent (single-product single-file spec)', () => {
+    // EXAMPLE_SPEC carries neither field — the writer must not invent empty lines.
+    const written = writeSpec(parseSpec(EXAMPLE_SPEC));
+    expect(written).not.toMatch(/^product:/m);
+    expect(written).not.toMatch(/^type:/m);
   });
 
   it('emits the approval-reminder comment above status, inertly', () => {

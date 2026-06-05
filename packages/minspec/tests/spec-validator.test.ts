@@ -808,6 +808,19 @@ describe('validateSpec — unrecognized closed-enum frontmatter (#115)', () => {
     expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown')).toBe(false);
   });
 
+  it('does NOT warn when status/tier is a valid QUOTED scalar (#153.1)', () => {
+    // A quoted closed-enum value (`status: "done"`) was returned by
+    // stripInlineComment WITH its quotes, so the gate's raw re-read failed the
+    // membership check and emitted a spurious `frontmatter.*.unknown`. Quotes
+    // must be stripped, matching the parser, so a recognized value passes.
+    const r = validateSpec(
+      parseSpec(rawSpec('id: SPEC-001\ntitle: Y\ntier: "T3"\nstatus: "done"')),
+      DEFAULT_CONFIG,
+    );
+    expect(r.violations.some((x) => x.rule === 'frontmatter.status.unknown')).toBe(false);
+    expect(r.violations.some((x) => x.rule === 'frontmatter.tier.unknown')).toBe(false);
+  });
+
   it('warns when tier is present but not a recognized Tier (typo)', () => {
     const r = validateSpec(
       parseSpec(rawSpec('id: SPEC-009\ntitle: Y\ntier: T7\nstatus: implementing')),

@@ -358,6 +358,20 @@ describe('listSpecs()', () => {
     expect(summary.product).toBe('scroogellm');
     expect(getSpec(rootDir, 'SPEC-001')!.summary.product).toBe('scroogellm');
   });
+
+  // T3 regression (#153.3): a CRLF-line-ended spec failed FRONTMATTER_RE, parsed
+  // to id='', and was silently dropped here (the `if (!parsed.frontmatter.id)
+  // continue`) with no error. Normalizing line endings at the read seam restores it.
+  it('lists a CRLF-line-ended spec (was silently dropped)', () => {
+    const crlf =
+      '---\r\nid: SPEC-001\r\ntitle: Windows authored\r\ntier: T2\r\nstatus: new\r\ncreated: 2026-06-05\r\n---\r\n\r\n## Specify\r\n\r\nBody.\r\n';
+    writeRawSpec(rootDir, 'SPEC-001-windows-authored.md', crlf);
+
+    const specs = listSpecs(rootDir);
+    expect(specs).toHaveLength(1);
+    expect(specs[0].id).toBe('SPEC-001');
+    expect(specs[0].title).toBe('Windows authored');
+  });
 });
 
 describe('getSpec()', () => {

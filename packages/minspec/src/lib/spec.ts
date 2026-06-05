@@ -105,7 +105,14 @@ function firstH1Heading(body: string): string {
 /**
  * Strip a YAML inline comment from a scalar value. A `#` begins a comment only
  * when preceded by whitespace (YAML spec); a `#` glued to preceding text is part
- * of the value. Quoted scalars are returned verbatim (their `#` is literal).
+ * of the value. A quoted scalar has NO inline comment stripped (its `#` is
+ * literal), but its surrounding quotes ARE removed so the inner value is returned
+ * — otherwise a quoted closed-enum value (`status: "done"`) carries its quotes
+ * into the STATUSES_SET/TIERS_SET membership check, which fails, silently coercing
+ * to the default ('new'/'T2') AND making `validateSpec` (which re-strips the raw
+ * line) emit a spurious `frontmatter.*.unknown` (#153.1). An empty quoted scalar
+ * (`""` / `''`) returns `''`, so it coerces to the default like any empty value —
+ * NOT a spurious enum member.
  *
  * Without this, `status: implementing  # note` parsed as the whole string, which
  * failed the SpecStatus enum check and silently became 'new' — a false status.
@@ -117,8 +124,13 @@ function firstH1Heading(body: string): string {
  */
 export function stripInlineComment(value: string): string {
   const v = value.trim();
-  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-    return v;
+  // A matched quoted scalar: strip the surrounding quotes (need ≥2 chars so a lone
+  // quote isn't treated as a matched pair). Inner `#` is literal — no comment strip.
+  if (
+    v.length >= 2 &&
+    ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))
+  ) {
+    return v.slice(1, -1);
   }
   const m = v.match(/\s#/);
   return m && m.index !== undefined ? v.slice(0, m.index).trim() : v;
@@ -153,9 +165,13 @@ function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
       continue;
     }
 
-    // Flush previous nested block
+    // Flush previous nested block. An empty-valued top-level key (e.g. `title:`
+    // with nothing after it) opened a nested block that gained no children — that
+    // is an empty scalar, NOT a nested object. Storing `{}` would defeat downstream
+    // `?? firstH1Heading()` fallbacks (`{}` isn't nullish) and crash slugify
+    // (`title.toLowerCase` is not a function) — #153.2. Store `''` instead.
     if (nested && currentKey) {
-      result[currentKey] = nested;
+      result[currentKey] = Object.keys(nested).length === 0 ? '' : nested;
       nested = null;
     }
 
@@ -174,9 +190,9 @@ function parseFrontmatterYaml(yaml: string): Record<string, unknown> {
     }
   }
 
-  // Flush final nested block
+  // Flush final nested block (same empty-block-is-an-empty-scalar rule, #153.2).
   if (nested && currentKey) {
-    result[currentKey] = nested;
+    result[currentKey] = Object.keys(nested).length === 0 ? '' : nested;
   }
 
   return result;
@@ -215,12 +231,19 @@ function resolvePhaseStatus(phase: Phase, fmPhases: Record<string, string> | und
  * Handles Spec Kit format (YAML frontmatter + ## sections).
  */
 export function parseSpec(content: string): ParsedSpec {
-  const raw = content;
+  // Normalize line endings up front (#153.3). FRONTMATTER_RE (and the validator's
+  // own frontmatter-block regex, which reads `spec.raw`) anchor on `\n`, so a CRLF
+  // (`\r\n`) or old-Mac (`\r`) spec failed to match — id came out '' and the spec
+  // was silently dropped from listSpecs. Single-point normalization here covers
+  // every read seam that flows through the parser (readSpecFile, readSpecKitDir,
+  // the custom editor, …); writeSpec always emits `\n`, so this loses nothing.
+  const normalized = content.replace(/\r\n?/g, '\n');
+  const raw = normalized;
 
   // Extract frontmatter
-  const fmMatch = content.match(FRONTMATTER_RE);
+  const fmMatch = normalized.match(FRONTMATTER_RE);
   const fmRaw = fmMatch ? fmMatch[1] : '';
-  const bodyAfterFm = fmMatch ? content.slice(fmMatch[0].length) : content;
+  const bodyAfterFm = fmMatch ? normalized.slice(fmMatch[0].length) : normalized;
 
   const fmParsed = parseFrontmatterYaml(fmRaw);
   const fmPhases = (fmParsed.phases as Record<string, string>) ?? {};
@@ -228,9 +251,13 @@ export function parseSpec(content: string): ParsedSpec {
   // Build frontmatter with defaults
   const frontmatter: SpecFrontmatter = {
     id: (fmParsed.id as string) ?? '',
-    // Title comes from frontmatter when present; otherwise fall back to the
-    // first level-1 `# ` heading in the body (the human title for spec files).
-    title: (fmParsed.title as string) ?? firstH1Heading(bodyAfterFm),
+    // Title comes from frontmatter when present and non-empty; otherwise fall back
+    // to the first level-1 `# ` heading in the body (the human title for spec files).
+    // An empty `title:` is treated like an absent one (both fall back to the H1) so
+    // they behave identically. Defense-in-depth (#153.2): a non-string title (a
+    // malformed empty nested block that slipped through) is coerced to '' so the
+    // fallback fires instead of leaking an object that crashes slugify.
+    title: (typeof fmParsed.title === 'string' ? fmParsed.title : '') || firstH1Heading(bodyAfterFm),
     // Closed-enum fields strip inline comments before the membership check, so a
     // commented value (e.g. `status: implementing  # note`) isn't silently
     // coerced to the default. epic/title keep their raw form (epic carries its
@@ -303,6 +330,11 @@ function serializeFrontmatter(fm: SpecFrontmatter): string {
   const lines: string[] = [];
   lines.push(`id: ${fm.id}`);
   lines.push(`title: ${fm.title}`);
+  // Split-layout phase-file kind (requirements|design|tasks). Absent = single-file
+  // spec — emit only when present so a single-file spec stays type-less (its absence
+  // IS the single-file signal). Without this the field was dropped on every write
+  // round-trip, erasing the split-vs-single signal (#153.4).
+  if (fm.type) lines.push(`type: ${fm.type}`);
   lines.push(`tier: ${fm.tier}`);
   // Reminder: approval (DR-012) binds a sha256 of this whole file. Any edit
   // voids it (→ stale); re-run "MinSpec: Approve Spec" to re-bind. The parser
@@ -311,6 +343,9 @@ function serializeFrontmatter(fm: SpecFrontmatter): string {
   lines.push(`status: ${fm.status}`);
   lines.push(`created: ${fm.created}`);
   if (fm.epic) lines.push(`epic: ${fm.epic}`);
+  // Owning product slug (SPECS-pane prefix-strip key). Emit only when present so a
+  // single-product repo stays product-less. Was dropped on every round-trip (#153.4).
+  if (fm.product) lines.push(`product: ${fm.product}`);
   lines.push('phases:');
   for (const phase of PHASES) {
     lines.push(`  ${phase}: ${fm.phases[phase]}`);
