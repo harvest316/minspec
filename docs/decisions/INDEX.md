@@ -194,4 +194,10 @@ The PreToolUse **spec-gate** (DR-362 enforcement of the DR-012 HITL approval gat
 *Status: accepted · Date: 2026-06-05*
 
 MinSpec **dogfoods** its own SDD methodology — its developers write internal DR-NNN references throughout the source (DR-012 = the approval gate, DR-003 = RCDD, etc.). Those references belong in MinSpec's *code comments*, which never ship to or display in a user's project.
+
+## [DR-033 — Auto-triage + auto-build most raised issues — local anchor for the parking-lot policy; amends inbox-no-auto-start](DR-033.md)
+
+*Status: proposed · Date: 2026-06-05*
+
+The global parking-lot rule (mmo-platform DR-360, the parent register — not a local DR) says "do NOT auto-start inbox issues; the user triages to a priority first," bottlenecking a ~90-issue backlog on a human step the user does not value. Per the user's direction (raised ⇒ worth doing; priority is not theirs to own), most raised issues now auto-build: bug/feat/chore/docs/test/CI/gate-repairs in isolated worktrees, one PR each, with the human gate moved to the PR skim (just-enough-human held intact). Held for the human: marketing/positioning/legal/decide/irreversible-architecture. This DR is the local anchor; the dev-time /loop is the prototype of the agent-executor vsix (EPIC-007).
 <!-- minspec:dr-index:end -->
