@@ -330,6 +330,11 @@ function serializeFrontmatter(fm: SpecFrontmatter): string {
   const lines: string[] = [];
   lines.push(`id: ${fm.id}`);
   lines.push(`title: ${fm.title}`);
+  // Split-layout phase-file kind (requirements|design|tasks). Absent = single-file
+  // spec — emit only when present so a single-file spec stays type-less (its absence
+  // IS the single-file signal). Without this the field was dropped on every write
+  // round-trip, erasing the split-vs-single signal (#153.4).
+  if (fm.type) lines.push(`type: ${fm.type}`);
   lines.push(`tier: ${fm.tier}`);
   // Reminder: approval (DR-012) binds a sha256 of this whole file. Any edit
   // voids it (→ stale); re-run "MinSpec: Approve Spec" to re-bind. The parser
@@ -338,6 +343,9 @@ function serializeFrontmatter(fm: SpecFrontmatter): string {
   lines.push(`status: ${fm.status}`);
   lines.push(`created: ${fm.created}`);
   if (fm.epic) lines.push(`epic: ${fm.epic}`);
+  // Owning product slug (SPECS-pane prefix-strip key). Emit only when present so a
+  // single-product repo stays product-less. Was dropped on every round-trip (#153.4).
+  if (fm.product) lines.push(`product: ${fm.product}`);
   lines.push('phases:');
   for (const phase of PHASES) {
     lines.push(`  ${phase}: ${fm.phases[phase]}`);

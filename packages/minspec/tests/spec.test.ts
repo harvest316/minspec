@@ -359,6 +359,40 @@ describe('writeSpec()', () => {
     expect(reparsed.phaseSections.tasks!.tasks).toEqual(parsed.phaseSections.tasks!.tasks);
   });
 
+  // T3 regression (#153.4): serializeFrontmatter emitted id/title/tier/status/
+  // created/epic/phases but NEVER product or type, so every write round-trip
+  // silently dropped those two fields — a split-layout spec lost its `type`
+  // (its single-file-vs-split signal) and a multi-product spec lost its `product`
+  // (the SPECS-pane prefix-strip key). Both must survive a writeSpec round-trip.
+  it('round-trips product and type without dropping them', () => {
+    const input = `---
+id: SPEC-001
+title: X
+type: requirements
+tier: T2
+status: new
+product: minspec
+created: 2026-06-05
+---
+
+# X
+
+## Specify
+
+Body.
+`;
+    const reparsed = parseSpec(writeSpec(parseSpec(input)));
+    expect(reparsed.frontmatter.product).toBe('minspec');
+    expect(reparsed.frontmatter.type).toBe('requirements');
+  });
+
+  it('omits product/type lines when absent (single-product single-file spec)', () => {
+    // EXAMPLE_SPEC carries neither field — the writer must not invent empty lines.
+    const written = writeSpec(parseSpec(EXAMPLE_SPEC));
+    expect(written).not.toMatch(/^product:/m);
+    expect(written).not.toMatch(/^type:/m);
+  });
+
   it('emits the approval-reminder comment above status, inertly', () => {
     const written = writeSpec(parseSpec(EXAMPLE_SPEC));
     // Comment is present, accurate, and sits directly above the status line.
