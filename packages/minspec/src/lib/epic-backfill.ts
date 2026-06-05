@@ -369,10 +369,16 @@ export function normalizeAiProposal(parsed: unknown, artifacts: ArtifactRef[]): 
  * Run the Tier-1 AI proposal via `claude -p`. Returns null on ANY failure
  * (binary absent, timeout, non-JSON, empty) — caller falls back to heuristic.
  * Never throws.
+ *
+ * Probes `isClaudeAvailable()` before dispatch, mirroring the `isGhAvailable`
+ * gate on the gh path (SPEC-011 FR-3 / Risk R1 / Failure-Mode 1). The probe is
+ * the asserted precondition-check mechanism; the surrounding try/catch remains
+ * the backstop for failures after a successful probe (timeout, non-JSON). (#141)
  */
 export async function proposeAI(rootDir: string): Promise<BackfillProposal | null> {
   const artifacts = collectArtifacts(rootDir);
   if (artifacts.length === 0) return null;
+  if (!(await isClaudeAvailable())) return null;
   const prompt = buildPrompt(artifacts, listEpics(rootDir));
   try {
     const { stdout } = await execFileAsync('claude', ['-p', prompt], {
