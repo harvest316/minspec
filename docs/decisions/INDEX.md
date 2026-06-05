@@ -188,4 +188,10 @@ DR-029's **reality-check agent** and **round-table** (Tier-1, agent-execute) rea
 *Status: accepted · Date: 2026-06-04*
 
 The PreToolUse **spec-gate** (DR-362 enforcement of the DR-012 HITL approval gate) denies source edits while any T3/T4 spec is status: implementing without a current approval. It is the only enforcement that survives bypass-permissions mode. Three defects block it — and block the user's goal of an automated triage-inbox.sh → dispatch-issue.sh pipeline where auto-approved (T1–T2 agent-ready) issues build themselves:
+
+## [DR-032 — MinSpec never emits its own internal DR/SPEC/EPIC numbers into user-facing output — symmetric output-provenance gate](DR-032.md)
+
+*Status: accepted · Date: 2026-06-05*
+
+MinSpec **dogfoods** its own SDD methodology — its developers write internal DR-NNN references throughout the source (DR-012 = the approval gate, DR-003 = RCDD, etc.). Those references belong in MinSpec's *code comments*, which never ship to or display in a user's project.
 <!-- minspec:dr-index:end -->
