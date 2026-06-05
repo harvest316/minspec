@@ -39,7 +39,7 @@ change that would alter content *outside* a marker still asks first.
   repair work. [DR-011](../decisions/DR-011.md) — marker-bounded auto-update
   without a permission prompt (underpins FR-6; shared with
   [EPIC-006](EPIC-006-trust-and-supply-chain.md)).
-- **Spec:** [SPEC-005 requirements](../../specs/minspec/auto-structure-repair/requirements.md)
+- **Spec:** [SPEC-005 requirements](../../specs/minspec/SPEC-005-auto-structure-repair/requirements.md)
   — integrity detection (FR-1), reactive watcher (FR-2), offer-never-silent
   (FR-3), idempotent repair (FR-4), consent reuse (FR-5), marker-bounded silent
   refresh (FR-6). Status: **Specifying**; plan/tasks pending. Open questions:

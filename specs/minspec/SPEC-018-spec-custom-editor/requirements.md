@@ -20,10 +20,10 @@ MinSpec explorer pane, and hook Ctrl-P to open .md files in our webview."
 **Scoped decision (this session):** own-tree-click routing **+ a scoped, opt-in custom
 editor for spec paths only** — *not* a global Ctrl-P / all-markdown hijack (rejected, see
 §What this is NOT).
-**Composes:** [SPEC-014](../review-webview/requirements.md) renderer (one render function,
+**Composes:** [SPEC-014](../SPEC-014-review-webview/requirements.md) renderer (one render function,
 reused — DRY) + [DR-012](../../../docs/decisions/DR-012.md) approval gate.
 **Epic:** [EPIC-002 Signpost Integrity](../../../docs/epics/EPIC-002-signpost-integrity.md).
-**Serves:** [SPEC-017 Trust Dashboard](../trust-dashboard/requirements.md) FR-7a as the
+**Serves:** [SPEC-017 Trust Dashboard](../SPEC-017-trust-dashboard/requirements.md) FR-7a as the
 *richest* engagement source — but SPEC-017 must work without it.
 
 ---

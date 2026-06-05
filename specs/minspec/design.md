@@ -240,7 +240,7 @@ $(shield) MinSpec: T2 | Specify → Plan → Tasks | 2/5
 
 Click opens the active spec panel (the review webview, below).
 
-### Active Spec Panel (implemented) · Review Webview (specified — [SPEC-014](review-webview/requirements.md))
+### Active Spec Panel (implemented) · Review Webview (specified — [SPEC-014](SPEC-014-review-webview/requirements.md))
 
 **Implemented today:** the active-spec panel (`views/spec-panel.ts` + pure-HTML
 `views/spec-panel-html.ts`) — renders the spec with phase-step progress; its only

@@ -14,13 +14,13 @@ epic: EPIC-002  # Signpost Integrity
 **Decision:** [DR-019](../../../docs/decisions/DR-019.md) (this spec is the contract that decision governs)
 **Triggered by:** session request — "a prioritised list of docs/specs/epics/DRs I need to approve … but actually I don't need a list, just the next task; priority via DAG not LLM."
 **Epic:** [EPIC-002 Signpost Integrity](../../../docs/epics/EPIC-002-signpost-integrity.md)
-**Resolves:** [SPEC-010](../signpost-correctness/requirements.md) Open Question #1 (global topological ordering across simultaneously-pending items).
+**Resolves:** [SPEC-010](../SPEC-010-signpost-correctness/requirements.md) Open Question #1 (global topological ordering across simultaneously-pending items).
 
 ---
 
 ## Context
 
-[SPEC-010](../signpost-correctness/requirements.md) makes the **within-feature**
+[SPEC-010](../SPEC-010-signpost-correctness/requirements.md) makes the **within-feature**
 signpost correct: for one feature's `spec→plan→tasks→code` chain it derives the
 single next SDD *phase action* ("plan FR-4", "implement task 3"). It explicitly
 left open (OQ#1) what happens when **multiple** features / decisions are pending
@@ -223,7 +223,7 @@ are live invariant breaches, not future work.
   (confirm-before-write); (2) only if no deterministic repair applies, **offer to
   escalate to an LLM** repair — confirm-before-write, dirty-editor-safe, bounded
   and escalating per DR-355. This composes
-  [SPEC-005 Auto-Structure Repair](../auto-structure-repair/requirements.md)
+  [SPEC-005 Auto-Structure Repair](../SPEC-005-auto-structure-repair/requirements.md)
   (offer-never-silent, non-destructive) — it MUST NOT reinvent it. The LLM never
   *decides whether* corruption exists (deterministic, step 0); it only *proposes a
   fix* a human confirms.
@@ -388,8 +388,8 @@ Per-FR tier + one-line assertion sketch:
 ## Dependencies & Blast-Radius
 
 **Declared dependencies (what this spec consumes / reaches into):**
-- [SPEC-010 signpost-correctness](../signpost-correctness/requirements.md) — `phase-action` node source and FR-6 honest-degradation (FR-4, FR-10); resolves its OQ#1.
-- [SPEC-005 auto-structure-repair](../auto-structure-repair/requirements.md) — composed for the FR-15 repair ladder (offer-never-silent, non-destructive).
+- [SPEC-010 signpost-correctness](../SPEC-010-signpost-correctness/requirements.md) — `phase-action` node source and FR-6 honest-degradation (FR-4, FR-10); resolves its OQ#1.
+- [SPEC-005 auto-structure-repair](../SPEC-005-auto-structure-repair/requirements.md) — composed for the FR-15 repair ladder (offer-never-silent, non-destructive).
 - [DR-012](../../../docs/decisions/DR-012.md) content-hash approval gate — defines the `spec-approve` node and the implementing-but-unapproved gate-violation.
 - [DR-014](../../../docs/decisions/DR-014.md) tier map — mandates the resolver live in `packages/shared` (FR-11).
 - [DR-019](../../../docs/decisions/DR-019.md) — the decision this spec is the contract for (determinism, no-LLM ranking).

@@ -7,7 +7,7 @@ Complexity Improve AI Coding-Agent Success?*
 **Scope decision:** Paper B (narrow, falsifiable, reproducible) — not Paper A (broad
 public-project mining). See session note for why A was rejected (methodology risk to
 the "research-backed" brand promise).
-**Builds on:** [SPEC-004 classifier-validation harness](../../specs/minspec/classifier-validation/requirements.md), DR-009.
+**Builds on:** [SPEC-004 classifier-validation harness](../../specs/minspec/SPEC-004-classifier-validation/requirements.md), DR-009.
 
 ---
 

@@ -25,10 +25,10 @@ review baseline this spec extends from *hash* to *snapshot*).
 **Epic:** [EPIC-002 Signpost Integrity](../../../docs/epics/EPIC-002-signpost-integrity.md)
 — the signpost is only "never wrong" if the human approvals it assumes are *real*.
 This dashboard measures whether they are.
-**Relates:** [SPEC-014 Review Webview](../review-webview/requirements.md) (its **R6
+**Relates:** [SPEC-014 Review Webview](../SPEC-014-review-webview/requirements.md) (its **R6
 approve-chain fatigue → rubber-stamping** risk is exactly what this measures; candidate
-host for the chart), [SPEC-015 Status Lanes](../status-lanes/requirements.md) (the
-`superseded` lane Metric 2 needs), [SPEC-004 Classifier Validation](../classifier-validation/requirements.md)
+host for the chart), [SPEC-015 Status Lanes](../SPEC-015-status-lanes/requirements.md) (the
+`superseded` lane Metric 2 needs), [SPEC-004 Classifier Validation](../SPEC-004-classifier-validation/requirements.md)
 (the *proxy-trap* precedent — see §The proxy trap).
 
 ---
@@ -70,7 +70,7 @@ M1 and M2 are deterministic, recomputable from files on disk. M3 is a noisy prox
 ## The proxy trap (design constraint, not optional)
 
 The user's first instinct — *"flag any doc approved in <5 min as skimmed"* — is the
-**exact failure mode** MinSpec already diagnosed in [SPEC-004](../classifier-validation/requirements.md):
+**exact failure mode** MinSpec already diagnosed in [SPEC-004](../SPEC-004-classifier-validation/requirements.md):
 a metric that *looks* rigorous but measures the wrong thing (there, the tier classifier
 measured **diff size**, not **difficulty**). Time-on-doc is the same trap:
 
@@ -144,7 +144,7 @@ not *fast-approve*. (Decided this session; recorded inline — no separate DR.)
   promote it: engaged time is still a *correlate*, still shown only crossed with rework
   (FR-9), never a comprehension score. Scroll/focus events are **content-free** telemetry
   (positions + timestamps, never text), under the same opt-in as FR-8. The **richest**
-  source is [SPEC-018](../spec-custom-editor/requirements.md) (specs opened in MinSpec's own
+  source is [SPEC-018](../SPEC-018-spec-custom-editor/requirements.md) (specs opened in MinSpec's own
   webview editor → full-DOM events); the plain-editor path is the fallback when that editor
   is off. This metric MUST work with **either** source — it never *requires* SPEC-018.
 - **FR-7b (engagement is a proxy, not comprehension — no scroll-verdict).** "Scrolled fast"
@@ -490,7 +490,7 @@ diff library choice (FR-OQ2 shortlist); scatter bucketing for sparse data.
   regression test for the migration.
 - **SPEC-018 Spec Custom Editor** — the scoped, opt-in webview editor that opens specs in
   MinSpec's surface (richer engagement source for FR-7a). Separate surface concern, its own
-  spec → [SPEC-018](../spec-custom-editor/requirements.md). M3 must not depend on it.
+  spec → [SPEC-018](../SPEC-018-spec-custom-editor/requirements.md). M3 must not depend on it.
 - **Marketing / site copy** — "measure how much you're rubber-stamping" is a sharp
   positioning line (ties to the just-enough-human thesis). Non-code, never enters SDD →
   file a `harvest316/minspec` issue (or AIClarity site) per DR-023 forward rule. `None`

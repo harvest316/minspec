@@ -58,9 +58,9 @@ semantic scoring to opt-in; drop AST augmentation as a dead end.
   graceful skip). [DR-021](../decisions/DR-021.md) — resolves the direction fork:
   ship as an upward-only ceremony ratchet, reframe docs (scope ≠ difficulty),
   drop AST augmentation, defer semantic difficulty to opt-in.
-- **Spec:** [SPEC-004 requirements](../../specs/minspec/classifier-validation/requirements.md),
-  [design](../../specs/minspec/classifier-validation/design.md),
-  [tasks](../../specs/minspec/classifier-validation/tasks.md) — the harness;
+- **Spec:** [SPEC-004 requirements](../../specs/minspec/SPEC-004-classifier-validation/requirements.md),
+  [design](../../specs/minspec/SPEC-004-classifier-validation/design.md),
+  [tasks](../../specs/minspec/SPEC-004-classifier-validation/tasks.md) — the harness;
   `tasks.md` "Findings" holds Runs A/B/C + the decision-grade error analysis.
 - **Code:** `scripts/classifier-validation/` (fetch + labels), harness in
   `packages/minspec/tests/classifier-validation.test.ts`, run

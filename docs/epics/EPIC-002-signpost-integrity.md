@@ -33,17 +33,17 @@ in-editor, by the *same rule* as CI and agent dispatch.
 ## Artifacts
 
 - **Specs:**
-  [SPEC-010 Signpost Correctness](../../specs/minspec/signpost-correctness/requirements.md)
+  [SPEC-010 Signpost Correctness](../../specs/minspec/SPEC-010-signpost-correctness/requirements.md)
   — DAG state model, six correctness mechanisms, save-time completeness check,
   five nag-avoidance guardrails, correctness + advisory invariants.
-  [SPEC-012 Next-Task Resolver](../../specs/minspec/next-task-resolver/requirements.md)
+  [SPEC-012 Next-Task Resolver](../../specs/minspec/SPEC-012-next-task-resolver/requirements.md)
   — cross-artifact priority DAG over approval/status gates + SPEC-010 phase
   actions; single deterministic next human task + optional pipeline; resolves
   SPEC-010 OQ#1.
 - **Composed specs (pre-existing):**
-  [SPEC-006 Stub & Completeness Gate](../../specs/minspec/stub-completeness-gate/requirements.md)
+  [SPEC-006 Stub & Completeness Gate](../../specs/minspec/SPEC-006-stub-completeness-gate/requirements.md)
   (strengthens the deterministic predicate);
-  [SPEC-005 Auto-Structure Repair](../../specs/minspec/auto-structure-repair/requirements.md)
+  [SPEC-005 Auto-Structure Repair](../../specs/minspec/SPEC-005-auto-structure-repair/requirements.md)
   (offer-driven recovery; triggered by SPEC-010 honest-degradation, never silent).
 - **Decisions:** [DR-012](../decisions/DR-012.md) — HITL gate consumes the
   completeness contract for blocking enforcement (the signpost itself is advisory).

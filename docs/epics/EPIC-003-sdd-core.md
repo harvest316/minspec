@@ -26,7 +26,7 @@ Specs/ADRs reference this epic via `epic: EPIC-003` (or `epic: sdd-core`)
 frontmatter. Issues via the GitHub label `epic:sdd-core`.
 
 - `specs/minspec/{requirements,design,tasks}.md` — core SDD spec
-- [SPEC-013 Risk-Section Policy Enforcement](../../specs/minspec/risk-section-policy/requirements.md)
+- [SPEC-013 Risk-Section Policy Enforcement](../../specs/minspec/SPEC-013-risk-section-policy/requirements.md)
   — templates + soft validator rule for the mandatory Risks & Mitigations section
 - DR-001, DR-002, DR-003 — foundational methodology decisions
 - [DR-020](../decisions/DR-020.md) — Risks & Mitigations required on every spec +

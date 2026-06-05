@@ -44,10 +44,10 @@ correctness mechanisms, the save-time completeness check, and the five
 nag-avoidance guardrails. It composes with two existing specs rather than
 duplicating them:
 
-- **[SPEC-006](../stub-completeness-gate/requirements.md)** (Stub & Completeness
+- **[SPEC-006](../SPEC-006-stub-completeness-gate/requirements.md)** (Stub & Completeness
   Gate) — strengthens the deterministic completeness predicate so placeholder
   prose / stubs can't pass as "complete".
-- **[SPEC-005](../auto-structure-repair/requirements.md)** (Auto-Structure
+- **[SPEC-005](../SPEC-005-auto-structure-repair/requirements.md)** (Auto-Structure
   Repair) — the offer-driven recovery path for missing/incoherent structure.
   This spec's *honest-degradation* state (FR-6) is the trigger; SPEC-005's
   offer-never-silent rule (its FR-3) is the contract for any LLM-assisted fix.
@@ -412,7 +412,7 @@ sketch. T0 is mandated by FR-8 for every state→signpost mapping.
 - ~~Topological ordering when multiple specs are simultaneously incomplete — most
   recently edited, lowest SPEC-NNN, or explicit priority/WSJF? (Affects which
   single "next step" surfaces globally.)~~ **Resolved by
-  [SPEC-012 Next-Task Resolver](../next-task-resolver/requirements.md) / DR-019:**
+  [SPEC-012 Next-Task Resolver](../SPEC-012-next-task-resolver/requirements.md) / DR-019:**
   deterministic total order `(severity-class, epic.order, artifact-id)`; subjective
   weight in explicit frontmatter, never inferred.
 - ~~Where the coverage DAG lives: derived on demand from `.minspec/traceability.json`

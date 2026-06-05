@@ -21,7 +21,7 @@ next spec/dr/issue/doc that needs approving."
 **Materialises:** [#36](https://github.com/harvest316/minspec/issues/36) (parked from
 [DR-012](../../../docs/decisions/DR-012.md) — prettified review webview).
 **Epic:** [EPIC-002 Signpost Integrity](../../../docs/epics/EPIC-002-signpost-integrity.md)
-**Consumes:** [SPEC-012 Next-Task Resolver](../next-task-resolver/requirements.md)
+**Consumes:** [SPEC-012 Next-Task Resolver](../SPEC-012-next-task-resolver/requirements.md)
 (ordering authority — this webview is a *surface* over the resolver, never its own queue).
 **Composes:** [DR-012](../../../docs/decisions/DR-012.md) approval gate +
 [`approval.ts`](../../../packages/minspec/src/lib/approval.ts),
