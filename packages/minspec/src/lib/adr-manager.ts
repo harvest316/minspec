@@ -38,6 +38,24 @@ const ADR_ID_RE = /^DR-(\d+)/;
 
 const ADR_STATUSES = new Set<string>(['proposed', 'accepted', 'deprecated', 'superseded']);
 
+/**
+ * Strip the `DR-NNN` id prefix and the `.md` extension from a filename, leaving
+ * just the descriptive slug (`DR-031-gate-soundness.md` → `gate-soundness`).
+ * Returns '' when the filename carries only the id.
+ */
+const ADR_FILE_DESCRIPTOR_RE = /^DR-\d+[-_]?(.*?)(?:\.md)?$/;
+
+/** Humanize a hyphen/underscore slug into Title Case words (`gate-soundness` → `Gate Soundness`). */
+function humanizeSlug(slug: string): string {
+  return slug
+    .replace(/[-_]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 // ─── Frontmatter Parser ─────────────────────────────────────────────────────
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
@@ -645,12 +663,16 @@ export function listAdrs(rootDir: string, vscodeOverrides?: { decisionsDir?: str
       const content = fs.readFileSync(filePath, 'utf-8');
       const fmMatch = content.match(FRONTMATTER_RE);
       if (!fmMatch) {
-        // File has no frontmatter — derive from filename
+        // File has no frontmatter — derive a clean, humanized title from the
+        // filename: strip the `DR-NNN-` prefix and `.md`, then Title Case.
+        // `DR-031-gate-soundness.md` → `Gate Soundness`; `DR-031.md` → `DR-031`.
         const idMatch = entry.match(ADR_ID_RE);
         if (idMatch) {
+          const id = `DR-${idMatch[1]}`;
+          const descriptor = entry.match(ADR_FILE_DESCRIPTOR_RE)?.[1] ?? '';
           results.push({
-            id: `DR-${idMatch[1]}`,
-            title: entry.replace(ADR_FILE_RE, '').replace(/^-|-$/g, '').replace(/-/g, ' ') || entry,
+            id,
+            title: humanizeSlug(descriptor) || id,
             status: 'proposed',
             date: '',
             filePath,

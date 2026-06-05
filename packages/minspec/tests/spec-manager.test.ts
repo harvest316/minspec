@@ -345,6 +345,19 @@ describe('listSpecs()', () => {
     const specs = listSpecs(rootDir);
     expect(specs).toHaveLength(1);
   });
+
+  it('surfaces the product slug from frontmatter in each summary (#153)', () => {
+    writeRawSpec(
+      rootDir,
+      'SPEC-001-scoped.md',
+      `---\nid: SPEC-001\ntitle: Scoped spec\ntier: T2\nstatus: new\ncreated: 2026-01-01\nproduct: scroogellm\nphases:\n  specify: pending\n  clarify: pending\n  plan: pending\n  tasks: pending\n  implement: pending\n---\n\n# Scoped spec\n`,
+    );
+
+    const [summary] = listSpecs(rootDir);
+    // Bug: buildSummary omitted product, so listSpecs/getSpec returned product=undefined.
+    expect(summary.product).toBe('scroogellm');
+    expect(getSpec(rootDir, 'SPEC-001')!.summary.product).toBe('scroogellm');
+  });
 });
 
 describe('getSpec()', () => {

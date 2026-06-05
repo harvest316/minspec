@@ -241,6 +241,41 @@ describe('analyzeGitDiff()', () => {
       const depChange = findSignal(signals, 'dependency_change');
       expect(depChange).toBeUndefined();
     });
+
+    it('detects new deps in a ROOT-level package.json (#153)', async () => {
+      // Real git pathspec semantics: '**/package.json' matches NESTED files only,
+      // NOT a repo-root 'package.json'. This mock honors that — it returns the
+      // dep-add diff only when the args include a pathspec that would match root.
+      const rootDiff =
+        '--- a/package.json\n+++ b/package.json\n@@ -1,5 +1,7 @@\n "dependencies": {\n+    "zod": "^3.23.0"\n }\n';
+      const matchesRoot = (args: string[]): boolean =>
+        args.some(a => a === 'package.json' || a === ':/package.json' || a === '*package.json');
+
+      const git = createMockGit({
+        diffSummary: vi.fn().mockResolvedValue({
+          files: [
+            // Root-level package.json (basename 'package.json', no directory).
+            { file: 'package.json', insertions: 1, deletions: 0, binary: false },
+          ],
+          insertions: 1,
+          deletions: 0,
+          changed: 1,
+        }),
+        status: vi.fn().mockResolvedValue({ created: [], not_added: [], staged: [] }),
+        diff: vi.fn().mockImplementation(async (args: string[]) =>
+          matchesRoot(args) ? rootDiff : '',
+        ),
+      });
+
+      const signals = await analyzeGitDiff('/tmp/repo', { git });
+
+      const depChange = findSignal(signals, 'dependency_change');
+      // Bug: pathspec was only '**/package.json', so a root package.json's diff
+      // came back empty and hasNewDependencies stayed false.
+      expect(depChange).toBeDefined();
+      expect(depChange!.value).toBe(true);
+      expect(depChange!.tierContribution).toBe('T3');
+    });
   });
 
   describe('staged vs working tree', () => {
@@ -369,6 +404,22 @@ describe('analyzeGitDiff()', () => {
 
       const signals = await analyzeGitDiff('/tmp/repo', { git });
       expect(findSignal(signals, 'lines_changed')!.tierContribution).toBe('T4');
+    });
+
+    it('line count: exactly 500 lines = T3, not T4 (#153 — docstring said 500+=T4)', async () => {
+      // Pins the actual boundary: lineCountTier(500) === 'T3' (only 501+ is T4).
+      // The :38 docstring incorrectly claimed "500+=T4" / "1-500=T3"; this asserts code.
+      const git = createMockGit({
+        diffSummary: vi.fn().mockResolvedValue({
+          files: [{ file: 'big.ts', insertions: 300, deletions: 200, binary: false }],
+          changed: 1,
+        }),
+        status: vi.fn().mockResolvedValue({ created: [], not_added: [], staged: [] }),
+      });
+
+      const signals = await analyzeGitDiff('/tmp/repo', { git });
+      expect(findSignal(signals, 'lines_changed')!.value).toBe(500);
+      expect(findSignal(signals, 'lines_changed')!.tierContribution).toBe('T3');
     });
   });
 

@@ -35,7 +35,7 @@ function fileCountTier(count: number): Tier {
 
 /**
  * Determine tier contribution based on total line count.
- * 1-20 = T1, 21-100 = T2, 101-500 = T3, 500+ = T4
+ * 1-20 = T1, 21-100 = T2, 101-500 = T3, 501+ = T4
  */
 function lineCountTier(lines: number): Tier {
   if (lines <= 20) return 'T1';
@@ -178,10 +178,18 @@ export async function analyzeGitDiff(
     newFileCount = 0;
   }
 
-  // Check if package.json changes include new dependencies
+  // Check if package.json changes include new dependencies.
+  // Pathspec must cover BOTH a repo-root `package.json` and nested ones:
+  // git's `**/package.json` glob matches nested files only, never the root file,
+  // so the bare `package.json` pathspec is required to catch root dependency edits.
   if (hasPackageJsonChange) {
     try {
-      const diffOutput = await git.diff([...(staged ? ['--cached'] : []), '--', '**/package.json']);
+      const diffOutput = await git.diff([
+        ...(staged ? ['--cached'] : []),
+        '--',
+        'package.json',
+        '**/package.json',
+      ]);
       // Look for lines adding dependencies/devDependencies entries
       const addedLines = diffOutput
         .split('\n')

@@ -42,6 +42,24 @@ const EPIC_FILE_RE = /^EPIC-(\d+).*\.md$/;
 const EPIC_ID_RE = /^EPIC-(\d+)/;
 const EPIC_STATUSES = new Set<string>(EPIC_STATUS_VALUES);
 
+/**
+ * Strip the `EPIC-NNN` id prefix and the `.md` extension from a filename,
+ * leaving just the descriptive slug (e.g. `EPIC-012-user-auth-flow.md` →
+ * `user-auth-flow`). Returns '' when the filename carries only the id.
+ */
+const EPIC_FILE_DESCRIPTOR_RE = /^EPIC-\d+[-_]?(.*?)(?:\.md)?$/;
+
+/** Humanize a hyphen/underscore slug into Title Case words (`user-auth` → `User Auth`). */
+function humanizeSlug(slug: string): string {
+  return slug
+    .replace(/[-_]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
 
 const INDEX_MARKER_START = '<!-- minspec:epic-index:start -->';
@@ -103,11 +121,16 @@ export function listEpics(rootDir: string, vscodeOverrides?: { epicsDir?: string
       const isStub = detectEpicStub(content).stub;
 
       if (!fmMatch) {
-        // No frontmatter — derive minimal summary from the filename.
+        // No frontmatter — derive a sensible slug + title from the filename.
+        // `EPIC-012-user-auth-flow.md` → slug `user-auth-flow`, title `User Auth Flow`.
+        // `EPIC-013.md` (id only)      → slug `epic-013`,       title `EPIC-013`.
+        const descriptor = entry.match(EPIC_FILE_DESCRIPTOR_RE)?.[1] ?? '';
+        const slug = slugify(descriptor) || idFromFile.toLowerCase();
+        const title = humanizeSlug(descriptor) || idFromFile;
         results.push({
           id: idFromFile,
-          slug: slugify(entry.replace(EPIC_FILE_RE, '$1')) || idFromFile.toLowerCase(),
-          title: entry.replace(EPIC_FILE_RE, '').replace(/^-|-$/g, '').replace(/-/g, ' ') || entry,
+          slug,
+          title,
           status: 'proposed',
           order: 999,
           filePath,

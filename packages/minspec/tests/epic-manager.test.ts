@@ -116,6 +116,30 @@ describe('epic-manager', () => {
       expect(e.status).toBe('proposed');
       expect(e.order).toBe(999);
     });
+
+    it('derives a clean slug + title from a no-frontmatter filename (#153)', () => {
+      // File: EPIC-012-user-auth-flow.md, no frontmatter.
+      const dir = path.join(tmpDir, EPICS_DIR);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'EPIC-012-user-auth-flow.md'), 'body, no frontmatter\n');
+
+      const e = listEpics(tmpDir).find(x => x.id === 'EPIC-012')!;
+      // Bug: slug was the bare digits ("012") and title was the raw filename incl ".md".
+      expect(e.slug).toBe('user-auth-flow');
+      expect(e.title).toBe('User Auth Flow');
+      expect(e.title).not.toContain('.md');
+    });
+
+    it('derives a fallback slug/title for a no-frontmatter file with only an id (#153)', () => {
+      const dir = path.join(tmpDir, EPICS_DIR);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'EPIC-013.md'), 'body, no frontmatter\n');
+
+      const e = listEpics(tmpDir).find(x => x.id === 'EPIC-013')!;
+      expect(e.slug).toBe('epic-013');
+      expect(e.title).toBe('EPIC-013');
+      expect(e.title).not.toContain('.md');
+    });
   });
 
   // ─── resolveEpic ────────────────────────────────────────────────────

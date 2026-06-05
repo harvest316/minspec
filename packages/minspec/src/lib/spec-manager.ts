@@ -296,6 +296,7 @@ function buildSummary(parsed: ParsedSpec, filePath: string): SpecSummary {
     phasesDone: done,
     phasesTotal: total,
     epic: parsed.frontmatter.epic,
+    product: parsed.frontmatter.product,
   };
 }
 

@@ -272,6 +272,21 @@ describe('adr-manager', () => {
       expect(adrs[0].status).toBe('proposed'); // default
     });
 
+    it('derives a clean, humanized title from a no-frontmatter filename (#153)', () => {
+      const decisionsDir = path.join(tmpDir, DEFAULT_CONFIG.decisionsDir);
+      fs.mkdirSync(decisionsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(decisionsDir, 'DR-031-gate-soundness.md'),
+        '# Just a heading\n',
+      );
+
+      const adr = listAdrs(tmpDir).find(a => a.id === 'DR-031')!;
+      // Bug: title was the raw filename incl the "DR-031-" prefix and ".md".
+      expect(adr.title).toBe('Gate Soundness');
+      expect(adr.title).not.toContain('.md');
+      expect(adr.title).not.toContain('DR-031');
+    });
+
     it('ignores non-ADR files', () => {
       const decisionsDir = path.join(tmpDir, DEFAULT_CONFIG.decisionsDir);
       fs.mkdirSync(decisionsDir, { recursive: true });
