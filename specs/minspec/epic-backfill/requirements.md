@@ -3,7 +3,7 @@ id: SPEC-011
 type: requirements
 tier: T3
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
-status: implementing  # built: epic-backfill.ts (476 lines, both engines) + 15 tests pass; command minspec.backfillEpics wired
+status: implementing  # built: epic-backfill.ts (478 lines, both engines) + 40 tests pass (epic-backfill.test.ts 16 + epic-backfill-extra.test.ts 24); command minspec.backfillEpics wired
 product: minspec
 epic: EPIC-001  # Explorer Epic Grouping
 ---
@@ -11,7 +11,7 @@ epic: EPIC-001  # Explorer Epic Grouping
 # MinSpec — AI-assisted Epic Backfill (Requirements)
 
 **Date:** 2026-05-31
-**Status:** Specifying
+**Status:** Implementing
 **Decision:** [DR-016](../../../docs/decisions/DR-016.md)
 **Triggered by:** session request — "offer to backfill epics during onboarding, intelligently guessing the epics list then the mappings, via `claude -p`."
 

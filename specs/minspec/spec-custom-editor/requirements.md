@@ -158,7 +158,7 @@ never load-bearing for the trust metrics — reflected in INV — Metrics-indepe
   reachable in one action regardless of FR-3 state; `workbench.action.reopenWithEditor`
   still works. No setting removes this escape.
 - [ ] **AC-6 (FR-6 / INV-One-renderer).** The editor mounts SPEC-014's pure render
-  function (FR-1/FR-16); no second markdown renderer or sanitiser is introduced;
+  function (SPEC-014 FR-1/FR-16); no second markdown renderer or sanitiser is introduced;
   same CSP-nonce and Tier-0 sanitisation.
 - [ ] **AC-7 (FR-7 / INV-Metrics-independent).** With SPEC-017 FR-8 telemetry OFF the
   editor captures nothing and remains fully usable for reading/reviewing; the metric

@@ -2,7 +2,7 @@
 id: SPEC-004
 type: design
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
-status: specifying
+status: implementing  # design realized — harness built + run (n=120, κ=0.80); tracks requirements.md/tasks.md
 product: minspec
 epic: EPIC-004  # Classifier Validation
 ---

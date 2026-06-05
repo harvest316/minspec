@@ -1,7 +1,7 @@
 ---
 id: SPEC-015
 type: requirements
-status: implementing  # built: lifecycle status lanes shipped (feat #105) + 91 tests pass (lifecycle + spec-tree-provider)
+status: implementing  # built: lifecycle status lanes shipped (feat #105) + 98 tests pass (spec-tree-provider.test.ts 59 + lifecycle.test.ts 39)
 tier: T3
 product: minspec
 epic: EPIC-003  # SDD Core Methodology

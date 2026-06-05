@@ -1,7 +1,7 @@
 ---
 id: SPEC-015
 type: design
-status: specifying
+status: implementing  # design realized — lanes shipped (feat #105); tracks requirements.md
 tier: T2
 product: minspec
 epic: EPIC-003  # SDD Core Methodology
