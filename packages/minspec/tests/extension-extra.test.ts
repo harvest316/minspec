@@ -740,20 +740,23 @@ describe('refresh-wrapping command callbacks', () => {
     expect(mockAdrTreeProvider.refresh).toHaveBeenCalled();
   });
 
-  it('approveSpec delegates with the node then refreshes the spec tree', async () => {
+  // approve/revoke fire `minspec.refreshTree` INSIDE the command, so the wrapper
+  // must NOT add its own refresh — doing so only fed the redundant rebuild burst
+  // that froze the UI (issue #154). Assert delegation + no wrapper-level refresh.
+  it('approveSpec delegates with the node and does not add a redundant refresh', async () => {
     activate(makeMockContext());
     const node = { spec: { id: 'SPEC-001' } };
     await invokeCommand('minspec.approveSpec', node);
     expect(approveSpecCommand).toHaveBeenCalledWith(node);
-    expect(mockSpecTreeProvider.refresh).toHaveBeenCalled();
+    expect(mockSpecTreeProvider.refresh).not.toHaveBeenCalled();
   });
 
-  it('revokeApproval delegates with the node then refreshes the spec tree', async () => {
+  it('revokeApproval delegates with the node and does not add a redundant refresh', async () => {
     activate(makeMockContext());
     const node = { spec: { id: 'SPEC-002' } };
     await invokeCommand('minspec.revokeApproval', node);
     expect(revokeApprovalCommand).toHaveBeenCalledWith(node);
-    expect(mockSpecTreeProvider.refresh).toHaveBeenCalled();
+    expect(mockSpecTreeProvider.refresh).not.toHaveBeenCalled();
   });
 
   it('validateSpec delegates with the node', () => {

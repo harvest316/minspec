@@ -212,13 +212,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('minspec.generateExample', generateExampleCommand),
     vscode.commands.registerCommand('minspec.migrateLayout', () => migrateLayoutCommand(workspaceRoot)),
     vscode.commands.registerCommand('minspec.exportTraceability', () => exportTraceabilityCommand(workspaceRoot)),
+    // approve/revoke already fire `minspec.refreshTree` internally — no extra
+    // refresh here (it only added to the redundant burst; issue #154).
     vscode.commands.registerCommand('minspec.approveSpec', async (node) => {
       await approveSpecCommand(node);
-      specTreeProvider.refresh();
     }),
     vscode.commands.registerCommand('minspec.revokeApproval', async (node) => {
       await revokeApprovalCommand(node);
-      specTreeProvider.refresh();
     }),
     vscode.commands.registerCommand('minspec.validateSpec', (node) => validateSpecCommand(node)),
     vscode.commands.registerCommand('minspec.showSpecPanel', async (specFilePath?: string) => {

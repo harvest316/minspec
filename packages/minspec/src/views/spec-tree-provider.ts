@@ -330,6 +330,9 @@ export type SpecTreeNode = RollupNode | SpecGroupNode | EpicGroupNode<SpecSummar
 export class SpecTreeProvider implements vscode.TreeDataProvider<SpecTreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SpecTreeNode | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  /** Coalesce refresh bursts (issue #154). See refresh(). */
+  private _refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private static readonly REFRESH_DEBOUNCE_MS = 120;
   private readonly _listSpecs: ListSpecsFn;
   private readonly _approvalOf: ApprovalLookupFn;
   private readonly _listEpics?: ListEpicsFn;
@@ -351,8 +354,24 @@ export class SpecTreeProvider implements vscode.TreeDataProvider<SpecTreeNode> {
     this._listEpics = listEpicsFn;
   }
 
+  /**
+   * Rebuild the tree, coalescing bursts into a single rebuild (issue #154).
+   *
+   * Approving a spec mutates two watched files (the spec `.md` and
+   * `approvals.json`) AND calls refresh explicitly — so one approval otherwise
+   * fires 4-5 rebuilds in quick succession, each a synchronous re-read+parse of
+   * every spec (`listSpecs`) on the extension-host thread. Under memory pressure
+   * those reads stall on swap-in and the UI freezes. Collapsing a burst to one
+   * trailing rebuild removes the redundant work no matter how many call-sites
+   * (commands + file watchers) fire. getChildren reads fresh from disk, so the
+   * single trailing fire always reflects the latest state.
+   */
   refresh(): void {
-    this._onDidChangeTreeData.fire(undefined);
+    if (this._refreshTimer !== undefined) return;
+    this._refreshTimer = setTimeout(() => {
+      this._refreshTimer = undefined;
+      this._onDidChangeTreeData.fire(undefined);
+    }, SpecTreeProvider.REFRESH_DEBOUNCE_MS);
   }
 
   getTreeItem(element: SpecTreeNode): vscode.TreeItem {

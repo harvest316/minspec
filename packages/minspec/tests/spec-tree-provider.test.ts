@@ -472,6 +472,50 @@ describe('SpecTreeProvider', () => {
     it('does not throw', () => {
       expect(() => provider.refresh()).not.toThrow();
     });
+
+    // T3 regression — issue #154. Approving a spec fires refresh() ~4-5× in a
+    // burst (the command + the spec-md and approvals.json watchers). Each fire
+    // drives a full synchronous re-parse of every spec on the UI thread; under
+    // memory pressure those reads stall on swap-in and the IDE freezes. The
+    // provider must coalesce a burst into a single tree-data fire.
+    const fireOf = (p: SpecTreeProvider) =>
+      (p as unknown as { _onDidChangeTreeData: { fire: ReturnType<typeof vi.fn> } })
+        ._onDidChangeTreeData.fire;
+
+    it('coalesces a burst of refresh() calls into one tree-data fire', () => {
+      vi.useFakeTimers();
+      try {
+        const p = new SpecTreeProvider('/fake/workspace', mockListSpecs);
+        const fire = fireOf(p);
+        p.refresh();
+        p.refresh();
+        p.refresh();
+        p.refresh();
+        p.refresh();
+        // Nothing synchronous — the burst is held behind the debounce timer.
+        expect(fire).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(500);
+        expect(fire).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('fires again for a genuine change after the window settles', () => {
+      vi.useFakeTimers();
+      try {
+        const p = new SpecTreeProvider('/fake/workspace', mockListSpecs);
+        const fire = fireOf(p);
+        p.refresh();
+        vi.advanceTimersByTime(500);
+        expect(fire).toHaveBeenCalledTimes(1);
+        p.refresh(); // later, separate change
+        vi.advanceTimersByTime(500);
+        expect(fire).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('empty workspace', () => {
