@@ -199,7 +199,7 @@ MinSpec **dogfoods** its own SDD methodology — its developers write internal D
 
 *Status: proposed · Date: 2026-06-05*
 
-The global parking-lot rule (mmo-platform DR-360, the parent register — not a local DR) says "do NOT auto-start inbox issues; the user triages to a priority first," bottlenecking a ~90-issue backlog on a human step the user does not value. Per the user's direction (raised ⇒ worth doing; priority is not theirs to own), most raised issues now auto-build: bug/feat/chore/docs/test/CI/gate-repairs in isolated worktrees, one PR each, with the human gate moved to the PR skim (just-enough-human held intact). Held for the human: marketing/positioning/legal/decide/irreversible-architecture. This DR is the local anchor; the dev-time /loop is the prototype of the agent-executor vsix (EPIC-007).
+The **global parking-lot rule** — *mmo-platform DR-360* (the **parent** register, ~DR-360; **not** a decision in this repo's local register) — routes topic drift to GitHub issues and states *"do NOT auto-start inbox issues; the user triages to a priority before any agent works them."* This repo inherits that rule via the global CLAUDE.md.
 
 ## [DR-034 — Committed, attributed approval ground truth + derived spec status — make the #112 invariant enforceable](DR-034.md)
 
