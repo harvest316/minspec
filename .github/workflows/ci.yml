@@ -40,9 +40,13 @@ jobs:
 
       - run: npm ci
 
-      - name: Install coverage provider
-        run: npm install -D @vitest/coverage-v8@2.1.9 --legacy-peer-deps
-
+      # @vitest/coverage-v8 is a devDependency pinned to the vitest version in
+      # package.json (^4.1.7); `npm ci` installs the matching provider. A prior
+      # step force-installed coverage-v8@2.1.9 with --legacy-peer-deps on top of
+      # vitest@4 — that incompatible provider reaches into vitest internals that
+      # moved in v4, throwing `Cannot read properties of undefined (reading
+      # 'fetchCache')` during the coverage run (#158). Keep the provider version
+      # sourced solely from package.json so a vitest bump can't desync it again.
       - name: Test with coverage
         run: npx vitest run --coverage --coverage.reporter=json-summary --coverage.reporter=text
 
