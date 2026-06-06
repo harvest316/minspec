@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { listSpecs, type SpecSummary } from '../views/spec-tree-provider';
-import { readSpecFile, setSpecStatus } from '../lib/spec';
+import { readSpecFile, advanceSpecToImplementing } from '../lib/spec';
 import { loadConfig } from '../lib/config';
 import { validateSpec } from '../lib/spec-validator';
 import { epicRefSet } from '../lib/epic-manager';
@@ -143,10 +143,12 @@ export async function approveSpecCommand(node?: SpecNodeLike): Promise<void> {
     // just-approved spec is instantly stale (flip-then-hash; DR-003 RCDD). Guard:
     // only advance from a pre-implementation status — never downgrade done/archived
     // or re-flip an already-implementing spec being re-approved after an edit.
+    // advanceSpecToImplementing also advances the `phases:` map (when present) so
+    // the status line and the phases-derived status cannot diverge (#148).
     const wasPreImpl =
       parsed.frontmatter.status === 'new' || parsed.frontmatter.status === 'specifying';
     if (wasPreImpl) {
-      setSpecStatus(spec.filePath, 'implementing');
+      advanceSpecToImplementing(spec.filePath);
     }
     recordApproval(rootDir, spec.id, spec.filePath, spec.tier);
     vscode.window.showInformationMessage(

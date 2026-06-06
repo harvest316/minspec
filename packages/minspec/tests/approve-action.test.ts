@@ -41,7 +41,7 @@ vi.mock('../src/lib/approval', () => ({
 // Mock the libs called inside the action body
 vi.mock('../src/lib/spec', () => ({
   readSpecFile: vi.fn(),
-  setSpecStatus: vi.fn(),
+  advanceSpecToImplementing: vi.fn(),
 }));
 
 vi.mock('../src/lib/config', () => ({
@@ -68,7 +68,7 @@ import {
 } from '../src/lib/approval';
 import type { ApprovalStatus } from '../src/lib/approval';
 import type { SpecSummary } from '../src/views/spec-tree-provider';
-import { readSpecFile, setSpecStatus } from '../src/lib/spec';
+import { readSpecFile, advanceSpecToImplementing } from '../src/lib/spec';
 import { validateSpec } from '../src/lib/spec-validator';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -321,9 +321,10 @@ describe('approveSpecCommand — action paths (post-selection)', () => {
 
     await approveSpecCommand(undefined);
 
-    expect(setSpecStatus).toHaveBeenCalledWith(
+    // advanceSpecToImplementing (not raw setSpecStatus) is the approval seam now —
+    // it also advances the phases map so status and phases cannot diverge (#148).
+    expect(advanceSpecToImplementing).toHaveBeenCalledWith(
       '/tmp/ws/specs/minspec/SPEC-001/spec.md',
-      'implementing',
     );
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       expect.stringContaining('status → implementing'),
@@ -338,9 +339,8 @@ describe('approveSpecCommand — action paths (post-selection)', () => {
 
     await approveSpecCommand(undefined);
 
-    expect(setSpecStatus).toHaveBeenCalledWith(
+    expect(advanceSpecToImplementing).toHaveBeenCalledWith(
       '/tmp/ws/specs/minspec/SPEC-001/spec.md',
-      'implementing',
     );
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       expect.stringContaining('status → implementing'),
@@ -355,7 +355,7 @@ describe('approveSpecCommand — action paths (post-selection)', () => {
 
     await approveSpecCommand(undefined);
 
-    expect(setSpecStatus).not.toHaveBeenCalled();
+    expect(advanceSpecToImplementing).not.toHaveBeenCalled();
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
       expect.not.stringContaining('status → implementing'),
     );
@@ -372,7 +372,7 @@ describe('approveSpecCommand — action paths (post-selection)', () => {
 
     await approveSpecCommand(undefined);
 
-    expect(setSpecStatus).not.toHaveBeenCalled();
+    expect(advanceSpecToImplementing).not.toHaveBeenCalled();
   });
 
   it('shows success info message and refreshes the tree after approval', async () => {
@@ -482,7 +482,7 @@ describe('approveSpecCommand — action paths (post-selection)', () => {
       'T2',
     );
     // Already implementing — no status flip
-    expect(setSpecStatus).not.toHaveBeenCalled();
+    expect(advanceSpecToImplementing).not.toHaveBeenCalled();
   });
 });
 

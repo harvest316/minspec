@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import type { Tier, Phase } from './config';
 import { PHASES } from './config';
+import { getSpecStatus, phasesForApproval } from './lifecycle';
 
 /** Status of an individual phase */
 export type PhaseStatus = 'pending' | 'in-progress' | 'done' | 'skipped';
@@ -453,4 +454,61 @@ export function setSpecStatus(filePath: string, status: SpecStatus): SpecStatus 
     : `${yaml}\nstatus: ${status}`;
   fs.writeFileSync(filePath, content.replace(FRONTMATTER_RE, `---\n${newYaml}\n---\n`), 'utf-8');
   return status;
+}
+
+/**
+ * Surgically rewrite phase-status lines inside a spec's `phases:` frontmatter
+ * block, in place. Only lines that ALREADY exist under `phases:` are rewritten —
+ * absent phases are NOT added, preserving the file's chosen shape (a spec that
+ * tracks no `clarify:` line keeps none). No-op when there is no `phases:` block.
+ *
+ * Mirrors `setSpecStatus`: line-level, never a `writeSpec()` re-serialize, so
+ * full-line `#` comments (the DR-012 lock reminder) and field order survive.
+ * Throws when there is no frontmatter block at all.
+ */
+export function setSpecPhases(filePath: string, phases: Partial<Record<Phase, PhaseStatus>>): void {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const fmMatch = content.match(FRONTMATTER_RE);
+  if (!fmMatch) {
+    throw new Error(`No frontmatter block in ${filePath}`);
+  }
+  const lines = fmMatch[1].split('\n');
+  const phasesIdx = lines.findIndex((l) => /^phases[ \t]*:/.test(l));
+  if (phasesIdx === -1) return; // no phases block → nothing to rewrite
+  for (let i = phasesIdx + 1; i < lines.length; i++) {
+    // The phases block ends at the first line that is not an indented child.
+    if (!/^[ \t]/.test(lines[i])) break;
+    const m = lines[i].match(/^([ \t]+)([A-Za-z][\w-]*)[ \t]*:/);
+    if (!m) continue;
+    const val = phases[m[2] as Phase];
+    if (val !== undefined) lines[i] = `${m[1]}${m[2]}: ${val}`;
+  }
+  const newYaml = lines.join('\n');
+  fs.writeFileSync(filePath, content.replace(FRONTMATTER_RE, `---\n${newYaml}\n---\n`), 'utf-8');
+}
+
+/**
+ * Advance a spec into the `implementing` band on approval, keeping the literal
+ * `status:` line and any `phases:` map in agreement (#148). When the spec carries
+ * a `phases:` block, the block is advanced (specifying band → done, implementing
+ * band started) and the status line is written as the *derived* status, so the two
+ * representations cannot diverge. When there is no `phases:` block, only the
+ * `status:` line is set to `implementing` — the established single-writer path.
+ *
+ * Preserves approval's flip-then-hash discipline (DR-003): callers invoke this
+ * BEFORE recording the approval hash, so the hash binds post-flip bytes. Returns
+ * the new spec status. Throws when there is no frontmatter block.
+ */
+export function advanceSpecToImplementing(filePath: string): SpecStatus {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const fmMatch = content.match(FRONTMATTER_RE);
+  if (!fmMatch) {
+    throw new Error(`No frontmatter block in ${filePath}`);
+  }
+  if (!/^phases[ \t]*:/m.test(fmMatch[1])) {
+    return setSpecStatus(filePath, 'implementing');
+  }
+  const newPhases = phasesForApproval(parseSpec(content).frontmatter.phases);
+  setSpecPhases(filePath, newPhases);
+  return setSpecStatus(filePath, getSpecStatus(newPhases));
 }
