@@ -59,6 +59,7 @@ vi.mock('../src/lib/adr-manager', () => ({
   findSimilarAdrs: vi.fn(() => []),
   listAdrs: vi.fn(() => []),
   setAdrStatus: vi.fn(),
+  adrHasFrontmatter: vi.fn(() => true),
   regenerateDrIndex: vi.fn(),
   ADR_STATUS_VALUES: ['proposed', 'accepted', 'deprecated', 'superseded'],
 }));

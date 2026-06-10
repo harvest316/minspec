@@ -5,6 +5,7 @@ import {
   findSimilarAdrs,
   regenerateDrIndex,
   setAdrStatus,
+  adrHasFrontmatter,
   listAdrs,
   ADR_STATUS_VALUES,
   type AdrStatus,
@@ -201,6 +202,20 @@ async function applyStatus(
   status: AdrStatus,
 ): Promise<void> {
   try {
+    // Pre-MinSpec DRs have no frontmatter. `setAdrStatus` will synthesize one,
+    // but that mutates the file beyond a one-line status flip — so offer it
+    // first rather than silently rewriting a hand-authored doc (#201).
+    if (!adrHasFrontmatter(filePath)) {
+      const ADD = 'Add Frontmatter';
+      const choice = await vscode.window.showWarningMessage(
+        `${id} predates MinSpec and has no frontmatter block. ` +
+          `Add one (id, title, status, date) so MinSpec can track its status?`,
+        { modal: true },
+        ADD,
+      );
+      if (choice !== ADD) return;
+    }
+
     setAdrStatus(filePath, status);
 
     // Keep the Decision Register index in sync with the new status (the

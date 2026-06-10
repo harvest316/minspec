@@ -22,6 +22,7 @@ import {
   generateAdrContent,
   resolveDecisionsDir,
   setAdrStatus,
+  adrHasFrontmatter,
   findSimilarAdrs,
   ADR_SIMILARITY_THRESHOLD,
   ADR_STATUS_VALUES,
@@ -377,13 +378,70 @@ describe('adr-manager', () => {
       expect(content).toContain('title: No Status');
     });
 
-    it('throws on a file with no frontmatter', () => {
-      const dir = path.join(tmpDir, 'decisions');
+    // #201: a frontmatter-less pre-MinSpec DR is listed by listAdrs, so the
+    // write path must accept it too — synthesize frontmatter instead of throwing.
+    it('synthesizes frontmatter for a file that has none, deriving id/title from the heading', () => {
+      const dir = resolveDecisionsDir(tmpDir);
       fs.mkdirSync(dir, { recursive: true });
       const fp = path.join(dir, 'DR-010-bare.md');
-      fs.writeFileSync(fp, '# Just a heading\n', 'utf-8');
+      fs.writeFileSync(fp, '# DR-010 — Just a heading\n\nSome body.\n', 'utf-8');
 
-      expect(() => setAdrStatus(fp, 'accepted')).toThrow(/frontmatter/);
+      const result = setAdrStatus(fp, 'accepted');
+      expect(result).toBe('accepted');
+
+      const content = fs.readFileSync(fp, 'utf-8');
+      expect(content).toMatch(/^---\n/);
+      expect(content).toContain('id: DR-010');
+      expect(content).toContain('title: Just a heading'); // DR-NNN prefix stripped
+      expect(content).toContain('status: accepted');
+      expect(content).toContain('Some body.'); // body preserved
+
+      // listAdrs now reads the synthesized status back.
+      const reloaded = listAdrs(tmpDir).find(a => a.id === 'DR-010');
+      expect(reloaded?.status).toBe('accepted');
+    });
+
+    // T3 regression (#201): the exact pre-MinSpec shape that threw in the field —
+    // `# DR-NNN — Title` + `**Status:** Accepted (date)` prose, no frontmatter.
+    it('handles a real pre-MinSpec DR (markdown heading + **Status:** prose), reusing its date', () => {
+      const dir = resolveDecisionsDir(tmpDir);
+      fs.mkdirSync(dir, { recursive: true });
+      const fp = path.join(dir, 'DR-001-swappable-llm-backends.md');
+      fs.writeFileSync(
+        fp,
+        '# DR-001 — Two swappable LLM backends; `claude-cli` default (no API key)\n\n' +
+          '**Status:** Accepted (2026-06-09)\n\n## Context\n\nThe pipeline needs an LLM.\n',
+        'utf-8',
+      );
+
+      expect(() => setAdrStatus(fp, 'accepted')).not.toThrow();
+
+      const content = fs.readFileSync(fp, 'utf-8');
+      expect(content).toContain('id: DR-001');
+      expect(content).toContain(
+        'title: Two swappable LLM backends; `claude-cli` default (no API key)',
+      );
+      expect(content).toContain('status: accepted');
+      expect(content).toContain('date: 2026-06-09'); // pulled from the prose Status line
+      // Exactly one frontmatter delimiter pair; original heading + body intact.
+      expect(content.match(/^---$/gm)).toHaveLength(2);
+      expect(content).toContain('## Context');
+      expect(content).toContain('**Status:** Accepted (2026-06-09)');
+
+      const reloaded = listAdrs(tmpDir).find(a => a.id === 'DR-001');
+      expect(reloaded?.status).toBe('accepted');
+    });
+
+    it('adrHasFrontmatter distinguishes pre-MinSpec from MinSpec DRs', () => {
+      const dir = resolveDecisionsDir(tmpDir);
+      fs.mkdirSync(dir, { recursive: true });
+      const bare = path.join(dir, 'DR-011-bare.md');
+      fs.writeFileSync(bare, '# DR-011 — Bare\n\nbody\n', 'utf-8');
+      expect(adrHasFrontmatter(bare)).toBe(false);
+
+      const withFm = createAdr(tmpDir, 'Has Frontmatter');
+      expect(adrHasFrontmatter(withFm.filePath)).toBe(true);
+      expect(adrHasFrontmatter(path.join(dir, 'does-not-exist.md'))).toBe(false);
     });
 
     it('throws on an invalid status value', () => {

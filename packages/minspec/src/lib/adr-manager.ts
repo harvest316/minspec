@@ -317,10 +317,65 @@ export const ADR_STATUS_VALUES: readonly AdrStatus[] = [
   'superseded',
 ];
 
+/** True if the ADR file already has a leading YAML frontmatter block. */
+export function adrHasFrontmatter(filePath: string): boolean {
+  try {
+    return FRONTMATTER_RE.test(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Derive a clean title for a frontmatter-less ADR. Prefers a Markdown H1
+ * (`# DR-001 — Two backends` → `Two backends`, stripping any `DR-NNN —/-`
+ * id prefix); falls back to the humanized filename descriptor, then the id.
+ */
+function deriveAdrTitle(content: string, fileName: string, id: string): string {
+  const h1 = content.match(/^#\s+(.+?)\s*$/m);
+  if (h1) {
+    const stripped = h1[1].replace(/^DR-\d+\s*[—–-]\s*/, '').trim();
+    if (stripped) return stripped;
+  }
+  const descriptor = fileName.match(ADR_FILE_DESCRIPTOR_RE)?.[1] ?? '';
+  return humanizeSlug(descriptor) || id;
+}
+
+/**
+ * Derive a date for a frontmatter-less ADR. Prefers an ISO date annotated on a
+ * prose `**Status:** Accepted (2026-06-09)` line; falls back to the first ISO
+ * date anywhere in the doc; finally today (matching `createAdr`).
+ */
+function deriveAdrDate(content: string): string {
+  const onStatus = content.match(/\*\*\s*status\s*\*\*\s*:?[^\n(]*\((\d{4}-\d{2}-\d{2})\)/i);
+  if (onStatus) return onStatus[1];
+  const anyIso = content.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (anyIso) return anyIso[1];
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Build a synthesized YAML frontmatter body (no `---` fences) for a
+ * frontmatter-less pre-MinSpec ADR, inferring id/title/date from the filename
+ * and existing Markdown content. `status` is the value being set.
+ */
+function synthesizeAdrFrontmatter(filePath: string, content: string, status: AdrStatus): string {
+  const fileName = path.basename(filePath);
+  const id = fileName.match(ADR_ID_RE)?.[0] ?? fileName.replace(/\.md$/, '');
+  const title = deriveAdrTitle(content, fileName, id);
+  const date = deriveAdrDate(content);
+  return [`id: ${id}`, `title: ${title}`, `status: ${status}`, `date: ${date}`].join('\n');
+}
+
 /**
  * Rewrite the `status:` line in an ADR's frontmatter in place.
  * Adds the line if frontmatter exists but has no status field.
- * Returns the updated status. Throws if the file has no frontmatter block.
+ *
+ * Pre-MinSpec DRs have no frontmatter at all, yet `listAdrs` deliberately
+ * surfaces them into the picker (with a synthetic `proposed` status). To keep
+ * the read and write paths symmetric (#201), synthesize and prepend a
+ * frontmatter block from the filename + body rather than throwing.
+ * Returns the updated status.
  */
 export function setAdrStatus(filePath: string, status: AdrStatus): AdrStatus {
   if (!ADR_STATUSES.has(status)) {
@@ -329,7 +384,11 @@ export function setAdrStatus(filePath: string, status: AdrStatus): AdrStatus {
   const content = fs.readFileSync(filePath, 'utf-8');
   const fmMatch = content.match(FRONTMATTER_RE);
   if (!fmMatch) {
-    throw new Error(`No frontmatter block in ${filePath}`);
+    // No frontmatter — synthesize one and prepend it, preserving the body
+    // verbatim (only collapsing leading blank lines before the heading).
+    const block = `---\n${synthesizeAdrFrontmatter(filePath, content, status)}\n---`;
+    fs.writeFileSync(filePath, `${block}\n\n${content.replace(/^\s*\n+/, '')}`, 'utf-8');
+    return status;
   }
 
   const yaml = fmMatch[1];

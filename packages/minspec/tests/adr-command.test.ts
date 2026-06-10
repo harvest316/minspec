@@ -46,6 +46,8 @@ vi.mock('../src/lib/adr-manager', () => ({
   findSimilarAdrs: vi.fn(() => []),
   listAdrs: vi.fn(() => []),
   setAdrStatus: vi.fn(),
+  // Default true → existing applyStatus tests (frontmatter files) skip the modal.
+  adrHasFrontmatter: vi.fn(() => true),
   regenerateDrIndex: vi.fn(),
   ADR_STATUS_VALUES: ['proposed', 'accepted', 'deprecated', 'superseded'],
 }));
@@ -65,6 +67,7 @@ import {
   findSimilarAdrs,
   listAdrs,
   setAdrStatus,
+  adrHasFrontmatter,
   regenerateDrIndex,
 } from '../src/lib/adr-manager';
 
@@ -504,6 +507,59 @@ describe('applyStatus — setAdrStatus throws', () => {
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
       'MinSpec: Failed to set status — raw string error',
     );
+  });
+});
+
+// =============================================================================
+// applyStatus — pre-MinSpec DR (no frontmatter) offers to add it first (#201)
+// =============================================================================
+
+describe('applyStatus — frontmatter-less DR offer', () => {
+  const resolveBare = (): void => {
+    setActiveEditor(DR1);
+    vi.mocked(listAdrs).mockReturnValueOnce([
+      { id: 'DR-001', title: 'Use PG', status: 'proposed', date: '', filePath: DR1 },
+    ]);
+    vi.mocked(adrHasFrontmatter).mockReturnValueOnce(false);
+  };
+
+  it('writes status after the user confirms the modal offer', async () => {
+    resolveBare();
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValueOnce(
+      'Add Frontmatter' as never,
+    );
+
+    await acceptAdrCommand(undefined);
+
+    const warn = vi.mocked(vscode.window.showWarningMessage).mock.calls[0];
+    expect(warn[0]).toContain('predates MinSpec');
+    expect(warn[1]).toEqual({ modal: true });
+    expect(setAdrStatus).toHaveBeenCalledWith(DR1, 'accepted');
+  });
+
+  it('aborts without writing when the user dismisses the modal', async () => {
+    resolveBare();
+    vi.mocked(vscode.window.showWarningMessage).mockResolvedValueOnce(
+      undefined as never,
+    );
+
+    await acceptAdrCommand(undefined);
+
+    expect(setAdrStatus).not.toHaveBeenCalled();
+    expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not prompt when the DR already has frontmatter', async () => {
+    setActiveEditor(DR1);
+    vi.mocked(listAdrs).mockReturnValueOnce([
+      { id: 'DR-001', title: 'Use PG', status: 'proposed', date: '', filePath: DR1 },
+    ]);
+    // adrHasFrontmatter default (true) — no override.
+
+    await acceptAdrCommand(undefined);
+
+    expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+    expect(setAdrStatus).toHaveBeenCalledWith(DR1, 'accepted');
   });
 });
 
