@@ -767,10 +767,10 @@ describe('activate()', () => {
     // The legacy welcome toast was removed; init is now offered by the
     // per-folder auto-bootstrap loop (harvest316/minspec#123).
     await vi.waitFor(() => {
+      // #203: "Not Now" removed — the toast's X dismisses; init has no "Always".
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining("isn't initialized"),
         'Initialize',
-        'Not Now',
         "Don't ask again",
       );
     });

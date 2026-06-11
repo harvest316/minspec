@@ -371,6 +371,16 @@ export function activate(context: vscode.ExtensionContext): void {
       const result = vscode.commands.executeCommand(commandId, folder);
       return result instanceof Promise ? result.then(() => undefined) : undefined;
     },
+    enableAutoClassify: () =>
+      Promise.resolve(
+        vscode.workspace
+          .getConfiguration('minspec')
+          .update(
+            'autoClassifyOnCommit',
+            true,
+            vscode.ConfigurationTarget.Workspace,
+          ),
+      ).then(() => undefined),
   };
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     void runBootstrap(folder.uri.fsPath, bootstrapVsCode);

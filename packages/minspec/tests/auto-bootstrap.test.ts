@@ -36,12 +36,14 @@ function makeVsCodeStub(
   const response = overrides.response;
   const showPrompt = vi.fn(async () => response);
   const executeCommand = vi.fn(async () => undefined);
+  const enableAutoClassify = vi.fn(async () => undefined);
   const stub: BootstrapVsCode = {
     isEnabled: () => enabled,
     showPrompt,
     executeCommand,
+    enableAutoClassify,
   };
-  return { stub, showPrompt, executeCommand };
+  return { stub, showPrompt, executeCommand, enableAutoClassify };
 }
 
 describe('auto-bootstrap', () => {
@@ -278,7 +280,9 @@ describe('auto-bootstrap', () => {
       expect(showPrompt).toHaveBeenCalledTimes(1);
       const [msg, actions] = showPrompt.mock.calls[0]!;
       expect(msg).toMatch(/isn't initialized/);
-      expect(actions).toEqual(['Initialize', 'Not Now', "Don't ask again"]);
+      // #203: no "Not Now" — the toast's X already dismisses. The init step has
+      // no "Always" affordance, so just primary + opt-out.
+      expect(actions).toEqual(['Initialize', "Don't ask again"]);
     });
 
     it("T0: runs minspec.init when user picks Initialize", async () => {
@@ -302,6 +306,57 @@ describe('auto-bootstrap', () => {
       await runBootstrap(tmpDir, stub);
       const prefs = loadPreferences(tmpDir);
       expect(prefs.skipInitPrompt).toBe(true);
+    });
+  });
+
+  // =========================================================================
+  // #203: the "Always" affordance (classify step) — auto-run opt-in
+  // =========================================================================
+
+  describe('runBootstrap() — "Always" affordance', () => {
+    // Synthetic step exercises the action-assembly + Always handling directly,
+    // without the git/.minspec setup the real classify step needs to fire.
+    const alwaysStep: BootstrapStep = {
+      kind: 'classify',
+      shouldRun: () => true,
+      message: 'MinSpec: You have uncommitted changes. Classify complexity now?',
+      primaryAction: 'Classify',
+      commandId: 'minspec.classify',
+      skipPrefKey: 'skipClassifyPrompt',
+      alwaysAction: 'Always',
+    };
+
+    it('offers Always first, then primary, then opt-out — and no "Not Now"', async () => {
+      const { stub, showPrompt } = makeVsCodeStub({ response: undefined });
+      await runBootstrap(tmpDir, stub, [alwaysStep]);
+      const [, actions] = showPrompt.mock.calls[0]!;
+      expect(actions).toEqual(['Always', 'Classify', "Don't ask again"]);
+      expect(actions).not.toContain('Not Now');
+    });
+
+    it('Always → enables auto-classify, then runs the command once', async () => {
+      const { stub, executeCommand, enableAutoClassify } = makeVsCodeStub({
+        response: 'Always',
+      });
+      await runBootstrap(tmpDir, stub, [alwaysStep]);
+      expect(enableAutoClassify).toHaveBeenCalledWith(tmpDir);
+      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir);
+    });
+
+    it('primary (Classify) → runs once WITHOUT enabling auto-classify', async () => {
+      const { stub, executeCommand, enableAutoClassify } = makeVsCodeStub({
+        response: 'Classify',
+      });
+      await runBootstrap(tmpDir, stub, [alwaysStep]);
+      expect(enableAutoClassify).not.toHaveBeenCalled();
+      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir);
+    });
+
+    it('Always falls back to a one-shot run when host lacks enableAutoClassify', async () => {
+      const { stub, executeCommand } = makeVsCodeStub({ response: 'Always' });
+      delete (stub as { enableAutoClassify?: unknown }).enableAutoClassify;
+      await runBootstrap(tmpDir, stub, [alwaysStep]);
+      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir);
     });
   });
 

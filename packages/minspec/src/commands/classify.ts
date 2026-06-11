@@ -60,12 +60,21 @@ export async function classifyCommand(folderArg?: string): Promise<void> {
   // Dismissible like any MinSpec toast.
   const showBumpUp = predictedTier === 'T1';
   const bumpUpLabel = 'Harder than it looks — raise tier';
-  const actions = ['Show Details', 'Override Tier'];
+  // The old "Override Tier" wrote to a calibration log nothing reads back
+  // (DR-021 gutted the feedback loop). Replace it with a live affordance: opt
+  // into auto-classify-on-commit so the advice runs itself going forward (#203).
+  const AUTO_CLASSIFY = 'Auto-classify from now on';
+  const actions = ['Show Details', AUTO_CLASSIFY];
   if (showBumpUp) actions.push(bumpUpLabel);
 
+  // Advisory toast: names the unit (your current diff) and states that nothing
+  // is persisted — the result is informational, not a pending action (#203).
   const choice = await vscode.window.showInformationMessage(
-    `MinSpec: ${predictedTier} (${confidencePct}% confidence) · ${phaseList}`,
-    { detail: `Signals: ${signalSummary || 'none'}`, modal: false },
+    `MinSpec: Current changes → ${predictedTier} (${confidencePct}% confidence) · ${phaseList}`,
+    {
+      detail: `Advisory — reflects your current diff; nothing is saved. Signals: ${signalSummary || 'none'}`,
+      modal: false,
+    },
     ...actions,
   );
 
@@ -95,27 +104,15 @@ export async function classifyCommand(folderArg?: string): Promise<void> {
       result.signals.map((s) => s.name),
     );
     vscode.window.showInformationMessage(`MinSpec: Raised to ${raised}.`);
-  } else if (choice === 'Override Tier') {
-    const tiers: Array<{ label: string; value: Tier }> = [
-      { label: 'T1 — Trivial', value: 'T1' },
-      { label: 'T2 — Standard', value: 'T2' },
-      { label: 'T3 — Complex', value: 'T3' },
-      { label: 'T4 — Architectural', value: 'T4' },
-    ];
-    const picked = await vscode.window.showQuickPick(tiers, {
-      placeHolder: `Override ${predictedTier}?`,
-    });
-    if (picked) {
-      const { recordOverride } = await import('../lib/classifier.js');
-      recordOverride(
-        workspaceRoot,
-        predictedTier,
-        picked.value,
-        result.signals.map((s) => s.name),
-      );
-      vscode.window.showInformationMessage(
-        `MinSpec: Overridden to ${picked.value}.`,
-      );
-    }
+  } else if (choice === AUTO_CLASSIFY) {
+    // Enable the existing git-HEAD watcher (extension.ts) for this workspace so
+    // classification re-runs on every commit. The watcher is wired at activation,
+    // so the toggle takes effect on the next window reload.
+    await vscode.workspace
+      .getConfiguration('minspec')
+      .update('autoClassifyOnCommit', true, vscode.ConfigurationTarget.Workspace);
+    vscode.window.showInformationMessage(
+      'MinSpec: Auto-classify on commit enabled for this workspace (takes effect after reload).',
+    );
   }
 }
