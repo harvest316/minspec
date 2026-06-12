@@ -28,18 +28,18 @@
     "Invariants": "5d5d5c2c84564cd4e2ed8499afe43ed2fa85141713eaeeccbe59c7ee4021b70c",
     "SDD Methodology": "659cf2fee5afc6db19cd4e80569ee28f026764d7b23f716e62808256f0a8f4a6",
     "File Locations": "7c8f5347eec33d9917104252890ef5c4912b6997cb7ea689f451095b1b712321",
-    "Commands": "315b3b522b5b0097b0f28398b15590423e58e3ea115a2b81c31940439d8a6a7e",
-    "Project Overview": "72b6e1caea49ad3f72d91e9432ab9c7b302a98aeb6e8139edf43cb2454dadcf5",
+    "Commands": "df8c0abdb54c2c74f175a7638863d599e2f7fffcbd0a9f5b7cb18542f24fa7bf",
+    "Project Overview": "76e93e821971e528077f977288f72eeda8023844f34dce3b3ab1000fa3907654",
     "Session Scope Protocol": "7f0e526fee740859b5007e899a8dd1be4e195be704c8e5b770f9000b56f3c4e8",
-    "SDD Phases (current state)": "e3ec36cedca2ae1c3e5a05ae1160afdd81642d662a5f9ed2edef4b3b7ff538c3",
+    "SDD Phases (current state)": "1ce9b74786de3c90b5c4067000862ad8653ed90161248c6230f2c24a11dc12f6",
     "Traceability Convention": "67bc89f04667f1361b4769c201749808107d83e29bf73bdf62578f4519135062",
     "Evidence Discipline — status claims (RCDD / DR-003)": "47c4df56179c8bedb532cef7b0c5f10538b12eba8edfca50b4e9c1a760f02ecc",
     "Agent Dispatch (Tier-Gated HITL)": "6c57a3dc586b435e831379412f5ab55d56b14bd27dc9658c2a381430e6c46e64",
     "Deploy Reference": "ebb1304ad529dbab0444ab5e9e627d40928feb1cfa4a835e5ede432c68b75fdc",
     "Test Commands": "7d181a22f368dc3b37c56866e26ad63345d58e92c5a04bd1e1cf52f85d8f2459",
     "Pre-Commit Checks": "566ecf5c02fa8de012f310a01e557c33711548d1441473a9dfe7fa824e8e8c8d",
-    "Decision Register": "91468e1daf3090b624390e9db20769c71b4aac4af5080fbfca1a4050b5fb8b42",
-    "Repo Mapping (Parking Lot)": "4bf805bcea48a96f28c64b0feb979aaebbf15989f5e90087c01f10214e0b95e0"
+    "Decision Register": "5bf4dfac2e02a0c4e04d9dafb7bbc01ec370babde53af116bcbc70644d00fb6c",
+    "Repo Mapping (Parking Lot)": "e178271015ed44de4a4ea42c8aa45b53487e402a5bb71c33fd3e56919401b0d4"
   },
   "AGENTS.md": {
     "__preamble__": "f1b11290bb35c70f65c09bddb31dedf93a84c8d634535b83b6005e5a3a698e56",

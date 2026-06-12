@@ -109,8 +109,22 @@ evidence any capability exists.
   the **only** allowlisted egress). The sandbox `claude -p` runs **credential-free** — it
   sends model requests with no real token; the **broker (host-side) injects** the real
   credential and makes the actual outbound call. The sandbox endpoint is fixed *for all
-  time*, so it never has to be edited from inside an egress-denied box. Traces to
-  [DR-017](../../../docs/decisions/DR-017.md) (§Model access).
+  time*, so it never has to be edited from inside an egress-denied box.
+
+  **Web research rides this seam — no extra egress, no new seam.** Tasks that need the open
+  web (e.g. *research and write a best-practices doc*) use Anthropic's **server-side**
+  `web_search`/`web_fetch` tools: Anthropic executes the query/fetch on its **own**
+  infrastructure and returns the results inside the model response, so the outbound web call
+  leaves Anthropic's servers — **never the sandbox** — and travels the existing
+  `/v1/messages` broker call the box already makes. An egress-denied box can therefore
+  research the open web with the broker as its only seam. This holds **only** for
+  server-side web tools: the claude CLI's **client-side** WebFetch/WebSearch make a direct
+  outbound call *from the sandbox* and are **denied by design** — opening egress to satisfy
+  them would void INV-sandbox-no-egress and break the FR-6/FR-7 attestation manifest (the
+  egress canary must stay refused), i.e. the R7 convenience-grant regression. Sources the
+  server-side fetch cannot reach (private / internal / localhost) are pre-fetched
+  **host-side** by the control plane and handed to the agent as FR-15 `<untrusted_…>` DATA.
+  Traces to [DR-017](../../../docs/decisions/DR-017.md) (§Model access).
 
 - **FR-4 (installing Scrooge repoints the broker, never the sandbox).** Whether the broker
   routes direct→Anthropic or via the local ScroogeLLM proxy is a **host-side config flip**;
@@ -124,7 +138,12 @@ evidence any capability exists.
   carries the dev's subscription credential host-side and routes direct→Anthropic, with **no
   pay-as-you-go API spend and no API key anywhere**. **API-key mode is opt-in** — for devs
   who want Scrooge cost-routing or concurrency past the subscription ceiling, the broker
-  injects a spend-capped API key and routes via Scrooge (PAYG, optimized + measured). The
+  routes via Scrooge — but **even in Scrooge mode the broker tries the Pro/Max subscription
+  first** (the same subscription-default discipline as the direct route), and only injects
+  the spend-capped **PAYG API key when the subscription is unavailable or its ceiling is
+  hit**; Scrooge then optimizes + measures the PAYG portion. (Refines the CL-9 precedence
+  *subscription → API → Scrooge*: subscription-first applies **within** the Scrooge route,
+  not only on the direct route — Scrooge is a routing choice, not a billing-mode switch.) The
   *broker-injectability of subscription-oauth* is the gating open question — see **OQ-1
   (#74)** — and the documented fallback (inject the subscription token at spawn; attestation
   must then whitelist exactly that one token) must be resolved in **Clarify** before the
@@ -153,6 +172,13 @@ evidence any capability exists.
   | Push | `git push origin` | fails (no cred / no net) |
   | FS boundary | read host `$HOME` / `/host` | not mounted |
   | Privilege | docker socket present? running privileged? | no |
+
+  **Egress check vs. web research (not a conflict).** The Egress row failing (canary
+  refused) does **not** block web-research tasks — server-side `web_search`/`web_fetch` ride
+  the broker `/v1/messages` call (FR-3), not a sandbox-originated web connection, so they
+  keep working while the box stays egress-denied. A sandbox that *can* reach the canary is
+  mis-configured and must fail closed, regardless of any research need. Web research is
+  therefore **never** a reason to relax this deny-check.
 
   Traces to [DR-017](../../../docs/decisions/DR-017.md) (§Boundary verification).
 
@@ -461,3 +487,8 @@ manual path.
 - **`OutcomeStore` SQLite backend (CL-4)** → v3, behind the port; no caller changes.
 - **Per-class caps (v2) + load-scaled worker pool (v3)** → roadmap, behind the FR-14 cap abstraction.
 - **Public brand name + domain** → non-code marketing follow-up, **#66** (DR-023 forward rule).
+- **Agent web-tooling config (FR-3)** → Plan must wire the agent to Anthropic **server-side**
+  `web_search`/`web_fetch` and **disable** the CLI's client-side WebFetch/WebSearch inside the
+  sandbox (client-side fetch is egress-denied by design); host-side pre-fetch → FR-15 DATA is
+  the path for sources the server-side fetch can't reach (private/internal/localhost). Plain
+  config, no new dep.
