@@ -1,0 +1,8 @@
+---
+id: SPEC-012
+status: implementing  # note about status
+tier: T4
+phases:  # the phase map
+  specify: done
+---
+Body.

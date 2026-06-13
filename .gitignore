@@ -10,6 +10,7 @@ coverage/
 # Tool / cache directories
 .wrangler/
 .claude/
+__pycache__/
 
 # Secrets — never commit
 .env

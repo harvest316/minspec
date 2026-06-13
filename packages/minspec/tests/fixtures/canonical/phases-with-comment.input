@@ -1,0 +1,9 @@
+---
+id: SPEC-011
+phases:
+  specify: done
+  # an interleaved comment (indented → child)
+  plan: in-progress
+created: 2026-06-06
+---
+Body.
