@@ -1,23 +1,24 @@
 /**
- * T2 — Gate hook behavior (DR-012 / DR-031).
+ * T2 — Gate hook behavior (DR-012 / DR-031, amended by SPEC-022 / DR-034).
  * Shells out to scripts/hooks/spec-gate.sh with crafted PreToolUse envelopes
  * against a temp workspace, asserting allow/deny decisions.
  *
+ * SPEC-022: approvals are now COMMITTED, path-keyed sidecars under
+ * `.minspec/approvals/<repo-relative-spec-path>.json`, hashed CANONICALLY, and
+ * the gate reads them from cwd FIRST (the common-dir resolution is a fallback).
+ * The gate derives status from {phases, approval}, not the literal `status:`.
+ *
  * Hermetic by construction (DR-031 D4): every test `git init`s its OWN temp
- * workspace and writes its OWN `.minspec/approvals.json` there. The gate
- * resolves approvals from the canonical checkout via `git rev-parse
- * --git-common-dir`; because the temp dir IS its own git common dir, resolution
- * lands inside the temp workspace and can never reach the real repo's live
- * specs or shared `.minspec/`. This removes the ambient-state race (#146) — and
- * does so WITHOUT a config/env approvals-path override (which would reintroduce
- * an agent-settable bypass). env is pinned (gateEnv) and cwd is pinned.
+ * workspace and writes its OWN sidecars there. The gate's cwd + env are pinned
+ * (gateEnv / childCwd) so resolution can never reach the real repo's live specs
+ * or shared `.minspec/`.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { hashContent } from '../src/lib/approval';
+import { specHash } from '@aiclarity/shared';
 
 const HOOK = path.resolve(__dirname, '../../../scripts/hooks/spec-gate.sh');
 
@@ -51,10 +52,9 @@ function gitInit(dir: string): void {
   execFileSync('git', ['config', 'user.email', 'gate-test@example.com'], opts);
   execFileSync('git', ['config', 'user.name', 'gate-test'], opts);
   execFileSync('git', ['config', 'commit.gpgsign', 'false'], opts);
-  // Mirror the real repo: approvals.json is per-machine local state, gitignored,
-  // so `git worktree add` never copies it into a linked worktree. This is the
-  // exact condition the canonical-resolution test must reproduce.
-  fs.writeFileSync(path.join(dir, '.gitignore'), '.minspec/approvals.json\n');
+  // SPEC-022: the approvals/ tree is COMMITTED (no longer gitignored), so a
+  // committed sidecar is present in every clone/worktree/CI checkout by
+  // construction (FR-1). No .gitignore for it.
   execFileSync('git', ['add', '-A'], opts);
   execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], opts);
 }
@@ -86,12 +86,31 @@ function editEnvelope(relPath: string, cwd: string = ws): Record<string, unknown
   return { tool_name: 'Edit', cwd, tool_input: { file_path: relPath, old_string: 'a', new_string: 'b' } };
 }
 
+/**
+ * Map a desired DERIVED status to a phases block. The gate now derives status
+ * from {phases, approval}; the literal `status:` line is just a mirror.
+ *   - implementing → plan in-progress (derives implementing when approved,
+ *     specifying when not — exactly the gated case)
+ *   - specifying   → specify in-progress (never gated regardless of approval)
+ *   - done         → all phases done
+ */
+function phasesFor(status: string): string {
+  if (status === 'specifying') {
+    return 'specify: in-progress\n  clarify: pending\n  plan: pending\n  tasks: pending\n  implement: pending';
+  }
+  if (status === 'done') {
+    return 'specify: done\n  clarify: done\n  plan: done\n  tasks: done\n  implement: done';
+  }
+  // implementing (and any other) → mid-implementation
+  return 'specify: done\n  clarify: skipped\n  plan: in-progress\n  tasks: pending\n  implement: pending';
+}
+
 function writeSpecIn(root: string, id: string, tier: string, status: string): string {
   const p = path.join(root, 'specs', `${id}-x.md`);
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(
     p,
-    `---\nid: ${id}\ntitle: X\ntier: ${tier}\nstatus: ${status}\ncreated: 2026-05-30\n---\n# ${id}\nbody\n`,
+    `---\nid: ${id}\ntitle: X\ntier: ${tier}\nstatus: ${status}\ncreated: 2026-05-30\nphases:\n  ${phasesFor(status)}\n---\n# ${id}\nbody\n`,
   );
   return p;
 }
@@ -100,16 +119,29 @@ function writeSpec(id: string, tier: string, status: string): string {
   return writeSpecIn(ws, id, tier, status);
 }
 
-function approveIn(root: string, id: string, specPath: string, tier: string): void {
-  const dir = path.join(root, '.minspec');
-  fs.mkdirSync(dir, { recursive: true });
-  const hash = hashContent(fs.readFileSync(specPath));
-  const store = { [id]: { specHash: hash, approvedAt: '2026-05-30T00:00:00Z', tier } };
-  fs.writeFileSync(path.join(dir, 'approvals.json'), JSON.stringify(store));
+/**
+ * Write a COMMITTED, path-keyed, canonically-hashed approval sidecar (FR-1/FR-2/
+ * FR-3) under `<root>/.minspec/approvals/<repo-relative-spec-path>.json`.
+ * `migrated` defaults false; pass true to exercise the WARN-phase migrated path.
+ */
+function approveIn(root: string, specPath: string, tier: string, migrated = false): void {
+  const specRel = path.relative(root, specPath).split(path.sep).join('/');
+  const sidecar = path.join(root, '.minspec', 'approvals', specRel + '.json');
+  fs.mkdirSync(path.dirname(sidecar), { recursive: true });
+  const hash = specHash(fs.readFileSync(specPath, 'utf-8'));
+  const record = {
+    specPath: specRel,
+    specHash: hash,
+    approvedAt: '2026-05-30T00:00:00.000Z',
+    approvedBy: 'gate-test@example.com',
+    tier,
+    migrated,
+  };
+  fs.writeFileSync(sidecar, JSON.stringify(record, null, 2) + '\n');
 }
 
-function approve(id: string, specPath: string, tier: string): void {
-  approveIn(ws, id, specPath, tier);
+function approve(specPath: string, tier: string, migrated = false): void {
+  approveIn(ws, specPath, tier, migrated);
 }
 
 beforeEach(() => {
@@ -147,19 +179,37 @@ describe('spec-gate.sh', () => {
     expect(r.raw).toContain('SPEC-007');
   });
 
-  it('allows source edits once the spec is approved (hash matches)', () => {
+  it('allows source edits once the spec is approved (canonical hash matches)', () => {
     const sp = writeSpec('SPEC-007', 'T3', 'implementing');
-    approve('SPEC-007', sp, 'T3');
+    approve(sp, 'T3');
     expect(runGate(editEnvelope('src/app.ts')).decision).toBe('allow');
   });
 
-  it('DENIES again (stale) when the spec is edited after approval', () => {
+  it('a lifecycle-only edit (status flip) keeps approval — canonical hash unchanged', () => {
     const sp = writeSpec('SPEC-007', 'T3', 'implementing');
-    approve('SPEC-007', sp, 'T3');
+    approve(sp, 'T3');
+    // Edit ONLY the literal status line — canonical hash excludes it, so approval
+    // survives and the gate still allows.
+    const txt = fs.readFileSync(sp, 'utf-8').replace('status: implementing', 'status: specifying');
+    fs.writeFileSync(sp, txt);
+    expect(runGate(editEnvelope('src/app.ts')).decision).toBe('allow');
+  });
+
+  it('DENIES again (stale) when the spec BODY is edited after approval', () => {
+    const sp = writeSpec('SPEC-007', 'T3', 'implementing');
+    approve(sp, 'T3');
     fs.appendFileSync(sp, '\nedited after approval\n');
     const r = runGate(editEnvelope('src/app.ts'));
     expect(r.decision).toBe('deny');
     expect(r.raw).toContain('stale');
+  });
+
+  it('a migrated:true sidecar ALLOWS in the WARN phase but surfaces a re-approve note', () => {
+    const sp = writeSpec('SPEC-007', 'T3', 'implementing');
+    approve(sp, 'T3', /* migrated */ true);
+    const r = runGate(editEnvelope('src/app.ts'));
+    expect(r.decision).toBe('allow');
+    expect(r.raw).toContain('migrated');
   });
 
   it('kill-switch MINSPEC_GATE_OFF=1 disables the gate', () => {
@@ -186,25 +236,26 @@ describe('spec-gate.sh', () => {
     expect(r.decision).toBeNull();
   });
 
-  it('resolves approvals from the canonical (parent) checkout for a linked worktree', () => {
-    // Approve a gated spec in the CANONICAL checkout (ws) only — the worktree
-    // never gets its own approvals.json (it is gitignored / not seeded).
+  it('a linked worktree reads its OWN committed sidecar (FR-1 — no common-dir needed)', () => {
+    // SPEC-022 FR-1: the approvals/ tree is COMMITTED, so `git worktree add`
+    // MATERIALISES the sidecar in the worktree. The gate reads it from the
+    // worktree's own cwd — the load-bearing common-dir hop is gone.
     const sp = writeSpec('SPEC-007', 'T3', 'implementing');
-    approve('SPEC-007', sp, 'T3');
-    // Commit the spec so `git worktree add` materialises it in the worktree.
+    approve(sp, 'T3');
+    // Commit the spec AND its committed sidecar so the worktree gets both.
     const gitOpts = { cwd: ws, env: gateEnv({}), stdio: 'ignore' as const };
     execFileSync('git', ['add', '-A'], gitOpts);
-    execFileSync('git', ['commit', '-q', '-m', 'add approved spec'], gitOpts);
+    execFileSync('git', ['commit', '-q', '-m', 'add approved spec + sidecar'], gitOpts);
 
     const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'minspec-gate-wt-'));
     fs.rmSync(wt, { recursive: true, force: true }); // git worktree add needs a non-existing path
     execFileSync('git', ['worktree', 'add', '-q', wt, 'HEAD'], gitOpts);
     try {
-      // The worktree has the spec (committed) but NO local approvals.json.
-      expect(fs.existsSync(path.join(wt, '.minspec', 'approvals.json'))).toBe(false);
+      // The committed sidecar IS present in the worktree (FR-1 by construction).
+      const wtSidecar = path.join(wt, '.minspec', 'approvals', 'specs', 'SPEC-007-x.md.json');
+      expect(fs.existsSync(wtSidecar)).toBe(true);
       expect(fs.existsSync(path.join(wt, 'specs', 'SPEC-007-x.md'))).toBe(true);
-      // Editing source inside the worktree must resolve the canonical approval
-      // (from ws) and ALLOW — the worktree-dispatch HITL soundness guarantee.
+      // Editing source inside the worktree resolves its OWN sidecar and ALLOWs.
       const r = runGate(editEnvelope('src/app.ts', wt), {}, wt);
       expect(r.decision).toBe('allow');
     } finally {
