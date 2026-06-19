@@ -206,4 +206,16 @@ The **global parking-lot rule** — *mmo-platform DR-360* (the **parent** regist
 *Status: accepted · Date: 2026-06-06*
 
 DR-012 made spec approval an explicit human act: a content hash recorded in .minspec/approvals.json, with a PreToolUse gate (DR-031 / spec-gate.py) that denies source edits while any T3/T4 spec is status: implementing without a current approval. It is the only enforcement that survives bypass-permissions mode.
+
+## [DR-035 — Normalize checkbox state before hashing approved spec files](DR-035.md)
+
+*Status: accepted · Date: 2026-06-19*
+
+Approval system (DR-012) binds a spec to its sha256 hash at approval time. Any byte change → stale. Intended: editing spec content forces re-review. During investigation of checkbox-ticking during implement phase, a structural mismatch surfaced: Two semantic types of checkbox exist in the spec kit:
+
+## [DR-036 — Autopilot Mode — approve once, agents fly the build (greenlighted for SourceBridge trial)](DR-036.md)
+
+*Status: accepted · Date: 2026-06-19*
+
+MinSpec's HITL model requires human approval at every spec, plan, task-list, and PR. For throwaway "playground" repos (MeetLoop, HireLoop, SourceBridge) where a wrong build costs nothing real, the cost/friction of per-artifact approval is higher than the risk. A compressed alternative — one human gate, then fully autonomous — is worth trialling.
 <!-- minspec:dr-index:end -->
