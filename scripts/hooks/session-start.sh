@@ -45,3 +45,11 @@ WARN
   printf '%s' "$cur" > "$state" 2>/dev/null || true
   echo "Git: on '$cur'${dirty:+ (dirty)}. One session = one worktree; never checkout-switch this shared folder (#168)."
 fi
+
+# --- Agent-ready inbox drain (#239) ---
+# Piggybacks pending issue work onto active sessions. Runs in background so
+# the session starts immediately. --dry-run reports count without dispatching.
+DRAIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/drain-inbox.sh"
+if [[ -x "$DRAIN" ]]; then
+  "$DRAIN" --dry-run 2>/dev/null || true
+fi
