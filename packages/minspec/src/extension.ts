@@ -10,7 +10,7 @@ import { generateExampleCommand } from './commands/example';
 import { migrateLayoutCommand } from './commands/migrate';
 import { createAdrCommand, regenerateDrIndexCommand, acceptAdrCommand, setAdrStatusCommand } from './commands/adr';
 import { createEpicCommand, regenerateEpicIndexCommand, acceptEpicCommand } from './commands/epic';
-import { backfillEpicsCommand } from './commands/backfill-epics';
+import { backfillEpicsCommand, type BackfillOptions } from './commands/backfill-epics';
 import { regenerateDrIndex } from './lib/adr-manager';
 import { scoreWsjfCommand, triageIssueCommand } from './commands/backlog';
 import { approveSpecCommand, revokeApprovalCommand } from './commands/approve';
@@ -178,8 +178,8 @@ export function activate(context: vscode.ExtensionContext): void {
       adrTreeProvider.refresh();
       backlogTreeProvider.refresh();
     }),
-    vscode.commands.registerCommand('minspec.backfillEpics', async (folderArg?: string) => {
-      await backfillEpicsCommand(folderArg);
+    vscode.commands.registerCommand('minspec.backfillEpics', async (folderArg?: string, opts?: BackfillOptions) => {
+      await backfillEpicsCommand(folderArg, opts);
       specTreeProvider.refresh();
       adrTreeProvider.refresh();
       backlogTreeProvider.refresh();
@@ -367,8 +367,8 @@ export function activate(context: vscode.ExtensionContext): void {
       Promise.resolve(
         vscode.window.showInformationMessage(message, ...actions),
       ).then(choice => (typeof choice === 'string' ? choice : undefined)),
-    executeCommand: (commandId, folder) => {
-      const result = vscode.commands.executeCommand(commandId, folder);
+    executeCommand: (commandId, folder, arg) => {
+      const result = vscode.commands.executeCommand(commandId, folder, arg);
       return result instanceof Promise ? result.then(() => undefined) : undefined;
     },
     enableAutoClassify: () =>

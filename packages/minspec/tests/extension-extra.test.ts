@@ -710,7 +710,8 @@ describe('refresh-wrapping command callbacks', () => {
   it('backfillEpics forwards the folder arg then refreshes all three trees', async () => {
     activate(makeMockContext());
     await invokeCommand('minspec.backfillEpics', '/tmp/test-workspace');
-    expect(backfillEpicsCommand).toHaveBeenCalledWith('/tmp/test-workspace');
+    // #213: the handler now forwards a 2nd opts arg (BackfillOptions); undefined here.
+    expect(backfillEpicsCommand).toHaveBeenCalledWith('/tmp/test-workspace', undefined);
     expect(mockSpecTreeProvider.refresh).toHaveBeenCalled();
     expect(mockAdrTreeProvider.refresh).toHaveBeenCalled();
     expect(mockBacklogTreeProvider.refresh).toHaveBeenCalled();

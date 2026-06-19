@@ -241,8 +241,8 @@ export interface BootstrapVsCode {
     message: string,
     actions: readonly string[],
   ): Promise<string | undefined>;
-  /** Execute a VS Code command id */
-  executeCommand(commandId: string, folder?: string): Promise<void> | void;
+  /** Execute a VS Code command id. `arg` carries step-specific extra args (e.g. AI consent). */
+  executeCommand(commandId: string, folder?: string, arg?: unknown): Promise<void> | void;
   /**
    * Enable auto-classify-on-commit for the folder (the "Always" affordance).
    * Optional so existing test stubs need not implement it; absent → the
@@ -290,6 +290,12 @@ export interface BootstrapStep {
    * then runs the command once now. Only the classify step uses it.
    */
   readonly alwaysAction?: string;
+  /**
+   * Optional extra argument forwarded to the command after the folder. The
+   * backfill step uses it to pass AI consent ({ aiConsent: true }) — the offer's
+   * toast already promised the AI pass, so the command must not re-ask (#213).
+   */
+  readonly commandArg?: unknown;
 }
 
 const DONT_ASK = "Don't ask again";
@@ -342,6 +348,7 @@ export const BOOTSTRAP_STEPS: readonly BootstrapStep[] = [
     primaryAction: 'Backfill',
     commandId: 'minspec.backfillEpics',
     skipPrefKey: 'skipBackfillPrompt',
+    commandArg: { aiConsent: true },
   },
 ] as const;
 
@@ -399,11 +406,12 @@ export async function runBootstrap(
       if (vscode.enableAutoClassify) {
         await vscode.enableAutoClassify(rootDir);
       }
-      await vscode.executeCommand(step.commandId, rootDir);
+      await vscode.executeCommand(step.commandId, rootDir, step.commandArg);
     } else if (choice === step.primaryAction) {
       // Pass the bootstrapped folder so the command targets THIS folder, not a
-      // re-resolved one (matters in a multi-root workspace).
-      await vscode.executeCommand(step.commandId, rootDir);
+      // re-resolved one (matters in a multi-root workspace), plus any step-
+      // specific arg (backfill → AI consent).
+      await vscode.executeCommand(step.commandId, rootDir, step.commandArg);
     } else if (choice === DONT_ASK) {
       savePreferences(rootDir, { [step.skipPrefKey]: true });
     }

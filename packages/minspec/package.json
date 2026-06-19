@@ -395,6 +395,11 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically run 'MinSpec: Classify Task Complexity' after each git commit (watches .git/HEAD and .git/refs/heads/*). Off by default."
+        },
+        "minspec.autoBackfillUseAi": {
+          "type": "boolean",
+          "default": false,
+          "description": "Always use the AI pass when backfilling epics (skips the per-run 'AI-enhanced?' prompt). Set globally by choosing 'Always' on that prompt — a personal preference that follows you across projects. Runs 'claude -p' locally; the extension makes no network calls. Off by default."
         }
       }
     },

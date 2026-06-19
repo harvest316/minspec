@@ -873,10 +873,12 @@ describe('activate()', () => {
     activate(makeMockContext());
 
     // #123: init is invoked WITH the bootstrapped folder.
+    // #213: a 3rd commandArg now flows (undefined for the init step).
     await vi.waitFor(() => {
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
         'minspec.init',
         '/tmp/test-workspace',
+        undefined,
       );
     });
   });

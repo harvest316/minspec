@@ -290,7 +290,8 @@ describe('auto-bootstrap', () => {
       const result = await runBootstrap(tmpDir, stub);
       expect(result.choice).toBe('Initialize');
       // #123: the bootstrapped folder is passed so the command targets it.
-      expect(executeCommand).toHaveBeenCalledWith('minspec.init', tmpDir);
+      // #213: a 3rd arg (step.commandArg) now always flows; undefined for init.
+      expect(executeCommand).toHaveBeenCalledWith('minspec.init', tmpDir, undefined);
     });
 
     it("T0: Not Now does NOT persist any skip preference", async () => {
@@ -340,7 +341,7 @@ describe('auto-bootstrap', () => {
       });
       await runBootstrap(tmpDir, stub, [alwaysStep]);
       expect(enableAutoClassify).toHaveBeenCalledWith(tmpDir);
-      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir);
+      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir, undefined);
     });
 
     it('primary (Classify) → runs once WITHOUT enabling auto-classify', async () => {
@@ -349,14 +350,44 @@ describe('auto-bootstrap', () => {
       });
       await runBootstrap(tmpDir, stub, [alwaysStep]);
       expect(enableAutoClassify).not.toHaveBeenCalled();
-      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir);
+      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir, undefined);
     });
 
     it('Always falls back to a one-shot run when host lacks enableAutoClassify', async () => {
       const { stub, executeCommand } = makeVsCodeStub({ response: 'Always' });
       delete (stub as { enableAutoClassify?: unknown }).enableAutoClassify;
       await runBootstrap(tmpDir, stub, [alwaysStep]);
-      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir);
+      expect(executeCommand).toHaveBeenCalledWith('minspec.classify', tmpDir, undefined);
+    });
+  });
+
+  // =========================================================================
+  // #213: backfill step forwards AI consent so the command doesn't re-ask
+  // =========================================================================
+
+  describe('runBootstrap() — backfill AI-consent forwarding (#213)', () => {
+    it('the real backfill step carries commandArg { aiConsent: true }', () => {
+      const backfill = BOOTSTRAP_STEPS.find((s) => s.kind === 'backfill');
+      expect(backfill?.commandArg).toEqual({ aiConsent: true });
+    });
+
+    it('forwards commandArg as the 3rd executeCommand arg on the primary action', async () => {
+      const backfillStep: BootstrapStep = {
+        kind: 'backfill',
+        shouldRun: () => true,
+        message: 'MinSpec: backfill?',
+        primaryAction: 'Backfill',
+        commandId: 'minspec.backfillEpics',
+        skipPrefKey: 'skipBackfillPrompt',
+        commandArg: { aiConsent: true },
+      };
+      const { stub, executeCommand } = makeVsCodeStub({ response: 'Backfill' });
+      await runBootstrap(tmpDir, stub, [backfillStep]);
+      expect(executeCommand).toHaveBeenCalledWith(
+        'minspec.backfillEpics',
+        tmpDir,
+        { aiConsent: true },
+      );
     });
   });
 
@@ -418,7 +449,7 @@ describe('auto-bootstrap', () => {
       expect(result.offered).toBe('refresh');
       expect(showPrompt).toHaveBeenCalledTimes(1);
       expect(showPrompt.mock.calls[0]![0]).toMatch(/Harness templates updated/);
-      expect(executeCommand).toHaveBeenCalledWith('minspec.initRefresh', tmpDir);
+      expect(executeCommand).toHaveBeenCalledWith('minspec.initRefresh', tmpDir, undefined);
     });
   });
 

@@ -8,12 +8,20 @@ vi.mock('vscode', () => ({
     showInformationMessage: vi.fn(),
     showWarningMessage: vi.fn(),
     showTextDocument: vi.fn(),
+    showQuickPick: vi.fn(),
     withProgress: vi.fn((_opts: unknown, task: () => unknown) => task()),
   },
   workspace: {
     openTextDocument: vi.fn(() => Promise.resolve({})),
+    // alwaysUseAi() reads minspec.autoBackfillUseAi; default false (#213).
+    getConfiguration: vi.fn(() => ({
+      get: vi.fn(() => false),
+      update: vi.fn(() => Promise.resolve()),
+    })),
   },
   ProgressLocation: { Notification: 15 },
+  QuickPickItemKind: { Separator: -1, Default: 0 },
+  ConfigurationTarget: { Global: 1, Workspace: 2 },
 }));
 
 // ─── Mock lib deps ─────────────────────────────────────────────────────────
@@ -348,5 +356,145 @@ describe('backfillEpicsCommand()', () => {
     const confirmMsg = calls[0][0] as string;
     expect(confirmMsg).toContain(`${HEURISTIC_PROPOSAL.epics.length} epic`);
     expect(confirmMsg).toContain(`${HEURISTIC_PROPOSAL.mappings.length} artifact`);
+  });
+
+  // ===========================================================================
+  // #213: AI consent (no double-ask) + non-modal Apply/Tweak/Cancel + QuickPick
+  // ===========================================================================
+
+  // aiConsent inherited from the bootstrap offer → no "Use AI?" re-prompt.
+  it('runs the AI pass without re-prompting when aiConsent is passed', async () => {
+    vi.mocked(isClaudeAvailable).mockResolvedValue(true);
+    vi.mocked(proposeAI).mockResolvedValue({ ...makeProposal(1, 1), source: 'ai' } as BackfillProposal);
+    // Only ONE info message — the final confirm. No AI/heuristic choice.
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValueOnce('Apply' as never);
+    vi.mocked(applyBackfill).mockReturnValueOnce({ epicsCreated: 1, artifactsTagged: 1, skipped: 0 });
+
+    await backfillEpicsCommand(FOLDER, { aiConsent: true });
+
+    expect(proposeAI).toHaveBeenCalledWith(FOLDER);
+    const firstMsg = vi.mocked(vscode.window.showInformationMessage).mock.calls[0][0] as string;
+    expect(firstMsg).toContain('Apply');
+    expect(applyBackfill).toHaveBeenCalledWith(FOLDER, expect.objectContaining({ source: 'ai' }));
+  });
+
+  // Persisted "Always" (autoBackfillUseAi) → AI pass runs with no prompt.
+  it('runs the AI pass without prompting when autoBackfillUseAi is enabled', async () => {
+    vi.mocked(isClaudeAvailable).mockResolvedValue(true);
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+      get: vi.fn(() => true),
+      update: vi.fn(() => Promise.resolve()),
+    } as never);
+    vi.mocked(proposeAI).mockResolvedValue({ ...makeProposal(1, 1), source: 'ai' } as BackfillProposal);
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValueOnce('Apply' as never);
+    vi.mocked(applyBackfill).mockReturnValueOnce({ epicsCreated: 1, artifactsTagged: 1, skipped: 0 });
+
+    await backfillEpicsCommand(FOLDER);
+
+    expect(proposeAI).toHaveBeenCalledWith(FOLDER);
+    const firstMsg = vi.mocked(vscode.window.showInformationMessage).mock.calls[0][0] as string;
+    expect(firstMsg).toContain('Apply');
+  });
+
+  // 'Always' on the AI prompt persists the opt-in for next time.
+  it("persists autoBackfillUseAi when the user picks 'Always' on the AI prompt", async () => {
+    const update = vi.fn(() => Promise.resolve());
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+      get: vi.fn(() => false),
+      update,
+    } as never);
+    vi.mocked(isClaudeAvailable).mockResolvedValue(true);
+    vi.mocked(proposeAI).mockResolvedValue({ ...makeProposal(1, 1), source: 'ai' } as BackfillProposal);
+    vi.mocked(vscode.window.showInformationMessage)
+      .mockResolvedValueOnce('Always' as never)
+      .mockResolvedValueOnce('Apply' as never);
+    vi.mocked(applyBackfill).mockReturnValueOnce({ epicsCreated: 1, artifactsTagged: 1, skipped: 0 });
+
+    await backfillEpicsCommand(FOLDER);
+
+    // Written globally — a personal preference, not project policy (#213).
+    expect(update).toHaveBeenCalledWith(
+      'autoBackfillUseAi',
+      true,
+      vscode.ConfigurationTarget.Global,
+    );
+    expect(proposeAI).toHaveBeenCalledWith(FOLDER);
+  });
+
+  // The final approval toast is NON-modal (no { modal: true } options object).
+  it('uses a non-modal toast for the final approval', async () => {
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValueOnce('Apply' as never);
+    vi.mocked(applyBackfill).mockReturnValueOnce({ epicsCreated: 2, artifactsTagged: 3, skipped: 0 });
+
+    await backfillEpicsCommand(FOLDER);
+
+    const confirmCall = vi.mocked(vscode.window.showInformationMessage).mock.calls[0];
+    // Args after the message are plain button labels — no modal options object.
+    for (const arg of confirmCall.slice(1)) {
+      expect(typeof arg).toBe('string');
+    }
+    expect(confirmCall).toContain('Apply');
+    expect(confirmCall).toContain('Tweak…');
+    expect(confirmCall).toContain('Cancel');
+  });
+
+  // Tweak → QuickPick filters; only the kept items are applied.
+  it('Tweak opens a QuickPick and applies only the kept items', async () => {
+    vi.mocked(vscode.window.showInformationMessage)
+      .mockResolvedValueOnce('Tweak…' as never) // first confirm → tweak
+      .mockResolvedValueOnce('Apply' as never); // re-shown confirm → apply
+    // Drop the 2nd epic; keep epic-0 and all mappings (all map to epic-0).
+    vi.mocked(vscode.window.showQuickPick).mockImplementationOnce(
+      (async (items: Array<{ ref?: { kind: string; i: number } }>) =>
+        items.filter((it) => it.ref && !(it.ref.kind === 'epic' && it.ref.i === 1))) as never,
+    );
+    vi.mocked(applyBackfill).mockReturnValueOnce({ epicsCreated: 1, artifactsTagged: 3, skipped: 0 });
+
+    await backfillEpicsCommand(FOLDER);
+
+    expect(vscode.window.showQuickPick).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ canPickMany: true }),
+    );
+    const applied = vi.mocked(applyBackfill).mock.calls[0][1];
+    expect(applied.epics).toHaveLength(1);
+    expect(applied.mappings).toHaveLength(3);
+  });
+
+  // Dismissing the QuickPick keeps the original proposal untouched.
+  it('keeps the original proposal when the Tweak QuickPick is dismissed', async () => {
+    vi.mocked(vscode.window.showInformationMessage)
+      .mockResolvedValueOnce('Tweak…' as never)
+      .mockResolvedValueOnce('Apply' as never);
+    vi.mocked(vscode.window.showQuickPick).mockResolvedValueOnce(undefined as never);
+    vi.mocked(applyBackfill).mockReturnValueOnce({ epicsCreated: 2, artifactsTagged: 3, skipped: 0 });
+
+    await backfillEpicsCommand(FOLDER);
+
+    expect(applyBackfill).toHaveBeenCalledWith(FOLDER, HEURISTIC_PROPOSAL);
+  });
+
+  // Tweaking everything away → "Nothing left", no apply.
+  it('shows "Nothing left" and does not apply when Tweak drops all items', async () => {
+    vi.mocked(vscode.window.showInformationMessage)
+      .mockResolvedValueOnce('Tweak…' as never)
+      .mockResolvedValueOnce('Apply' as never);
+    vi.mocked(vscode.window.showQuickPick).mockResolvedValueOnce([] as never); // unchecked everything
+
+    await backfillEpicsCommand(FOLDER);
+
+    expect(applyBackfill).not.toHaveBeenCalled();
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      'MinSpec: Nothing left to apply after tweaking.',
+    );
+  });
+
+  // Cancel on the approval toast → no apply.
+  it('does not apply when the user picks Cancel', async () => {
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValueOnce('Cancel' as never);
+
+    await backfillEpicsCommand(FOLDER);
+
+    expect(applyBackfill).not.toHaveBeenCalled();
   });
 });
