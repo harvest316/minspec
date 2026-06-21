@@ -96,6 +96,38 @@ export function getSpecStatus(phases: PhaseState): SpecStatus {
 }
 
 /**
+ * Phase map after approving a spec for implementation (#148). Approval moves a
+ * spec out of the *specifying* band into the *implementing* band; this returns the
+ * phase map that makes `getSpecStatus` derive `implementing`, so the literal
+ * `status:` line and the `phases:` map cannot disagree (the #148 desync, where
+ * approval rewrote only the status line and left a stale phases map deriving
+ * `specifying`).
+ *
+ * Transition:
+ *  - specifying band (specify, clarify): `pending`/`in-progress` → `done`. A
+ *    `skipped` phase is preserved — a deliberate skip is not a completion.
+ *  - implementing band (plan → tasks → implement): the first phase that is NOT
+ *    already `done`/`skipped` becomes `in-progress` (the new current phase).
+ *    Already-done/skipped phases are left untouched.
+ *
+ * Precondition: callers approve only from the specifying band (status new/
+ * specifying), so at least one implementing-band phase is non-done — the result
+ * always derives `implementing`. Pure: no fs, no mutation of the input.
+ */
+export function phasesForApproval(phases: PhaseState): PhaseState {
+  const next: PhaseState = { ...phases };
+  for (const p of ['specify', 'clarify'] as Phase[]) {
+    if (next[p] !== 'skipped') next[p] = 'done';
+  }
+  for (const p of ['plan', 'tasks', 'implement'] as Phase[]) {
+    if (next[p] === 'done' || next[p] === 'skipped') continue;
+    next[p] = 'in-progress';
+    break;
+  }
+  return next;
+}
+
+/**
  * Get the index of a phase in the ordered PHASES array.
  * Returns -1 if not found.
  */
