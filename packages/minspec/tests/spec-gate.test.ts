@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { hashContent } from '../src/lib/approval';
 
 const HOOK = path.resolve(__dirname, '../../../scripts/hooks/spec-gate.sh');
@@ -63,17 +63,29 @@ function runGate(
   envelope: Record<string, unknown>,
   env: NodeJS.ProcessEnv = {},
   childCwd: string = ws,
+  hookPath: string = HOOK,
 ): { decision: string | null; raw: string } {
   // cwd is pinned to the per-test temp workspace both on the child process and
   // in the envelope, so the gate's `os.getcwd()` fallback can never reach the
   // real repo root, and its git-common-dir resolution stays inside the temp.
-  const out = execFileSync('bash', [HOOK], {
+  //
+  // spawnSync (not execFileSync) so a write-side EPIPE does not throw (#159). A
+  // hook is entitled to exit before consuming the whole envelope — the kill-switch
+  // and python3-missing fail-open paths both can — which closes the stdin pipe
+  // mid-write and raises EPIPE on our side. Under parallel-worker load that
+  // surfaced ~2/15 and crashed the test, NOT the gate: the child still ran, its
+  // stdout/exit code are captured. Treat EPIPE as "child ignored its input"; only
+  // a non-EPIPE spawn error is a real failure.
+  const res = spawnSync('bash', [hookPath], {
     input: JSON.stringify(envelope),
     cwd: childCwd,
     env: gateEnv(env),
     encoding: 'utf-8',
   });
-  const raw = out.trim();
+  if (res.error && (res.error as NodeJS.ErrnoException).code !== 'EPIPE') {
+    throw res.error;
+  }
+  const raw = (res.stdout ?? '').trim();
   if (!raw) return { decision: null, raw };
   try {
     return { decision: JSON.parse(raw).hookSpecificOutput.permissionDecision, raw };
@@ -167,6 +179,29 @@ describe('spec-gate.sh', () => {
     const r = runGate(editEnvelope('src/app.ts'), { MINSPEC_GATE_OFF: '1' });
     expect(r.decision).toBeNull(); // empty output = allow
     expect(r.raw).toBe('');
+  });
+
+  it('does not crash when the hook exits before draining a large stdin envelope (#159 EPIPE)', () => {
+    // Regression for the ~2/15 `spawnSync bash EPIPE` flake. A hook that exits
+    // without consuming all of stdin closes the pipe mid-write; with an envelope
+    // larger than the 64 KiB pipe buffer the writer deterministically hits EPIPE.
+    // The harness must treat that as the child ignoring its input (it still ran
+    // and exited 0), not as a failure. A stub hook reproduces it deterministically
+    // — the real kill-switch path drains via `cat`, so it cannot be forced there.
+    const stub = path.join(ws, 'noread-hook.sh');
+    fs.writeFileSync(stub, '#!/usr/bin/env bash\nexit 0\n'); // never reads stdin
+    fs.chmodSync(stub, 0o755);
+    const big = {
+      tool_name: 'Edit',
+      cwd: ws,
+      tool_input: { file_path: 'src/app.ts', pad: 'x'.repeat(200_000) }, // > 64 KiB
+    };
+    let r: { decision: string | null; raw: string } | undefined;
+    expect(() => {
+      r = runGate(big, {}, ws, stub);
+    }).not.toThrow();
+    expect(r!.decision).toBeNull(); // no stdout from the stub → allow
+    expect(r!.raw).toBe('');
   });
 
   it('kill-switch bypass is audited to canonical .minspec/gate-bypass.log', () => {
