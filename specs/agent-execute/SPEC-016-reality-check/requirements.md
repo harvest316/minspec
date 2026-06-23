@@ -22,7 +22,7 @@ relates_to: [SPEC-013, SPEC-010, SPEC-011]
 > (gated on the study, [#127](https://github.com/harvest316/minspec/issues/127)).
 
 **Date:** 2026-06-03
-**Decision:** [DR-029](../../../docs/decisions/DR-029.md) §5 · isolation [DR-030](../../../docs/decisions/DR-030.md) · tiering [DR-004](../../../docs/decisions/DR-004.md) · reuses the [SPEC-011](../../minspec/epic-backfill/requirements.md) `claude -p` pattern.
+**Decision:** [DR-029](../../../docs/decisions/DR-029.md) §5 · isolation [DR-030](../../../docs/decisions/DR-030.md) · tiering [DR-004](../../../docs/decisions/DR-004.md) · reuses the [SPEC-011](../../minspec/SPEC-011-epic-backfill/requirements.md) `claude -p` pattern.
 **Epic:** [EPIC-007 Agent Execute Extension](../../../docs/epics/EPIC-007-agent-execute.md)
 
 ---
