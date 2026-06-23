@@ -50,36 +50,55 @@ placeholders — and softly surface an empty constitution as a next human task.
   packages → "shared stays `vscode`/network-free" invariant candidate), bundle config
   (`.vscodeignore`/size), and existing `CLAUDE.md` / `docs/decisions/*` prose (extract
   already-stated invariants/principles). Output: a list of typed `Signal` records.
-- **FR-2 — Rule-based candidate generation.** A fixed catalog maps `Signal → Candidate`
-  (kind ∈ {invariant, principle, constraint, goal}, text, stable ID, provenance). No
-  inference beyond the catalog. Unmatched signals produce nothing (silence over noise).
-- **FR-3 — Scaffold integration.** `Initialize` writes the proposed DRAFT constitution —
-  **including a `## Goals` section** (currently absent from the scaffold) — instead of
-  empty placeholders. `Refresh Harness` offers to fill **only** empty/template sections
-  (INV-2).
+- **FR-2 — Two-tier candidate generation (silence > noise, but no signal lost).**
+  - *Tier A — written.* A fixed catalog maps `Signal → Candidate` (kind ∈ {invariant,
+    principle, constraint, goal}, text, stable ID). Only high-confidence catalog matches
+    are written as DRAFT entries. No inference beyond the catalog.
+  - *Tier B — surfaced, not written.* Notable signals with no catalog match are **not**
+    written into the doc; instead they are surfaced to the human as "other signals found,
+    not written up — might trigger thoughts." Keeps the doc clean while never silently
+    dropping a notable signal (OQ-1 resolved).
+- **FR-3 — Whole-doc proposal (offer if any section empty; additive on re-run).** If
+  **any** section is empty/template, offer to propose draft entries across the **whole**
+  constitution — including a `## Goals` section (currently absent from the scaffold).
+  Re-running `Initialize` does the **full** signal scan and proposes anything **not
+  already present** (additive, idempotent, whole-doc; never per-section piecemeal).
+  Existing human content is never touched (INV-2). (OQ-2 resolved.)
 - **FR-4 — DRAFT marking + human boundary.** Each proposed item is visibly DRAFT and
   removable; the moment a section has human content the proposer never rewrites it.
 - **FR-5 — Empty-constitution nudge.** When the constitution is empty/all-template, a
   **soft** advisory (signpost/validator, never a block) surfaces "author your
   constitution" as a next human task (RCDD phase-4: surface the bad state).
-- **FR-6 — Provenance shown.** The DRAFT renders each candidate's provenance so the human
-  can judge it ("proposed because: no network dependencies detected").
+- **FR-6 — Provenance is review-time only.** Each candidate's "proposed because <signal>"
+  is shown in the **proposal preview** so the human can judge it. It does **not** need to
+  persist in the doc; any DRAFT/provenance markers that do land are removed by compaction
+  (FR-7). So provenance cannot rot — it is gone after review (OQ-3 resolved).
+- **FR-7 — Offer to compact after review.** The constitution is read in (almost) every
+  session, so its token weight matters. After the human has reviewed, offer to **compact**
+  it: strip `DRAFT` markers and any provenance, tighten prose — never silently, always a
+  confirmed human action. Compaction is meaning-preserving; the human confirms the result.
 
 ## Out of scope
 
 - **LLM enrichment** of the draft → Tier-1 `agent-execute` follow-up (separate spec).
 - **Invariant enforcement** (wiring invariants as `gate-violation` in the resolver) →
   [#270](https://github.com/harvest316/minspec/issues/270).
+- **Constitution hash/approval integrity.** Not needed here: while invariants are not
+  enforced, the constitution is a freely human-edited doc (INV-2 non-overwrite is the only
+  guard). Once #270 makes invariants **load-bearing gates**, a silent edit could silently
+  change what's enforced project-wide — so a deliberate-edit checkpoint (DR-012-style
+  approval/hash, which also confirms a compaction rewrite) belongs to **#270**, not here.
 - Re-proposing / churning a human-authored constitution.
 
-## Open questions (for Clarify/Plan)
+## Open questions — resolved (Clarify)
 
-- **OQ-1 — Catalog contents.** Exact `Signal → Candidate` rules and their wording. How
-  conservative? (Bias to few high-confidence candidates over many weak ones.)
-- **OQ-2 — Refresh ergonomics.** Offer-to-fill UX when only *some* sections are empty —
-  per-section offer vs whole-doc?
-- **OQ-3 — Provenance format.** Inline comment vs a trailing "proposed because" note;
-  must survive human edits without rotting.
+- **OQ-1 (catalog) → resolved.** Silence > noise: only high-confidence catalog matches are
+  written (FR-2 Tier A); other notable signals are surfaced to the human, not written
+  (FR-2 Tier B).
+- **OQ-2 (ergonomics) → resolved.** Whole-doc: offer if any section empty; re-run scans
+  fully and adds anything missing (FR-3).
+- **OQ-3 (provenance rot) → resolved.** Provenance is review-time only and removed by
+  compaction (FR-6/FR-7) — it never persists to rot.
 
 ## Acceptance (T2 feature tests, happy + primary failure)
 
@@ -90,6 +109,10 @@ placeholders — and softly surface an empty constitution as a next human task.
   Constraints fills **only** Constraints (INV-2 idempotence/non-overwrite).
 - An all-template constitution triggers the soft "author your constitution" advisory
   (FR-5); a populated one does not.
+- A notable signal with no catalog match is surfaced as a "found, not written up"
+  suggestion, not injected into the doc (FR-2 Tier B).
+- After review, the offered compaction strips all `DRAFT`/provenance markers and leaves
+  meaning-equivalent prose; it never runs silently (FR-7).
 
 ## Traceability
 
