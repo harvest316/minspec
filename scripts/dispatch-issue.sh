@@ -63,6 +63,16 @@ if [[ -d "$WORKTREE" ]]; then
   git branch -D "$BRANCH" 2>/dev/null || true
 fi
 
+# Branch off ORIGIN/main, not local `main`. The shared checkout's local `main`
+# is frequently stale (rule #8 — we never switch/pull it from a session), so
+# basing agent work on it makes agents build on an outdated tree: they re-derive
+# already-merged work and emit factually-wrong output (smoke test: an agent
+# documented a merged script as "does not exist" because its base predated the
+# merge). Fetch the remote ref and branch from there so every agent starts from
+# the true tip. Fetch is a parent-side credentialed op; the agent still gets no
+# network tools.
+git fetch origin main -q
+
 # Spec-gate (HITL) reliance — DR-031 D3:
 # We deliberately do NOT set MINSPEC_GATE_OFF and do NOT seed approvals into the
 # worktree. As a linked worktree, its spec-gate resolves the CANONICAL approval
@@ -70,7 +80,7 @@ fi
 # genuinely human-approved spec passes the gate inside the worktree, while an
 # unapproved/stale spec correctly BLOCKS the dispatched edit (surfaced, never
 # bypassed). The bypass kill-switch is human-only; the pipeline must never use it.
-git worktree add -b "$BRANCH" "$WORKTREE" main
+git worktree add -b "$BRANCH" "$WORKTREE" origin/main
 
 echo "Launching $ROLE agent for: $ISSUE_TITLE"
 

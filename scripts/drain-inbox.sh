@@ -6,8 +6,15 @@
 # (not in parallel) to respect subscription quota.
 #
 # Usage:
-#   scripts/drain-inbox.sh              # auto-detect + dispatch
+#   scripts/drain-inbox.sh              # triage + dispatch now (manual trigger)
 #   scripts/drain-inbox.sh --dry-run    # report count, no dispatch
+#   scripts/drain-inbox.sh --enable-auto    # opt in: auto-drain every session start
+#   scripts/drain-inbox.sh --disable-auto   # opt out
+#   scripts/drain-inbox.sh --auto       # drain ONLY if opted in (the hook calls this)
+#
+# Opt-in is the once-off permission gate (#239): set it once with --enable-auto,
+# then the session-start hook drains automatically thereafter. The pref lives in
+# .minspec/auto-drain (gitignored — machine-local, never inherited by teammates).
 
 set -euo pipefail
 
@@ -15,13 +22,35 @@ REPO="harvest316/minspec"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DISPATCH="${SCRIPT_DIR}/dispatch-issue.sh"
 TRIAGE="${SCRIPT_DIR}/triage-inbox.sh"
+PREF_FILE="$(cd "${SCRIPT_DIR}/.." && pwd)/.minspec/auto-drain"
 DRY_RUN=false
 LOCK="/tmp/minspec-drain-inbox.lock"
 LOG="/tmp/minspec-drain-inbox.log"
 
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=true
-fi
+case "${1:-}" in
+  --dry-run) DRY_RUN=true ;;
+  --enable-auto)
+    mkdir -p "$(dirname "$PREF_FILE")"
+    echo "on" > "$PREF_FILE"
+    echo "✅  Auto-drain ENABLED. Each session start will triage + dispatch pending work."
+    echo "    Pref: $PREF_FILE (gitignored — only affects your machine). Disable: scripts/drain-inbox.sh --disable-auto"
+    exit 0
+    ;;
+  --disable-auto)
+    mkdir -p "$(dirname "$PREF_FILE")"
+    echo "off" > "$PREF_FILE"
+    echo "🛑  Auto-drain DISABLED. Drains run only when you invoke scripts/drain-inbox.sh."
+    exit 0
+    ;;
+  --auto)
+    # Hook entrypoint: honor the opt-in, stay silent otherwise (no opt-in = no nag here).
+    if [[ "$(cat "$PREF_FILE" 2>/dev/null || echo off)" != "on" ]]; then
+      exit 0
+    fi
+    ;;
+  "") ;;
+  *) echo "Unknown arg: $1"; exit 1 ;;
+esac
 
 # Count pending work across both stages
 INBOX_COUNT=0
