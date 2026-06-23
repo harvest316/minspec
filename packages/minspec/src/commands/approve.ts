@@ -133,12 +133,12 @@ export async function approveSpecCommand(
   // gate approval — they are surfaced non-modally below, never as a focus-stealing
   // approve-anyway dialog (HITL: advisory over the visible artifact).
   try {
-    // Flip the lifecycle status to `implementing` BEFORE recording the hash.
-    // Approval binds the spec's bytes; the status write changes them, so it must
-    // happen first — otherwise the hash is recorded over pre-flip bytes and the
-    // just-approved spec is instantly stale (flip-then-hash; DR-003 RCDD). Guard:
-    // only advance from a pre-implementation status — never downgrade done/archived
-    // or re-flip an already-implementing spec being re-approved after an edit.
+    // Flip the lifecycle status to `implementing`. Under the v2 normalized hash
+    // (#252) the `status:` line is excluded from the contract hash, so flip order
+    // no longer matters — a status write can never instantly stale a just-approved
+    // spec (this retired the old flip-then-hash dance; DR-003 RCDD). Guard: only
+    // advance from a pre-implementation status — never downgrade done/archived or
+    // re-flip an already-implementing spec being re-approved after an edit.
     const wasPreImpl =
       parsed.frontmatter.status === 'new' || parsed.frontmatter.status === 'specifying';
     if (wasPreImpl) {

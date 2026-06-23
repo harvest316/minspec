@@ -53,6 +53,33 @@ def sha(path):
         return None
 
 
+def normalize(text):
+    """Normalize spec content before hashing (#252) — the approval hash binds the
+    *contract*, not volatile/mechanical bytes. MUST stay byte-identical to
+    packages/minspec/src/lib/approval.ts::normalizeSpecContent (the two regexes
+    are intentionally trivial so both languages reproduce them exactly):
+      1. drop the lifecycle `status:` frontmatter line,
+      2. collapse relative-link URLs (./… or ../…) so #83 dir-renumbering of
+         sibling-spec link paths does not invalidate a human approval.
+    """
+    text = re.sub(r'^status:.*\r?\n', '', text, flags=re.M)
+    text = re.sub(r'\]\(\.{1,2}/[^)]*\)', '](RELLINK)', text)
+    return text
+
+
+def sha_normalized(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return hashlib.sha256(normalize(fh.read()).encode("utf-8")).hexdigest()
+    except Exception:
+        return None
+
+
+def sha_at(path, version):
+    """Hash `path` at the record's format version: v1 raw bytes, v2 normalized."""
+    return sha_normalized(path) if (version or 1) >= 2 else sha(path)
+
+
 def canonical_minspec_dir(cwd):
     """Resolve the canonical (main worktree) .minspec/ dir for `cwd` (DR-031).
 
@@ -92,6 +119,14 @@ def canonical_minspec_dir(cwd):
 
 
 def main():
+    # Debug/parity entrypoint (#252): `spec-gate.py --normalize <file>` prints the
+    # normalized contract to stdout. Used by the cross-language parity test to
+    # assert this normalize() matches approval.ts::normalizeSpecContent exactly.
+    if len(sys.argv) >= 3 and sys.argv[1] == "--normalize":
+        with open(sys.argv[2], "r", encoding="utf-8") as fh:
+            sys.stdout.write(normalize(fh.read()))
+        sys.exit(0)
+
     try:
         env = json.load(sys.stdin)
     except Exception:
@@ -162,11 +197,12 @@ def main():
             continue
         gated += 1
         rec = approvals.get(sid)
-        cur = sha(sp)
         if not rec:
             blockers.append("%s (not approved)" % sid)
-        elif rec.get("specHash") != cur:
-            blockers.append("%s (approval stale - spec edited since approval)" % sid)
+        else:
+            cur = sha_at(sp, rec.get("hashVersion"))
+            if rec.get("specHash") != cur:
+                blockers.append("%s (approval stale - spec edited since approval)" % sid)
 
     # Fail closed: if the canonical approval store is unresolvable AND gated
     # (T3/T4 implementing) specs exist, we cannot prove a human approved -> deny.
