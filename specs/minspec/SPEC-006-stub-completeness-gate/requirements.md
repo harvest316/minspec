@@ -4,7 +4,7 @@ id: SPEC-006
 type: requirements
 tier: T3
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
-status: specifying
+status: implementing
 product: minspec
 ---
 

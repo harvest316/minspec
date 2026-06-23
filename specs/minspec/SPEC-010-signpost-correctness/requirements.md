@@ -2,7 +2,7 @@
 id: SPEC-010
 type: requirements
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
-status: specifying
+status: implementing
 tier: T4  # foundational: 17 FRs, DAG model, shared multi-caller contract — full ceremony (manual classification; classifier under-tiers by diff size)
 product: minspec
 epic: EPIC-002  # Signpost Integrity
