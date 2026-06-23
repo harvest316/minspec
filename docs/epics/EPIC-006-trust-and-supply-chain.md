@@ -3,7 +3,7 @@ id: EPIC-006
 slug: trust-and-supply-chain
 title: Trust, Consent & Supply Chain
 status: active
-order: 6
+order: 5
 ---
 
 # EPIC-006: Trust, Consent & Supply Chain

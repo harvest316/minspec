@@ -3,7 +3,7 @@ id: EPIC-007
 slug: agent-execute
 title: Agent Execute Extension
 status: active
-order: 7
+order: 6
 ---
 
 # EPIC-007: Agent Execute Extension

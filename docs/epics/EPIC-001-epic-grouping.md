@@ -3,7 +3,7 @@ id: EPIC-001
 slug: epic-grouping
 title: Explorer Epic Grouping
 status: active
-order: 1
+order: 7
 ---
 
 # EPIC-001: Explorer Epic Grouping

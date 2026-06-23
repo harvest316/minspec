@@ -3,7 +3,7 @@ id: EPIC-003
 slug: sdd-core
 title: SDD Core Methodology
 status: active
-order: 3
+order: 1
 ---
 
 # EPIC-003: SDD Core Methodology

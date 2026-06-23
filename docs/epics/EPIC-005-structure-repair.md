@@ -3,7 +3,7 @@ id: EPIC-005
 slug: structure-repair
 title: Auto Structure Repair
 status: active
-order: 5
+order: 3
 ---
 
 # EPIC-005: Auto Structure Repair
