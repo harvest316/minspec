@@ -38,3 +38,6 @@ packages/minspec/test-fixtures/workspace/.minspec/generated-hashes.json
 
 # MinSpec local approval state (content-hash bound, machine-local)
 .minspec/approvals.json
+
+# Auto-drain opt-in (#239) — personal/machine-local, never inherited by teammates
+.minspec/auto-drain

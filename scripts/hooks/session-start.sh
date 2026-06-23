@@ -47,9 +47,22 @@ WARN
 fi
 
 # --- Agent-ready inbox drain (#239) ---
-# Piggybacks pending issue work onto active sessions. Runs in background so
-# the session starts immediately. --dry-run reports count without dispatching.
+# Piggybacks pending issue work onto active sessions, in the background so the
+# session starts immediately. Opt-in gated (#239): once you run
+# `scripts/drain-inbox.sh --enable-auto`, this auto-triages + dispatches on every
+# session start. Until then it only reports the pending count.
 DRAIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/drain-inbox.sh"
+PREF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.minspec/auto-drain"
 if [[ -x "$DRAIN" ]]; then
-  "$DRAIN" --dry-run 2>/dev/null || true
+  if [[ "$(cat "$PREF" 2>/dev/null || echo off)" == "on" ]]; then
+    "$DRAIN" --auto 2>/dev/null || true
+  else
+    pending="$("$DRAIN" --dry-run 2>/dev/null || true)"
+    if [[ -n "$pending" ]]; then
+      printf '%s\n' "$pending"
+      # nudge only when there is real pending work
+      echo "$pending" | grep -q '📬' && \
+        echo "    Auto-drain is OFF. Enable once: scripts/drain-inbox.sh --enable-auto"
+    fi
+  fi
 fi
