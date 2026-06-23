@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { validateSpec, validateSplitLayoutCoverage } from '../src/lib/spec-validator';
-import type { SplitLayoutFile } from '../src/lib/spec-validator';
+import {
+  validateSpec,
+  validateSplitLayoutCoverage,
+  validateStatusMonotonicity,
+  validateStatusClaims,
+} from '../src/lib/spec-validator';
+import type { SplitLayoutFile, StatusMonotonicityFile } from '../src/lib/spec-validator';
 import { parseSpec } from '../src/lib/spec';
 import { DEFAULT_CONFIG } from '../src/lib/config';
 
@@ -1147,5 +1152,257 @@ describe('validateSpec — INV-4 literal/derived status mirror drift', () => {
     const drift = result.violations.find((v) => v.rule === 'status.mirror-drift');
     expect(drift).toBeDefined();
     expect(drift!.message).toContain('archived');
+  });
+});
+
+// ─── #277: cross-artifact status monotonicity ────────────────────────────────
+//
+// A split-layout spec's parent requirements artifact must not lag behind its
+// children. The real instance: SPEC-004 had requirements.md `specifying` while
+// tasks.md derived `implementing` and the harness was already built+run — parent
+// said not-started, child said in-progress, and validateSpec never asserted the
+// parent ≥ its children in lifecycle order. WARN-first (incremental authoring is
+// legitimate; this surfaces a desync, it does not block).
+describe('validateStatusMonotonicity — cross-artifact status (#277)', () => {
+  // Phase fixtures, by the status they derive to under `approved`.
+  const PENDING = {
+    specify: 'pending', clarify: 'pending', plan: 'pending', tasks: 'pending', implement: 'pending',
+  } as const;
+  const SPECIFYING = {
+    specify: 'in-progress', clarify: 'pending', plan: 'pending', tasks: 'pending', implement: 'pending',
+  } as const;
+  const IMPLEMENTING = {
+    specify: 'done', clarify: 'done', plan: 'done', tasks: 'done', implement: 'in-progress',
+  } as const;
+  const DONE = {
+    specify: 'done', clarify: 'done', plan: 'done', tasks: 'done', implement: 'done',
+  } as const;
+
+  const f = (
+    type: string,
+    phases: Record<string, string>,
+    approvalState: 'approved' | 'stale' | 'unapproved' = 'approved',
+  ): StatusMonotonicityFile => ({ type, phases, approvalState });
+
+  it('flags a parent (requirements) lagging behind a child (tasks)', () => {
+    // requirements derives `specifying` (unapproved), tasks derives `implementing`
+    // (approved + implement in-progress) → parent < child → violation.
+    const r = validateStatusMonotonicity([
+      f('requirements', SPECIFYING, 'unapproved'),
+      f('tasks', IMPLEMENTING, 'approved'),
+    ]);
+    expect(r.notSplitLayout).toBe(false);
+    const v = r.violations.find((x) => x.rule === 'status.cross-artifact.regression');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    expect(v!.message).toContain('specifying');
+    expect(v!.message).toContain('implementing');
+    // WARN-first — never blocks.
+    expect(r.violations.some((x) => x.severity === 'error')).toBe(false);
+  });
+
+  it('passes when the parent is at or ahead of every child', () => {
+    const r = validateStatusMonotonicity([
+      f('requirements', IMPLEMENTING, 'approved'),
+      f('design', IMPLEMENTING, 'approved'),
+      f('tasks', SPECIFYING, 'unapproved'),
+    ]);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('passes when parent and child are equal', () => {
+    const r = validateStatusMonotonicity([
+      f('requirements', IMPLEMENTING, 'approved'),
+      f('tasks', IMPLEMENTING, 'approved'),
+    ]);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('flags the MAX child, naming the worst offender', () => {
+    // parent specifying; design implementing, tasks done → max child is `done`.
+    const r = validateStatusMonotonicity([
+      f('requirements', SPECIFYING, 'unapproved'),
+      f('design', IMPLEMENTING, 'approved'),
+      f('tasks', DONE, 'approved'),
+    ]);
+    const v = r.violations.find((x) => x.rule === 'status.cross-artifact.regression');
+    expect(v).toBeDefined();
+    expect(v!.message).toContain('done'); // the max child status drives the message
+  });
+
+  it('reports notSplitLayout (no violations) when there is no requirements file', () => {
+    const r = validateStatusMonotonicity([f('design', IMPLEMENTING), f('tasks', DONE)]);
+    expect(r.notSplitLayout).toBe(true);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('reports notSplitLayout for a non-split set (no split `type:` files)', () => {
+    const r = validateStatusMonotonicity([f('', IMPLEMENTING)]);
+    expect(r.notSplitLayout).toBe(true);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('does not flag when the only child equals a `new` parent (all pending)', () => {
+    const r = validateStatusMonotonicity([
+      f('requirements', PENDING, 'unapproved'),
+      f('design', PENDING, 'unapproved'),
+    ]);
+    expect(r.violations).toHaveLength(0);
+  });
+
+  it('flags a `new` parent against an `implementing` child', () => {
+    const r = validateStatusMonotonicity([
+      f('requirements', PENDING, 'unapproved'),
+      f('tasks', IMPLEMENTING, 'approved'),
+    ]);
+    const v = r.violations.find((x) => x.rule === 'status.cross-artifact.regression');
+    expect(v).toBeDefined();
+    expect(v!.message).toContain('new');
+  });
+});
+
+// ─── #162: superseded-by required-when-superseded ────────────────────────────
+//
+// SPEC-017 FR-5 requires a `superseded-by` ref when status is `superseded`, but
+// nothing enforced it (classic present-but-missing asymmetry, #137). NOTE:
+// `superseded` is NOT in the SpecStatus union (lifecycle.ts: it "joins when #162
+// lands"), so for specs this gate never fires today — it is scoped to where
+// `superseded` IS a valid status (DRs / AdrStatus, and future SpecStatus). The
+// gate keys on the RAW `status:` line so it fires for any artifact authored with
+// `status: superseded`. Applies the #137 symmetric primitive: present-when-required
+// AND resolving (non-dangling reference).
+describe('validateSpec — superseded-by required-when-superseded (#162)', () => {
+  function artifact(fmExtra: string): string {
+    return `---\nid: SPEC-100\ntitle: Y\ntier: T3\nstatus: superseded${fmExtra}\ncreated: 2026-05-30\nphases:\n  specify: done\n  clarify: pending\n  plan: done\n  tasks: done\n  implement: in-progress\n---\n\n## Specify\nBuild it.\n- [ ] c1\n\n## Plan\nSteps.\n\n## Tasks\n- [ ] t\n\n## Implement\ncode.\n`;
+  }
+
+  it('warns when status is superseded but superseded-by is absent', () => {
+    const r = validateSpec(parseSpec(artifact('')), DEFAULT_CONFIG);
+    const v = r.violations.find((x) => x.rule === 'frontmatter.superseded-by.missing');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    // WARN-first — never blocks.
+    expect(r.violations.some((x) => x.rule.startsWith('frontmatter.superseded-by') && x.severity === 'error')).toBe(false);
+  });
+
+  it('warns when superseded-by is present but does not resolve (no resolver → dangling)', () => {
+    // With a resolver supplied that does not include the ref, it is dangling.
+    const known = new Set<string>(['spec-200']);
+    const r = validateSpec(
+      parseSpec(artifact('\nsuperseded-by: SPEC-999')),
+      DEFAULT_CONFIG,
+      undefined,
+      undefined,
+      undefined,
+      known,
+    );
+    const v = r.violations.find((x) => x.rule === 'frontmatter.superseded-by.unresolved');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    expect(v!.message).toContain('SPEC-999');
+  });
+
+  it('passes when superseded-by is present and resolves', () => {
+    const known = new Set<string>(['spec-200']);
+    const r = validateSpec(
+      parseSpec(artifact('\nsuperseded-by: SPEC-200')),
+      DEFAULT_CONFIG,
+      undefined,
+      undefined,
+      undefined,
+      known,
+    );
+    expect(r.violations.some((x) => x.rule.startsWith('frontmatter.superseded-by'))).toBe(false);
+  });
+
+  it('does not require a resolver: present superseded-by passes the presence check (no dangling check without a resolver)', () => {
+    const r = validateSpec(parseSpec(artifact('\nsuperseded-by: SPEC-200')), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule.startsWith('frontmatter.superseded-by'))).toBe(false);
+  });
+
+  it('does NOT require superseded-by for a non-superseded status', () => {
+    const ok = `---\nid: SPEC-101\ntitle: Y\ntier: T3\nstatus: implementing\ncreated: 2026-05-30\nphases:\n  specify: done\n  clarify: pending\n  plan: done\n  tasks: done\n  implement: in-progress\n---\n\n## Specify\nx\n- [ ] c1\n\n## Plan\ny\n\n## Tasks\n- [ ] t\n\n## Implement\nz\n`;
+    const r = validateSpec(parseSpec(ok), DEFAULT_CONFIG);
+    expect(r.violations.some((x) => x.rule.startsWith('frontmatter.superseded-by'))).toBe(false);
+  });
+});
+
+// ─── #98: doc status-claims must match referenced status ──────────────────────
+//
+// An artifact's prose can claim a feature is `implemented`/`done`/`built` while the
+// owning spec is still `specifying` with zero code — a false signpost (the SPEC-002
+// → SPEC-014 overclaim, RCDD 2026-06-01). Deterministic Slice-1: scan for explicit
+// `SPEC-NNN … implemented|done|built|shipped` (and `DR-NNN … accepted`) claims and
+// WARN when the referenced artifact's ACTUAL status contradicts the claim. The
+// status map is caller-supplied (same no-false-positive pattern as knownEpicRefs):
+// omit it and the check is skipped entirely.
+describe('validateStatusClaims — doc claim vs referenced status (#98)', () => {
+  it('warns when a doc claims SPEC-014 implemented but its status is specifying', () => {
+    const body = 'The Review Webview is **implemented** (SPEC-014) and ships in v1.';
+    const r = validateStatusClaims(body, new Map([['SPEC-014', 'specifying']]));
+    const v = r.find((x) => x.rule === 'status-claim.contradicted');
+    expect(v).toBeDefined();
+    expect(v!.severity).toBe('warning');
+    expect(v!.message).toContain('SPEC-014');
+    expect(v!.message).toContain('implemented');
+    expect(v!.message).toContain('specifying');
+  });
+
+  it('passes when the doc claims SPEC-NNN implemented and its status is done', () => {
+    const body = 'SPEC-020 is now implemented across the board.';
+    const r = validateStatusClaims(body, new Map([['SPEC-020', 'done']]));
+    expect(r).toHaveLength(0);
+  });
+
+  it('passes when the doc claims SPEC-NNN implemented and its status is implementing', () => {
+    const body = 'SPEC-020 has been built and is implementing.';
+    const r = validateStatusClaims(body, new Map([['SPEC-020', 'implementing']]));
+    expect(r).toHaveLength(0);
+  });
+
+  it('warns on a DR claimed accepted that is still proposed', () => {
+    const body = 'Per DR-031 (accepted), we route through the broker.';
+    const r = validateStatusClaims(body, new Map([['DR-031', 'proposed']]));
+    const v = r.find((x) => x.rule === 'status-claim.contradicted');
+    expect(v).toBeDefined();
+    expect(v!.message).toContain('DR-031');
+  });
+
+  it('passes a DR claimed accepted that IS accepted', () => {
+    const body = 'Per DR-031 (accepted), we route through the broker.';
+    const r = validateStatusClaims(body, new Map([['DR-031', 'accepted']]));
+    expect(r).toHaveLength(0);
+  });
+
+  it('ignores a reference with no implementation-status claim attached', () => {
+    const body = 'See SPEC-014 for the review webview design.';
+    const r = validateStatusClaims(body, new Map([['SPEC-014', 'specifying']]));
+    expect(r).toHaveLength(0);
+  });
+
+  it('does not warn for a referenced id not present in the status map (unknown → skip)', () => {
+    const body = 'SPEC-999 is implemented.';
+    const r = validateStatusClaims(body, new Map([['SPEC-014', 'specifying']]));
+    expect(r).toHaveLength(0);
+  });
+
+  it('returns no violations when the status map is empty', () => {
+    const body = 'SPEC-014 is implemented.';
+    const r = validateStatusClaims(body, new Map());
+    expect(r).toHaveLength(0);
+  });
+
+  it('matches a claim where the verb precedes the id', () => {
+    const body = 'We have shipped the gate (SPEC-022).';
+    const r = validateStatusClaims(body, new Map([['SPEC-022', 'specifying']]));
+    const v = r.find((x) => x.rule === 'status-claim.contradicted');
+    expect(v).toBeDefined();
+    expect(v!.message).toContain('SPEC-022');
+  });
+
+  it('does not double-fire when the same contradicted claim appears twice', () => {
+    const body = 'SPEC-014 implemented.\nAgain: SPEC-014 implemented.';
+    const r = validateStatusClaims(body, new Map([['SPEC-014', 'specifying']]));
+    expect(r.filter((x) => x.rule === 'status-claim.contradicted')).toHaveLength(1);
   });
 });
