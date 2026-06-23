@@ -18,6 +18,10 @@ import {
 } from '../packages/minspec/src/lib/spec-validator';
 import { DEFAULT_CONFIG } from '../packages/minspec/src/lib/config';
 import type { Tier } from '../packages/minspec/src/lib/config';
+import {
+  checkReferences,
+  type ReferenceRegistry,
+} from '../packages/minspec/src/lib/reference-checker';
 
 const ROOT = process.cwd();
 let errors = 0;
@@ -35,6 +39,16 @@ function glob(dir: string, ext: string): string[] {
     }
   }
   return results;
+}
+
+// glob() that tolerates a missing directory (returns []) — used by checks that
+// scan optional corpus locations.
+function safeGlob(dir: string, ext: string): string[] {
+  try {
+    return glob(dir, ext);
+  } catch {
+    return [];
+  }
 }
 
 function parseFrontmatter(content: string): Record<string, string> {
@@ -126,6 +140,47 @@ function epicRef(raw: string | undefined): string {
   return (hash === -1 ? raw : raw.slice(0, hash)).trim();
 }
 
+// Build the registry the dangling-reference checker (#161) resolves against:
+// every SPEC id (from spec frontmatter AND directory names like
+// SPEC-004-classifier-validation), DR id (from docs/decisions/DR-NNN.md
+// filenames), and EPIC id (from epic frontmatter/filenames). fileExists is
+// re-scoped per artifact at the call site (artifact-dir-relative, then repo-root).
+function buildReferenceRegistry(): ReferenceRegistry {
+  const specs = new Set<string>();
+  const decisions = new Set<string>();
+  const epics = new Set<string>();
+
+  const specsRoot = join(ROOT, 'specs');
+  for (const file of safeGlob(specsRoot, '.md')) {
+    const id = parseFrontmatter(readFileSync(file, 'utf-8'))['id'];
+    if (id && /^SPEC-\d+$/.test(id)) specs.add(id);
+  }
+  // Directory names also define a spec (split-layout dirs may have no top-level
+  // id-bearing file). Match SPEC-NNN at the start of any path segment.
+  for (const file of safeGlob(specsRoot, '.md')) {
+    for (const seg of relative(ROOT, file).split('/')) {
+      const m = seg.match(/^(SPEC-\d+)/);
+      if (m) specs.add(m[1]);
+    }
+  }
+
+  const decisionsRoot = resolveDecisionsDir();
+  for (const file of safeGlob(decisionsRoot, '.md')) {
+    const m = relative(ROOT, file).split('/').pop()?.match(/^(DR-\d+)/);
+    if (m) decisions.add(m[1]);
+  }
+
+  const epicsRoot = join(ROOT, 'docs', 'epics');
+  for (const file of safeGlob(epicsRoot, '.md')) {
+    const fm = parseFrontmatter(readFileSync(file, 'utf-8'));
+    if (fm['id'] && /^EPIC-\d+$/.test(fm['id'])) epics.add(fm['id']);
+    const m = relative(ROOT, file).split('/').pop()?.match(/^(EPIC-\d+)/);
+    if (m) epics.add(m[1]);
+  }
+
+  return { specs, decisions, epics, fileExists: () => false };
+}
+
 // Rule 2 + 5: specs/**/*.md must have id: SPEC-NNN, and — once epics are
 // registered — a resolvable `epic:` ref. The epic gate is the CI-side backstop
 // for the asymmetry that stranded SPEC-004 (DR-003): a *missing* epic was as
@@ -201,6 +256,39 @@ try {
   }
 } catch {
   // Decisions dir unreadable / absent — nothing to validate, stay silent.
+}
+
+// Rule 8 (non-fatal — Slice-1, #161): dangling-reference checker. Scans every
+// spec + DR for SPEC/DR/EPIC/file:line citations and WARNS on any that resolve to
+// no existing artifact or file (DR-355 phantoms, drifted line citations, broken
+// research-doc paths). Warn-first by design: the corpus today carries known
+// cross-repo refs (SPEC-100/101/102 @ scroogellm) that this slice surfaces rather
+// than blocks; tightening to a hard failure is a follow-up once the corpus is
+// clean and the `@namespace` exemption is adopted. Standalone module — does not
+// touch spec-validator.ts.
+try {
+  const registry = buildReferenceRegistry();
+  // Scan specs + decisions. Paths in file:line citations are resolved relative to
+  // the artifact's own directory first, then the repo root — matching how authors
+  // actually write `../../docs/research/…` and `src/foo.ts#L42`.
+  const artifactFiles = [
+    ...safeGlob(specsDir, '.md'),
+    ...safeGlob(resolveDecisionsDir(), '.md'),
+  ];
+  for (const file of artifactFiles) {
+    const content = readFileSync(file, 'utf-8');
+    const artifactDir = dirname(file);
+    const scopedRegistry: ReferenceRegistry = {
+      ...registry,
+      fileExists: (relPath) =>
+        existsSync(join(artifactDir, relPath)) || existsSync(join(ROOT, relPath)),
+    };
+    for (const v of checkReferences(content, scopedRegistry)) {
+      warn(`ref-check ${relative(ROOT, file)}: ${v.message}`);
+    }
+  }
+} catch {
+  // Corpus unreadable / absent — nothing to check, stay silent.
 }
 
 if (warnings > 0) {
