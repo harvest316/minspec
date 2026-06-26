@@ -89,3 +89,11 @@ agent-execute (DR-015), team/CI dispatch, DAG-viz polish, and marketing / site c
 Everything deferred above: Marketplace listing + onboarding, the Scrooge funnel (G-5),
 broader model / UX polish, team mode. May be polished incrementally **as long as no Phase-2
 item displaces an unmet Phase-1 item**.
+
+## Glossary
+
+Canonical terms. Use these in UI labels, prose, and code.
+
+| Term | Definition |
+|---|---|
+| **Approvable** | Any artifact that carries a human approval gate before work may proceed: Spec, DR, PR, Epic, or Issue. The set surfaces in the signpost as "Pending Approvables." Type alias: `type Approvable` in `packages/shared/src/contracts/`. Distinct from `approvals.json`, which is the *store* of approval hashes. (DR-041) |

@@ -243,6 +243,12 @@ The human priority dial is epic.order (coarse) + ranked project Goals (thematic,
 
 Hardening DR-023 (no orphan follow-ups) without surfacing commit friction: on DR save, un-materialized `## Follow-ups (tracked)` bullets are auto-filed as issues with the `#ref` written back, while genuinely dangling refs stay a surfaced error. Scoped to the curated section only (threads DR-023's "don't auto-create every consequence" rejection). Closes the DR-019 input leak honestly instead of teaching the resolver to infer priority from prose.
 
+## [DR-041 — Canonical term for review-gate artifacts is "Approvable"](DR-041.md)
+
+*Status: proposed · Date: 2026-06-26*
+
+MinSpec tracks five artifact kinds that all share one property: a human must read and approve them before work proceeds. The signpost (DR-019) surfaces the single next human task from this set. The approval gate (DR-012 / DR-034) hashes and locks them. Nothing in the codebase named the set as a whole.
+
 ## [DR-042 — Outcome metrics before engagement — sequence the trust-measurement build (outcome is the moat, engagement is the garnish)](DR-042.md)
 
 *Status: proposed · Date: 2026-06-26*
