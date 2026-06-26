@@ -5,6 +5,7 @@ status: specifying
 tier: T4
 product: minspec
 epic: EPIC-007  # Agent Execute
+relates_to: [SPEC-014, SPEC-012, SPEC-006]  # review-webview skim surface · next-task signpost · hollow-test scanner
 ---
 
 # MinSpec — Auto-Merge Eligibility Gate (Requirements)
@@ -68,6 +69,7 @@ merge-vs-hold decision. This spec is that decision.
 - **FR-5** blast-radius classification of a PR (low vs high) from the consequence signals.
 - **FR-6** loop integration: replace #172's unconditional hold with eligible→merge / else→hold.
 - **FR-7** an audit trail: every merge/hold decision records which conditions passed/failed.
+- **FR-8** high-blast skim surface: hand the held PR + signal block to SPEC-014's in-IDE review-webview as a keyboard-first next-human-task (GitHub comment is the degraded fallback).
 
 ### Out of scope (explicitly)
 - The real call-graph index (#195) and reach validation (#91) — conservative degrade covers their absence.
@@ -93,6 +95,10 @@ merge-vs-hold decision. This spec is that decision.
 - **INV-6 Decision is pure + auditable.** `decideAutoMerge` is a pure function of its inputs
   (the IO — running the prover, reading signals — happens upstream and is passed in). Every
   decision emits a structured reason (FR-7).
+- **INV-7 Keyboard-first approve.** The high-blast approve+merge action (FR-8) is reachable
+  by a two-key chord / hotkey, never mouse-only. It is the highest-frequency human action in
+  the loop; a mouse-only path is a defect (global RSI rule). T-test: the surface exposes a
+  bound key for approve+merge.
 
 ## Functional Requirements
 
@@ -116,12 +122,26 @@ merge-vs-hold decision. This spec is that decision.
   any of {irreversibility, sensitive-sink, public-API delta, concurrency} trips, OR the FR-4
   degrade condition holds; else **low**. (This is the routing DR-033 §3 keys auto-merge on.)
 - **FR-6 Loop integration.** In the #172 dispatch, after a PR's checks are green, call the
-  prover (FR-2) + gate (FR-1). `eligible` ⇒ `gh pr merge --squash`; else ⇒ leave open,
-  post the #180 signal block, label `needs-human-skim`. Honors the per-dev mode (C4): in
-  `PR-gate` mode the gate is bypassed (always hold).
+  prover (FR-2) + gate (FR-1). `eligible` ⇒ `gh pr merge --squash` (low-blast, no human).
+  Else ⇒ **do not merge; emit a high-blast review task (FR-8)** carrying the #180 signal
+  block + the blast reason, and label the PR `needs-human-skim`. Honors the per-dev mode
+  (C4): in `PR-gate` mode the gate always holds (every PR routes to FR-8).
 - **FR-7 Decision audit.** Every invocation appends a record (PR#, eligible, failed
   conditions, blast class, signal snapshot) to an audit log, so a wrong auto-merge is
   traceable to which condition lied.
+- **FR-8 High-blast skim surface (hand-off to SPEC-014).** A held PR surfaces as a
+  **next-human-task** in the [SPEC-012](../SPEC-012-next-task-resolver/requirements.md)
+  signpost and renders **in-IDE** via the [SPEC-014](../SPEC-014-review-webview/requirements.md)
+  review-webview — non-modal (#104), not a GitHub tab the human must go find. The surface
+  shows the #180 three-signal block + the one-line blast reason (which consequence signal
+  tripped, e.g. "sensitive-sink: auth/"), and offers exactly two actions: **approve+merge**
+  and **open diff**. The approve+merge action MUST be reachable by a **two-key chord /
+  keyboard hotkey** (INV-7) — skimming + merging high-blast PRs is the *highest-frequency*
+  human action in the loop, so the keyboard path is a requirement, not an enhancement.
+  **Degraded fallback** (honest, not silent): when no IDE surface is attached (headless /
+  cron / CI dispatch), FR-6 posts the same block as a GitHub PR comment and the human
+  merges via `gh pr merge`. The block content is identical across surfaces (one renderer,
+  #180) — only the host differs.
 
 ## Contract (TypeScript sketch)
 
