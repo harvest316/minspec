@@ -245,7 +245,7 @@ DR-023 requires every DR to materialize its surfaced work as tracked issues/spec
 
 ## [DR-041 — Canonical term for review-gate artifacts is "Approvable"](DR-041.md)
 
-*Status: proposed · Date: 2026-06-27*
+*Status: accepted · Date: 2026-06-27*
 
 MinSpec tracks five artifact kinds that all share one property: a human must read and approve them before work proceeds. The signpost (DR-019) surfaces the single next human task from this set. The approval gate (DR-012 / DR-034) hashes and locks them. Nothing in the codebase named the set as a whole.
 
