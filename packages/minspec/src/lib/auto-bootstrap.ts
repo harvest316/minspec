@@ -27,6 +27,7 @@ import { loadTemplateBaseline } from './merge-refresh';
 import { computeTemplateBaseline } from './template-registry';
 import { collectArtifacts } from './epic-backfill';
 import { listEpics } from './epic-manager';
+import { findSpecDirsMissingTasksMd, scaffoldTasksMd } from './scaffold';
 
 // ---------------------------------------------------------------------------
 // Preferences (persisted in .minspec/preferences.json)
@@ -43,6 +44,12 @@ export interface BootstrapPreferences {
    * 'backfill'` — declining one must never suppress the other.
    */
   readonly skipDesignStubPrompt?: boolean;
+  /**
+   * Per-prompt opt-out for the missing-tasks.md offer (#225). A third
+   * `kind: 'backfill'` step with its own skip flag so declining it never
+   * cross-suppresses the epic-backfill or DESIGN.md-stub offers (and vice-versa).
+   */
+  readonly skipTasksMdPrompt?: boolean;
 }
 
 const PREFS_FILENAME = 'preferences.json';
@@ -285,6 +292,26 @@ export function hasUnbackfilledEpics(rootDir: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Missing tasks.md detection (#225)
+// ---------------------------------------------------------------------------
+
+/**
+ * Detector: a project with split-layout T3/T4 specs (whose Tasks phase is
+ * required, DR-035) that are missing their `tasks.md`. The spec-validator
+ * already WARNS on this (`split-coverage.tasks.missing`); this powers the
+ * actionable offer-to-create. Pure file-system (Tier 0 / DR-004); delegates the
+ * walk to `findSpecDirsMissingTasksMd` so detect and create share one source of
+ * truth and can never disagree about which dirs qualify.
+ */
+export function hasSpecsMissingTasksMd(rootDir: string): boolean {
+  try {
+    return findSpecDirsMissingTasksMd(rootDir).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Pristine DESIGN.md stub detection (#315 — backfill for #206)
 // ---------------------------------------------------------------------------
 
@@ -492,6 +519,35 @@ export const BOOTSTRAP_STEPS: readonly BootstrapStep[] = [
       // between detection and the user's click. Never delete real content.
       if (!isPristineDesignStub(rootDir)) return;
       fs.rmSync(path.join(rootDir, 'DESIGN.md'), { force: true });
+    },
+  },
+  {
+    // #225: split-layout T3/T4 specs (whose Tasks phase is required, DR-035)
+    // that lack a tasks.md have no spec-kit-native place to track implement-phase
+    // progress. The validator already WARNS (`split-coverage.tasks.missing`);
+    // this makes it actionable. Shares `kind: 'backfill'` with the epic + design
+    // offers but uses its own skip flag so none cross-suppress. NEVER creates
+    // silently — only on the user's explicit primary choice, and re-checks at
+    // click time so a dir that gained a tasks.md is skipped. Scaffolds via the
+    // shared `scaffoldTasksMd` (frontmatter mirrors the requirements sibling, so
+    // each created file passes the frontmatter gate). Deriving `done` from the
+    // checkboxes is OUT of scope — that is #208.
+    kind: 'backfill',
+    shouldRun: (rootDir, prefs) =>
+      !prefs.skipTasksMdPrompt &&
+      isMinspecInitialized(rootDir) &&
+      hasSpecsMissingTasksMd(rootDir),
+    message:
+      'MinSpec: Some specs need a tasks.md to track implement-phase progress. Create the missing ones?',
+    primaryAction: 'Create tasks.md',
+    commandId: '',
+    skipPrefKey: 'skipTasksMdPrompt',
+    action: (rootDir) => {
+      // Re-resolve at click time — a dir may have gained a tasks.md since
+      // detection. scaffoldTasksMd is itself idempotent (skips an existing file).
+      for (const spec of findSpecDirsMissingTasksMd(rootDir)) {
+        scaffoldTasksMd(spec.dirPath);
+      }
     },
   },
 ] as const;

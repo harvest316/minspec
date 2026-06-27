@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { DEFAULT_CONFIG, loadConfig } from './config';
+import { DEFAULT_CONFIG, loadConfig, resolveAndValidate, TIERS, type Tier } from './config';
 import { buildContext, renderTemplate, renderAll } from './template-engine';
 import {
   TEMPLATE_NAMES,
@@ -66,6 +66,184 @@ function seedConstitution(rootDir: string, allHashes: GeneratedHashes): Generate
 }
 
 export { DEFAULT_CONFIG };
+
+// ─── Ensure-tasks.md (#225) ──────────────────────────────────────────────────
+//
+// A split-layout spec (`type: requirements|design|tasks`, one phase per sibling
+// file) whose TIER requires the Tasks phase (T3/T4) must carry a `tasks.md`, or
+// the implement phase has no spec-kit-native place to track step-by-step
+// progress (DR-035). The spec-validator already WARNS on this
+// (`split-coverage.tasks.missing`); #225 makes the warning ACTIONABLE by
+// scaffolding the missing file. Deriving `done` from the checkboxes is OUT of
+// scope — that is #208 (the #116/DR-034 task-tracking caveat).
+//
+// Tier-0: deterministic, offline, pure filesystem. The created file is body-only
+// content under a frontmatter block that MIRRORS the requirements sibling — the
+// corpus convention is exactly `id`, `type: tasks`, `status`, `product`, `epic`
+// (no `tier`/`created`/`phases`; those live on the requirements artifact). The
+// `id` line is what the CI frontmatter gate (scripts/validate-frontmatter.ts)
+// requires on every `specs/**/*.md`, so the scaffolded file passes validation.
+
+/** A frontmatter key whose RAW line is copied verbatim from requirements.md. */
+const TASKS_MD_INHERITED_FIELDS = ['id', 'status', 'product', 'epic'] as const;
+
+/**
+ * Read the RAW value-bearing frontmatter line for `key` from a markdown source,
+ * preserving any inline `# Title` comment verbatim (the corpus carries the epic's
+ * human title that way). Returns the full `key: value` line, or undefined when
+ * the field is absent. Only the top-level frontmatter block is scanned.
+ */
+function rawFrontmatterLine(raw: string, key: string): string | undefined {
+  const block = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (!block) return undefined;
+  const lineRe = new RegExp(`^(${key}\\s*:\\s*.*)$`, 'm');
+  const m = block[1].match(lineRe);
+  return m ? m[1].trimEnd() : undefined;
+}
+
+/**
+ * Build the body of a scaffolded `tasks.md` from the requirements sibling's raw
+ * source. Frontmatter mirrors the requirements file's `id`/`status`/`product`/
+ * `epic` lines verbatim, with `type: tasks` (placed right after `id:`, matching
+ * the corpus). The body is a single placeholder heading prompting the author to
+ * fill in the task breakdown — intentionally minimal (no invented tasks).
+ */
+export function buildTasksMdContent(requirementsRaw: string): string {
+  const idLine = rawFrontmatterLine(requirementsRaw, 'id') ?? 'id: SPEC-000';
+  const fm: string[] = ['---', idLine, 'type: tasks'];
+  for (const key of TASKS_MD_INHERITED_FIELDS) {
+    if (key === 'id') continue; // already emitted first
+    const line = rawFrontmatterLine(requirementsRaw, key);
+    if (line) fm.push(line);
+  }
+  fm.push('---');
+
+  const idValue = (idLine.match(/SPEC-\d+/) ?? ['the spec'])[0];
+  const body = [
+    '',
+    `# ${idValue} — Task Breakdown`,
+    '',
+    '<!-- MinSpec scaffolded this tasks.md (#225). Break the plan into ordered,',
+    '     checkable tasks. Ticking a checkbox here is body-only — it never voids',
+    '     spec approval (DR-035). -->',
+    '',
+    '## Tasks',
+    '',
+    '- [ ] _Add the first task._',
+    '',
+  ];
+
+  return fm.join('\n') + '\n' + body.join('\n');
+}
+
+/**
+ * Scaffold a `tasks.md` into a split-layout spec directory that lacks one.
+ *
+ * No-op (returns false) when the dir has no `requirements.md` (nothing to mirror
+ * frontmatter from) or already has a `tasks.md` (NEVER overwritten — a deliberate
+ * author absence beyond the offer is respected). Returns true iff a file was
+ * written. Pure filesystem, deterministic, offline (Tier-0 / DR-004).
+ */
+export function scaffoldTasksMd(dirPath: string): boolean {
+  const requirementsPath = path.join(dirPath, 'requirements.md');
+  const tasksPath = path.join(dirPath, 'tasks.md');
+  if (fs.existsSync(tasksPath)) return false;
+  if (!fs.existsSync(requirementsPath)) return false;
+
+  let requirementsRaw: string;
+  try {
+    requirementsRaw = fs.readFileSync(requirementsPath, 'utf-8');
+  } catch {
+    return false;
+  }
+
+  fs.writeFileSync(tasksPath, buildTasksMdContent(requirementsRaw), 'utf-8');
+  return true;
+}
+
+/** A split-layout spec directory that is missing its required `tasks.md`. */
+export interface MissingTasksMdSpec {
+  /** The spec's `id` (SPEC-NNN), read from requirements.md frontmatter. */
+  readonly id: string;
+  /** The spec's tier (the requirements artifact carries it). */
+  readonly tier: Tier;
+  /** Absolute path to the spec directory holding requirements.md. */
+  readonly dirPath: string;
+}
+
+/** Strip an inline `# comment` from a raw frontmatter scalar value. */
+function scalarValue(line: string | undefined): string {
+  if (line === undefined) return '';
+  const v = line.split(/:(.*)/s)[1]?.trim() ?? '';
+  const m = v.match(/\s#/);
+  return (m && m.index !== undefined ? v.slice(0, m.index) : v).trim();
+}
+
+/**
+ * Walk the specs tree for split-layout spec directories whose tier REQUIRES the
+ * Tasks phase (T3/T4 by default config) but which have no `tasks.md`.
+ *
+ * A directory qualifies when it contains a `requirements.md` carrying a `type:`
+ * frontmatter (the split-layout signal) — single-file specs (one file, no
+ * sibling files, no `type`) embed their Tasks phase in-file and are NEVER
+ * offered. The tier is read from requirements.md; only tiers whose
+ * `requiredPhases` include `tasks` are returned (T1/T2 don't, so they are
+ * skipped). Deterministic + offline; tolerant of an absent specs/ dir.
+ */
+export function findSpecDirsMissingTasksMd(rootDir: string): MissingTasksMdSpec[] {
+  const config = loadConfig(rootDir);
+  let specsDir: string;
+  try {
+    specsDir = resolveAndValidate(rootDir, config.specsDir);
+  } catch {
+    return [];
+  }
+  if (!fs.existsSync(specsDir)) return [];
+
+  const found: MissingTasksMdSpec[] = [];
+
+  const visit = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    const requirementsPath = path.join(dir, 'requirements.md');
+    if (fs.existsSync(requirementsPath)) {
+      try {
+        const raw = fs.readFileSync(requirementsPath, 'utf-8');
+        const type = scalarValue(rawFrontmatterLine(raw, 'type'));
+        const id = scalarValue(rawFrontmatterLine(raw, 'id'));
+        const tierRaw = scalarValue(rawFrontmatterLine(raw, 'tier'));
+        const tier = (TIERS as readonly string[]).includes(tierRaw)
+          ? (tierRaw as Tier)
+          : 'T2';
+        const requiresTasks =
+          config.phaseMappings[tier]?.requiredPhases.includes('tasks') ?? false;
+        const isSplit = type === 'requirements';
+        if (
+          isSplit &&
+          requiresTasks &&
+          id &&
+          !fs.existsSync(path.join(dir, 'tasks.md'))
+        ) {
+          found.push({ id, tier, dirPath: dir });
+        }
+      } catch {
+        /* unreadable requirements.md — skip this dir */
+      }
+    }
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) visit(path.join(dir, entry.name));
+    }
+  };
+
+  visit(specsDir);
+  return found;
+}
 
 export const MINSPEC_GITIGNORE_MARKER = '# MinSpec ephemeral data';
 export const MINSPEC_GITIGNORE_ENTRIES = [
