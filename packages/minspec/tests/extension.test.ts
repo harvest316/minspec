@@ -30,6 +30,10 @@ const makeWatcher = () => ({
 let specWatcher = makeWatcher();
 let adrWatcher = makeWatcher();
 let traceWatcher = makeWatcher();
+// #302: name the approvals + git watchers (4th, 5th createFileSystemWatcher
+// calls) so a test can grab the git watcher's handler and fire it.
+let approvalsWatcher = makeWatcher();
+let gitWatcher = makeWatcher();
 let watcherCallIndex = 0;
 
 // #123: capture the RelativePattern base passed to each createFileSystemWatcher
@@ -84,6 +88,8 @@ vi.mock('vscode', () => ({
       return { dispose: vi.fn() };
     }),
     showErrorMessage: vi.fn(),
+    // #302: present so a test can assert the git watcher NEVER pops the picker.
+    showWorkspaceFolderPick: vi.fn(),
     showInformationMessage: vi.fn(() => Promise.resolve(undefined)),
     showWarningMessage: vi.fn(() => Promise.resolve(undefined)),
     showInputBox: vi.fn(),
@@ -98,8 +104,9 @@ vi.mock('vscode', () => ({
     })),
     createFileSystemWatcher: vi.fn((pattern?: { base?: unknown }) => {
       watcherPatternBases.push(pattern?.base);
-      // Return different watchers in order of creation
-      const watchers = [specWatcher, adrWatcher, traceWatcher];
+      // Return different watchers in order of creation: spec, adr, trace,
+      // approvals, then git (git only when autoClassifyOnCommit is enabled).
+      const watchers = [specWatcher, adrWatcher, traceWatcher, approvalsWatcher, gitWatcher];
       const w = watchers[watcherCallIndex] ?? makeWatcher();
       watcherCallIndex++;
       return w;
@@ -350,6 +357,8 @@ beforeEach(() => {
   specWatcher = makeWatcher();
   adrWatcher = makeWatcher();
   traceWatcher = makeWatcher();
+  approvalsWatcher = makeWatcher();
+  gitWatcher = makeWatcher();
   watcherCallIndex = 0;
   watcherPatternBases = [];
 
@@ -860,6 +869,78 @@ describe('activate()', () => {
     }
   });
 
+  // #302 — a git commit/branch event must classify WITHOUT popping the project
+  // picker. Restore getConfiguration in finally so the autoClassify override does
+  // not leak into sibling tests (beforeEach uses clearAllMocks, which keeps
+  // implementation overrides).
+  function enableAutoClassify(): void {
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
+      get: vi.fn((key: string, def: any) =>
+        key === 'autoClassifyOnCommit' ? true : def,
+      ),
+    } as any);
+  }
+  function restoreConfig(): void {
+    vi.mocked(vscode.workspace.getConfiguration).mockImplementation(
+      (() => ({ get: vi.fn((_key: string, def: any) => def) })) as any,
+    );
+  }
+
+  it('git watcher classifies WITH the folder arg, never the picker (#302, single-root)', () => {
+    enableAutoClassify();
+    try {
+      activate(makeMockContext());
+
+      // gitWatcher is the 5th createFileSystemWatcher (spec, adr, trace,
+      // approvals, git). Grab its onDidChange handler and fire a HEAD change.
+      expect(gitWatcher.onDidChange).toHaveBeenCalled();
+      const onGitChange = gitWatcher.onDidChange.mock.calls[0][0];
+      onGitChange({ fsPath: '/tmp/test-workspace/.git/HEAD' });
+
+      // Classify is invoked WITH the resolved folder, so classifyCommand takes
+      // its folderArg path and never reaches the interactive resolver. FAILS
+      // before the fix (called with only 'minspec.classify').
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+        'minspec.classify',
+        '/tmp/test-workspace',
+      );
+      expect(vscode.window.showWorkspaceFolderPick).not.toHaveBeenCalled();
+    } finally {
+      restoreConfig();
+    }
+  });
+
+  it('git watcher targets the active-editor folder, not [0], in multi-root (#302/#123)', () => {
+    const ws = vscode.workspace as { workspaceFolders: unknown };
+    const win = vscode.window as { activeTextEditor: unknown };
+    const originalFolders = ws.workspaceFolders;
+    const originalEditor = win.activeTextEditor;
+    ws.workspaceFolders = [
+      { uri: { fsPath: '/tmp/wsA' } },
+      { uri: { fsPath: '/tmp/wsB' } },
+    ];
+    win.activeTextEditor = {
+      document: { uri: { fsPath: '/tmp/wsB/specs/SPEC-001.md' } },
+    };
+    enableAutoClassify();
+    try {
+      activate(makeMockContext());
+      const onGitChange = gitWatcher.onDidChange.mock.calls[0][0];
+      onGitChange({ fsPath: '/tmp/wsB/.git/HEAD' });
+
+      // Classifies the resolved (active-editor) folder, never via the picker.
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+        'minspec.classify',
+        '/tmp/wsB',
+      );
+      expect(vscode.window.showWorkspaceFolderPick).not.toHaveBeenCalled();
+    } finally {
+      ws.workspaceFolders = originalFolders;
+      win.activeTextEditor = originalEditor;
+      restoreConfig();
+    }
+  });
+
   it('runs minspec.init for the folder when the user picks Initialize', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     vi.mocked(vscode.window.showInformationMessage).mockImplementation(
@@ -933,6 +1014,8 @@ describe('showSpecPanel command', () => {
     specWatcher = makeWatcher();
     adrWatcher = makeWatcher();
     traceWatcher = makeWatcher();
+    approvalsWatcher = makeWatcher();
+    gitWatcher = makeWatcher();
 
     activate(makeMockContext());
     await invokeCommand('minspec.showSpecPanel');

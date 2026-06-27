@@ -407,7 +407,13 @@ export function activate(context: vscode.ExtensionContext): void {
       );
       const triggerClassify = (uri: vscode.Uri) => {
         if (!isWatchedGitPath(uri.fsPath)) return;
-        vscode.commands.executeCommand('minspec.classify');
+        // #302: pass the folder explicitly. This is a watcher (machine-triggered
+        // by a git commit/branch event), so it MUST NOT reach the interactive
+        // folder resolver — that would pop a project picker at the user with no
+        // command invoked. `workspaceRoot` is the non-interactive activation root
+        // (also this watcher's RelativePattern base above), so classify takes its
+        // `folderArg` path. Enforced structurally by invariants.test.ts Inv 7.
+        vscode.commands.executeCommand('minspec.classify', workspaceRoot);
       };
       gitWatcher.onDidChange(triggerClassify);
       gitWatcher.onDidCreate(triggerClassify);
