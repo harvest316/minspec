@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { initCommand, initRefreshCommand } from './commands/init';
-import { constitutionShowPromptCommand, constitutionCompactCommand } from './commands/constitution';
+import { constitutionShowPromptCommand, constitutionCompactCommand, constitutionProposeCommand } from './commands/constitution';
 import { classifyCommand } from './commands/classify';
 import { statusCommand } from './commands/status';
 import { declareScopeCommand } from './commands/session';
@@ -42,6 +42,7 @@ import { loadConfig, resolveAndValidate } from './lib/config';
 import { trackActiveAdrEditor } from './lib/active-adr';
 import { resolveTargetFolderNonInteractive } from './lib/resolve-folder';
 import { registerReferenceDiagnostics } from './lib/diagnostics';
+import { evaluateConstitution } from './lib/constitution-nudge';
 
 export function activate(context: vscode.ExtensionContext): void {
   trackActiveSpecEditor(context);
@@ -162,6 +163,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('minspec.initRefresh', initRefreshCommand),
     vscode.commands.registerCommand('minspec.constitutionShowPrompt', constitutionShowPromptCommand),
     vscode.commands.registerCommand('minspec.constitutionCompact', constitutionCompactCommand),
+    vscode.commands.registerCommand('minspec.constitutionPropose', constitutionProposeCommand),
     vscode.commands.registerCommand('minspec.classify', classifyCommand),
     vscode.commands.registerCommand('minspec.status', statusCommand(workspaceRoot)),
     vscode.commands.registerCommand('minspec.refreshTree', () => {
@@ -451,6 +453,57 @@ export function activate(context: vscode.ExtensionContext): void {
   // attempt the nudge (gated on 24h install age + 7d cooldown).
   recordInstallTimestamp(context);
   void maybeShowNudge(context);
+
+  // #320: empty-constitution nudge with an offer-to-fix action. If the
+  // constitution has no human-authored rules yet, surface a SOFT, NON-MODAL
+  // toast whose primary action runs the deterministic Propose command. Advisory
+  // only (never blocks), honors a per-workspace "Don't ask again" skip flag.
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    void surfaceConstitutionProposeNudge(context, folder.uri.fsPath);
+  }
+}
+
+/** workspaceState key: the constitution-propose nudge was dismissed for good. */
+const CONSTITUTION_PROPOSE_NUDGE_SKIP = 'minspec.constitutionProposeNudge.skip';
+
+/**
+ * #320: surface the empty-constitution nudge with a "Propose draft" action.
+ *
+ * Best-effort + advisory: a failure here never affects activation, the toast is
+ * non-modal, and once the user picks "Don't ask again" the per-workspace skip
+ * flag suppresses it. The deterministic propose command does the actual write —
+ * this is only the offer surface (the pure descriptor lives in
+ * constitution-nudge.ts; the file write reuses the Tier-0 proposer unchanged).
+ */
+async function surfaceConstitutionProposeNudge(
+  context: vscode.ExtensionContext,
+  folder: string,
+): Promise<void> {
+  try {
+    if (context.workspaceState.get<boolean>(CONSTITUTION_PROPOSE_NUDGE_SKIP, false)) {
+      return;
+    }
+    // Only offer for an initialized project that actually has a constitution to
+    // fill — a missing .minspec/ is the init bootstrap's job, not this nudge.
+    if (!fs.existsSync(path.join(folder, '.minspec', 'constitution.md'))) return;
+
+    const nudge = evaluateConstitution(folder);
+    if (!nudge.empty) return;
+
+    const DONT_ASK = "Don't ask again";
+    const choice = await vscode.window.showInformationMessage(
+      nudge.message,
+      nudge.fixActionLabel,
+      DONT_ASK,
+    );
+    if (choice === nudge.fixActionLabel) {
+      await vscode.commands.executeCommand(nudge.fixCommandId, folder);
+    } else if (choice === DONT_ASK) {
+      await context.workspaceState.update(CONSTITUTION_PROPOSE_NUDGE_SKIP, true);
+    }
+  } catch {
+    // best-effort — the nudge is advisory; never let it break activation.
+  }
 }
 
 /**

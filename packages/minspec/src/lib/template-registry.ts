@@ -6,9 +6,16 @@
 import {
   parseSections,
   buildSectionHashes,
+  hashSection,
   type GeneratedHashes,
   type SectionHashes,
 } from './merge-refresh';
+import {
+  SPEC_KIT_COMMANDS,
+  buildClaudeShim,
+  buildCursorShim,
+} from './slash-commands';
+import type { DetectedTools } from './tool-detector';
 
 /**
  * Template names that can be rendered.
@@ -264,6 +271,17 @@ export function computeTemplateBaseline(): GeneratedHashes {
       parseSections(TEMPLATES[name]),
     );
   }
+  // #241: managed-region templates (slash-command shims, CI workflow, git hooks)
+  // also belong in the drift baseline so an upstream change to ANY of them — e.g.
+  // a `/specify` shim guidance edit — fires the "templates updated, refresh?" prompt
+  // exactly like a Markdown-template change. Each is keyed by its output path with a
+  // single synthetic section (the marker `name`) hashing the raw managed block, the
+  // same project-independent "which version are we at" signal used for the Markdown
+  // templates. `hasHarnessDrift` iterates the baseline's recorded paths, so these are
+  // compared like-for-like with no extra wiring.
+  for (const tpl of MANAGED_REGION_TEMPLATES) {
+    baseline[tpl.outputPath] = { [tpl.name]: hashSection(renderManagedBlock(tpl)) };
+  }
   return baseline;
 }
 
@@ -373,13 +391,23 @@ export interface ManagedRegionTemplate {
   /**
    * A fixed line written ONCE, BEFORE the managed region's start marker — used for a
    * script shebang (`#!/usr/bin/env sh`), which a hook MUST carry on line 1 for git
-   * to run it. The shebang lives OUTSIDE the marked region on purpose: a marker line
-   * cannot be line 1 (it would shadow the shebang), and keeping it outside means a
-   * refresh preserves it as surrounding content via `spliceManagedRegion`. It is
-   * (re)written only when the whole file is scaffolded or re-scaffolded
-   * (`renderManagedFile`), never duplicated on an in-place region refresh.
+   * to run it, OR for a slash-command shim's YAML frontmatter block (`---\n…\n---`),
+   * which the AI tool reads on line 1. The preamble lives OUTSIDE the marked region on
+   * purpose: a marker line cannot be line 1 (it would shadow the shebang/frontmatter),
+   * and keeping it outside means a refresh preserves it as surrounding content via
+   * `spliceManagedRegion`. It is (re)written only when the whole file is scaffolded or
+   * re-scaffolded (`renderManagedFile`), never duplicated on an in-place region refresh.
    */
   readonly preamble?: string;
+  /**
+   * Optional gate: the template is scaffolded/refreshed ONLY when this predicate
+   * returns true for the project's detected AI tools. Used by the slash-command
+   * shims, which exist only for tools the project actually uses (a `.claude/commands/`
+   * shim only when `CLAUDE.md` is present, the Cursor `.mdc` only when `.cursorrules`
+   * is present). Omitted ⇒ always active (the CI workflow + git hooks, which are
+   * tool-independent), preserving the existing unconditional behaviour.
+   */
+  readonly condition?: (tools: DetectedTools) => boolean;
 }
 
 /**
@@ -787,7 +815,110 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())`;
 
-/** All managed-region templates in scaffold order. */
+// ---------------------------------------------------------------------------
+// Spec Kit slash-command shims as managed-region templates (#241)
+//
+// The `/specify`, `/plan`, … shims MinSpec scaffolds into a project (Claude Code
+// `.claude/commands/<cmd>.md`, Cursor `.cursor/rules/spec-kit-commands.mdc`) were
+// CREATE-ONLY: init wrote them once, Refresh never updated them, so a guidance
+// improvement (e.g. the #104 shift-left content) could never reach existing
+// projects. We promote them to managed-region templates so they ride the SAME
+// generate/refresh + drift path as every other harness file: refresh overwrites
+// the MinSpec-owned region, preserves user content outside the markers, skips+warns
+// on deleted markers, and re-scaffolds a deleted file.
+//
+// Both shim formats are Markdown carrying a YAML frontmatter block the AI tool reads
+// on line 1. The frontmatter goes in `preamble` (written outside the region, on line
+// 1, surviving refresh as surrounding content) and the body in the managed region with
+// `html` comment markers (valid Markdown comments). Each shim is gated on the matching
+// tool being detected (`condition`) so we never write a Claude shim into a Cursor-only
+// project or vice-versa.
+//
+// The shim content is built from `slash-commands.ts` (`buildClaudeShim` /
+// `buildCursorShim`, themselves derived from `COMMAND_GUIDANCE`), so converting them
+// here introduces NO second copy of the guidance — there is one source of truth and a
+// guidance edit flows straight into the refreshed region (and the drift baseline).
+// ---------------------------------------------------------------------------
+
+/** Output directory (relative to root) for Claude Code slash-command shims. */
+export const CLAUDE_COMMANDS_DIR = '.claude/commands';
+/** Output path (relative to root) for the single Cursor slash-command rules file. */
+export const CURSOR_SLASH_COMMANDS_PATH = '.cursor/rules/spec-kit-commands.mdc';
+
+/**
+ * Split a shim document built by `slash-commands.ts` into its leading YAML
+ * frontmatter block (`---\n…\n---`, the preamble written on line 1) and the body
+ * that follows (the managed-region content). The builders always emit frontmatter
+ * first, so a document that does not start with `---` is returned body-only (defensive
+ * — never throw, so a builder change can never crash scaffolding).
+ */
+function splitShimFrontmatter(doc: string): { preamble: string; body: string } {
+  const lines = doc.split('\n');
+  if (lines[0]?.trim() !== '---') {
+    return { preamble: '', body: doc.replace(/^\n+/, '').replace(/\n+$/, '') };
+  }
+  // Find the closing fence (second `---` on its own line).
+  let close = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '---') {
+      close = i;
+      break;
+    }
+  }
+  if (close === -1) {
+    // Malformed (no closing fence) — treat the whole thing as body, never lose content.
+    return { preamble: '', body: doc.replace(/^\n+/, '').replace(/\n+$/, '') };
+  }
+  const preamble = lines.slice(0, close + 1).join('\n');
+  const body = lines
+    .slice(close + 1)
+    .join('\n')
+    .replace(/^\n+/, '')
+    .replace(/\n+$/, '');
+  return { preamble, body };
+}
+
+/** Build the managed-region template for one Claude Code slash-command shim. */
+function buildClaudeShimTemplate(
+  command: (typeof SPEC_KIT_COMMANDS)[number],
+): ManagedRegionTemplate {
+  const { preamble, body } = splitShimFrontmatter(buildClaudeShim(command));
+  return {
+    name: `slash-claude-${command}`,
+    outputPath: `${CLAUDE_COMMANDS_DIR}/${command}.md`,
+    commentStyle: 'html',
+    content: body,
+    preamble,
+    condition: (tools) => tools.claude,
+  };
+}
+
+/** Build the managed-region template for the single Cursor slash-command rules file. */
+function buildCursorShimTemplate(): ManagedRegionTemplate {
+  const { preamble, body } = splitShimFrontmatter(buildCursorShim());
+  return {
+    name: 'slash-cursor',
+    outputPath: CURSOR_SLASH_COMMANDS_PATH,
+    commentStyle: 'html',
+    content: body,
+    preamble,
+    condition: (tools) => tools.cursor,
+  };
+}
+
+/** The slash-command shim templates (one Claude file per command + one Cursor file). */
+export const SLASH_COMMAND_SHIM_TEMPLATES: readonly ManagedRegionTemplate[] = [
+  ...SPEC_KIT_COMMANDS.map(buildClaudeShimTemplate),
+  buildCursorShimTemplate(),
+];
+
+/**
+ * All managed-region templates in scaffold order.
+ *
+ * The tool-independent gate harness (CI workflow + git hooks, DR-037) stays FIRST so
+ * the existing `MANAGED_REGION_TEMPLATES[0]` references in tests remain stable; the
+ * tool-gated slash-command shims (#241) are appended.
+ */
 export const MANAGED_REGION_TEMPLATES: readonly ManagedRegionTemplate[] = [
   {
     name: 'validate-workflow',
@@ -819,4 +950,5 @@ export const MANAGED_REGION_TEMPLATES: readonly ManagedRegionTemplate[] = [
     executable: true,
     preamble: '#!/usr/bin/env python3',
   },
+  ...SLASH_COMMAND_SHIM_TEMPLATES,
 ] as const;

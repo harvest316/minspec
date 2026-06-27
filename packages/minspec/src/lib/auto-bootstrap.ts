@@ -24,11 +24,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadTemplateBaseline } from './merge-refresh';
-import {
-  TEMPLATE_NAMES,
-  TEMPLATE_OUTPUT_PATHS,
-  computeTemplateBaseline,
-} from './template-registry';
+import { computeTemplateBaseline } from './template-registry';
 import { collectArtifacts } from './epic-backfill';
 import { listEpics } from './epic-manager';
 
@@ -134,8 +130,14 @@ export function hasHarnessDrift(rootDir: string): boolean {
 
   const current = computeTemplateBaseline();
 
-  for (const name of TEMPLATE_NAMES) {
-    const relPath = TEMPLATE_OUTPUT_PATHS[name];
+  // Iterate every output path the CURRENT baseline knows about — both the Markdown
+  // harness templates AND the managed-region templates (CI workflow, git hooks, and
+  // the #241 slash-command shims), which `computeTemplateBaseline` now records. This
+  // is what lets a slash-shim guidance edit fire the "templates updated, refresh?"
+  // prompt: drift is no longer scoped to `TEMPLATE_NAMES`. Each side is still raw
+  // template hash, so the comparison stays like-for-like (#117) and independent of
+  // both rendering context and the user's own edits to the generated files.
+  for (const relPath of Object.keys(current)) {
     if (!fs.existsSync(path.join(rootDir, relPath))) continue;
 
     const recordedHashes = baseline[relPath];

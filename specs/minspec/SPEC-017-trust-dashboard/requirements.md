@@ -1,7 +1,7 @@
 ---
 id: SPEC-017
 type: requirements
-status: specifying
+status: implementing
 tier: T4
 product: minspec
 epic: EPIC-002  # Signpost Integrity
@@ -89,18 +89,26 @@ not *fast-approve*. (Decided this session; recorded inline — no separate DR.)
 
 ### M1 — Char rework % (outcome)
 
-- **FR-1 (approval snapshot, not just a hash).** On approval, the system MUST persist a
-  **content snapshot** of the approved spec body alongside the existing
-  `{ specHash, approvedAt, tier }` record (extends the `ApprovalRecord` /
-  [`approval.ts`](../../../packages/minspec/src/lib/approval.ts) data model). The hash
-  alone (sha256, all-or-nothing) cannot yield a percentage; the snapshot is the diff
-  baseline. Storage location/format is FR-OQ4.
-- **FR-2 (rework = char delta against the approved snapshot).** Rework % for a spec MUST
+- **FR-1 (approval baseline, not just a hash).** On approval, the system MUST persist a
+  **content baseline** of the approved spec body so a rework percentage can later be
+  computed (the hash alone — sha256, all-or-nothing — cannot). The baseline is stored
+  **git-natively** (FR-OQ4, resolved 2026-06-27; DR-043): the approved body is written as a
+  content-addressed **git blob** (`git hash-object -w` — zlib-compressed, deduped by git, so
+  the body is **not** duplicated), pinned by a `refs/minspec/snapshots/<specId>` ref so
+  `git gc` cannot prune it, and the **blob SHA** is recorded in the **committed, content-free
+  approval ledger** that also carries reviewer identity (DR-042 / harvest316/minspec#300). One
+  mechanism serves both this baseline and #300's committed ground truth. A gzipped
+  `.minspec/snapshots/` sidecar is kept **only as the fallback when the project is not a git
+  repo**. This extends the `ApprovalRecord` /
+  [`approval.ts`](../../../packages/minspec/src/lib/approval.ts) write path.
+- **FR-2 (rework = char delta against the approved baseline).** Rework % for a spec MUST
   be computed as the share of **approved-body characters** that differ between the
-  approved snapshot and the later content (the next approval's snapshot if re-approved,
+  approved baseline (FR-1 — recovered via `git cat-file` from the recorded blob SHA, or the
+  gzip fallback) and the later content (the next approval's baseline if re-approved,
   else the current on-disk body if `stale`). The char-delta is a **char-level diff**
   (changed chars ÷ `max(approvedChars, currentChars)`), vendored/no-network; it MUST be
-  deterministic and recomputable from files alone. *(Resolved FR-OQ2 — see §Clarify.)*
+  deterministic and recomputable from the repo (git object store + committed ledger) alone.
+  *(Resolved FR-OQ2 — see §Clarify.)*
 - **FR-3 (counts edits made *anywhere*).** Because FR-2 diffs **content**, not webview
   events, rework MUST count every edit equally — a SPEC-014 in-webview revision, a manual
   edit in the editor, or an agent edit on disk. The metric MUST NOT instrument any single
@@ -204,10 +212,14 @@ live. Ranked most→least costly.*
    costliest *contract* — changing it silently changes *every historical number* shown.
    *Check: the exact diff library + `max`-denominator locked before the dashboard ships a
    single percentage.*
-4. **Snapshot storage location/format/retention (FR-1).** Decided (§Clarify): latest-approved
-   body, gzipped, git-ignored `.minspec/snapshots/`, numeric trend history. Moving it later =
-   re-snapshot or lose trend. *Check: the gitignore entry + numeric-history schema land with
-   the first snapshot write.*
+4. **Approval-baseline storage (FR-1, FR-OQ4 — reopened & re-resolved 2026-06-27).** Decided
+   (§Clarify; DR-043): the approved body is a **git blob** (`git hash-object -w`) pinned by a
+   `refs/minspec/snapshots/` ref, its SHA recorded in the **committed content-free ledger**
+   (#300) — no duplicated body; gzip `.minspec/snapshots/` only as the non-git fallback. The
+   numeric trend history (`{approvedAt, reworkPct, engagedMs}`) is unchanged. Moving it later =
+   re-mint blobs / migrate the ledger. *Check: the `refs/minspec/snapshots/` namespace + the
+   ledger blob-SHA field + the gc-pin land with the first approval write; the gzip fallback
+   path is covered for non-git repos.*
 5. **Chart host (FR-10).** Decided (§Clarify): own spec-panel section. Cheap to re-host
    *only because* FR-12 keeps render a pure `vscode`-free function. *Check: render stays
    host-agnostic so a later review-pane mount is a re-wire, not a rewrite.*
@@ -227,17 +239,22 @@ live. Ranked most→least costly.*
   and content-free (FR-8). Off by default ⇒ M3 absent, M1/M2 intact.
 - **INV — Tier-0 core (T0).** The chart adds no `http`/`https`/`fetch`/`net` import to
   `packages/minspec` (FR-10, invariant #2 / DR-004). Import-ban T0 test, as SPEC-014 FR-17.
-- **INV — Deterministic, recomputable outcomes (T0).** M1/M2 are pure functions of files on
-  disk + the approval store; same inputs ⇒ same numbers, no hidden event log required (FR-2,
-  FR-3, FR-12).
+- **INV — Deterministic, recomputable outcomes (T0).** M1/M2 are pure functions of the current
+  body + the approved baseline (recovered from the git blob SHA in the committed ledger, or the
+  gzip fallback) + the approval store; same inputs ⇒ same numbers, no hidden event log required
+  (FR-2, FR-3, FR-12). The git read lives in the `vscode` glue (like file I/O); the metric
+  functions stay pure (FR-12).
 
 ## Acceptance Criteria
 
 *Definition-of-done; each item traces an FR/INV. Zone A — read before approving.*
 
-- [ ] **AC-1 (FR-1).** On approval, `ApprovalRecord` persists a gzipped latest-approved body
-  snapshot + a `reviewStart` timestamp into git-ignored `.minspec/snapshots/`; an old
-  `approvals.json` record lacking these fields still reads (back-compat path, per Follow-ups).
+- [ ] **AC-1 (FR-1).** On approval, the approved body is written as a git blob
+  (`git hash-object -w`), pinned by a `refs/minspec/snapshots/<specId>` ref, and the committed
+  ledger / `ApprovalRecord` persists the **blob SHA** + a `reviewStart` timestamp; a
+  `git gc --prune=now` then `git cat-file` still returns the body (gc-survival); an old
+  `approvals.json` record lacking these fields still reads (back-compat, per Follow-ups). *(Non-git
+  repos: gzipped `.minspec/snapshots/` fallback.)*
 - [ ] **AC-2 (FR-2, FR-4).** Rework % for a spec = changed chars ÷ `max(approvedChars,
   currentChars)` over the **body** (frontmatter stripped via `parseSpec`); recomputing it
   twice from the same files yields the identical number (INV — Deterministic).
@@ -284,7 +301,7 @@ live. Ranked most→least costly.*
 |---|---|---|---|
 | R1 | **Proxy-trap resurfaces.** A future change re-adds a time-only "skimmed" flag; first false accusation kills trust in the trust tool. | Med · High | INV-Outcome-over-proxy + FR-9 (time only as scatter) + a T0 test that fails on any time-threshold verdict. The lesson is encoded, not just documented. |
 | R2 | **"Rework = LLM failure" misframing.** Healthy iteration (a slow, careful rewrite) reads as "the LLM got it wrong," punishing engagement. | Med · Med | Frame M1 as **review churn**, not LLM error; the *diagnostic* value is rework **crossed with** time (FR-9): high rework after a *slow* review = healthy iteration; high rework after a *fast* approve = rubber-stamp. Copy must not say "LLM was wrong." |
-| R3 | **Snapshot storage bloat / repo duplication.** Storing full approved bodies per spec per round duplicates the repo many times over. | Med · Med | Resolved FR-OQ4 (§Clarify): latest-approved body only, gzipped, git-ignored `.minspec/snapshots/`; trend kept as a small numeric history, not per-round bodies. |
+| R3 | **Snapshot storage bloat / repo duplication.** Storing full approved bodies per spec per round duplicates the repo many times over. | Low · Med | Resolved FR-OQ4 (§Clarify; DR-043): the approved body is **not copied** — it is referenced as a git **blob SHA** in the committed ledger (git already holds the bytes, zlib-compressed & deduped); only the SHA + a small numeric trend history are added. Gzip fallback (non-git repos) keeps the old latest-body-only bound. |
 | R4 | **Human-surveillance smell.** Timing the developer feels like spyware, off-brand vs the no-prying principle. | Med · Med | FR-8: opt-in, UI-visible, timestamps-only (no content), off by default. It is self-quantification the dev switches on, never covert. |
 | R5 | **Frontmatter churn counted as rework.** Status flips / hash-lock notices inflate M1. | Med · Low | FR-4: diff body bytes only; reuse a defined body/zone boundary (FR-OQ5). |
 | R6 | **Snapshot/timestamp write invalidates the approval.** Persisting into the spec file changes its hash → marks it stale. | Low · High | INV-Non-destructive + FR-11: all state in `.minspec/` sidecar; never touch spec bytes. |
@@ -312,9 +329,11 @@ live. Ranked most→least costly.*
 - **A3.** A char-level diff over a single spec body is cheap enough to recompute on demand
   (FR-2 / INV — Deterministic) — no persisted event log; numbers derive from files + the
   approval store each render.
-- **A4.** `.minspec/snapshots/` can be git-ignored without losing the trust trend, because the
-  numeric history (`{approvedAt, reworkPct, engagedMs}`, FR-OQ4) carries the trend, not the
-  bodies (gates R3).
+- **A4.** The approval baseline survives across machines because it is a **committed** ledger
+  entry (blob SHA + metadata, #300 / DR-043) pointing into git's object store — not a
+  per-machine git-ignored file. The numeric history (`{approvedAt, reworkPct, engagedMs}`,
+  FR-OQ4) carries the trend. Assumes the project is a git repo; the gzip `.minspec/snapshots/`
+  fallback covers the non-git case (where the baseline is then per-machine again, as before).
 
 ## Test-thought
 
@@ -365,8 +384,10 @@ time/scroll-threshold verdict (FR-9), and the Tier-0 guarantee by the import-ban
 
 *Per-FR test tier (T0 invariant · T1 contract · T2 feature · T3 regression) + assertion sketch.*
 
-- **FR-1 — T1/T3.** Approve a fixture spec → assert `ApprovalRecord` now carries a gzipped body
-  snapshot + `reviewStart`; T3 regression: a pre-migration `approvals.json` record still reads.
+- **FR-1 — T1/T3.** Approve a fixture spec → assert the approved body is minted as a git blob,
+  pinned by a `refs/minspec/snapshots/` ref, and the ledger carries the **blob SHA** +
+  `reviewStart`; assert `git gc --prune=now` then `git cat-file` still returns the body
+  (gc-survival). T3 regression: a pre-migration `approvals.json` record still reads.
 - **FR-2, FR-4 — T1.** Snapshot "abcde" vs later "abXde" → assert rework % = 1/5 over body only;
   flip only frontmatter `status:` → assert 0% (frontmatter excluded).
 - **FR-3 — T2.** Apply the same char delta via (a) editor edit and (b) on-disk agent edit →
@@ -397,8 +418,13 @@ time/scroll-threshold verdict (FR-9), and the Tier-0 guarantee by the import-ban
   Rejected by §The proxy trap, INV — Outcome over proxy, and FR-9: a bare time threshold fires
   false accusations on co-authored / good-fast approvals and destroys trust in the trust tool.
 - **Store full approved body per spec per approval round (for richer history).** Rejected at
-  FR-OQ4 (R3): duplicates the repo many times over; latest-approved gzipped body + numeric trend
-  history keeps the signal at a fraction of the storage.
+  FR-OQ4 (R3): duplicates the repo many times over; the chosen git-blob baseline (DR-043) keeps
+  only the latest approved body as a deduped git object referenced by SHA, plus a small numeric
+  trend history — the signal at a fraction of the storage.
+- **Gzip-gitignored `.minspec/snapshots/` sidecar as the *primary* baseline store (original
+  FR-OQ4 eng-default).** Demoted to the non-git **fallback** (DR-043): it is per-machine, lost on
+  a fresh clone, and gives no committed ground truth (the DR-042 gap) — and it needlessly copies
+  bytes git already holds. The git blob + committed-ledger SHA supersedes it.
 - **Persist snapshot/timestamps into the spec frontmatter (simplest to find).** Rejected by INV —
   Non-destructive + FR-11/R6: writing into the file changes its hash → marks the approval stale;
   all state lives in the `.minspec/` sidecar instead.
@@ -421,9 +447,10 @@ time/scroll-threshold verdict (FR-9), and the Tier-0 guarantee by the import-ban
   silently fail the chart or, worse, admit a network import (violating INV — Tier-0 core).
 - **`parseSpec` frontmatter split (FR-4).** *Breaks if changed:* the M1 body boundary — a change to
   what counts as "body" silently shifts *every historical rework number* (Costly #3).
-- **`.minspec/snapshots/` location + numeric-history schema (FR-OQ4).** *Breaks if changed:*
-  re-snapshot or lose the trust trend; the gitignore entry must land with the first write (Costly
-  #4).
+- **Approval-baseline storage — git blob + `refs/minspec/snapshots/` ref + committed-ledger SHA (FR-OQ4, DR-043).**
+  *Breaks if changed:* re-mint blobs / migrate the ledger, or lose the trust trend; the
+  `refs/minspec/snapshots/` namespace + the ledger blob-SHA field + the gc-pin must land with
+  the first write (Costly #4). Gzip `.minspec/snapshots/` fallback for non-git repos.
 - **SPEC-018 Spec Custom Editor (engagement source for FR-7a).** *Soft* dependency only — M3 must
   work via the plain-editor fallback; SPEC-018 being absent must NOT break the dashboard (FR-7a).
 
@@ -434,8 +461,9 @@ time/scroll-threshold verdict (FR-9), and the Tier-0 guarantee by the import-ban
   disabled, M1/M2 stand"). The whole dashboard is a read-only spec-panel section (FR-11) — removing
   the section reverts the UI with no spec-file or hash changes (INV — Non-destructive).
 - **Hard-to-reverse residue.** Two changes outlive a UI rollback and are the reason this is **not**
-  freely reversible: (1) the `ApprovalRecord` schema + persisted `.minspec/snapshots/` (Costly #1,
-  #4) — rolling back means a reverse migration of `approvals.json`; (2) the `superseded` enum +
+  freely reversible: (1) the `ApprovalRecord` schema + the committed ledger of baseline blob-SHAs /
+  `refs/minspec/snapshots/` (Costly #1, #4) — rolling back means reverse-migrating
+  `approvals.json` / the ledger and dropping the snapshot refs; (2) the `superseded` enum +
   any spec frontmatter that adopted `superseded-by:` (Costly #2) — reverting the grammar means
   re-editing every superseded spec and the SPEC-015 lane map.
 - **ADR-filter answer.** *Not* undoable in <1 day — the cross-spec `superseded` contract and the
@@ -458,7 +486,9 @@ time/scroll-threshold verdict (FR-9), and the Tier-0 guarantee by the import-ban
 ## Clarify
 
 Clarify session 2026-06-04. All six open questions resolved — three by the user
-(product-level), three by engineering default (recomputability / least-surprise). No
+(product-level), three by engineering default (recomputability / least-surprise).
+**Clarify session 2026-06-27 — FR-OQ4 reopened by the user** ("use git versioning instead of
+gzip?") and **re-resolved** to a git-native baseline (see the FR-OQ4 row + DR-043). No
 question remains blocking Plan.
 
 | OQ | Decision | By | Lands in |
@@ -466,7 +496,7 @@ question remains blocking Plan.
 | **FR-OQ1 — chart host** | **New section in the existing `spec-panel` webview.** Ships independent of the unbuilt SPEC-014; FR-12 keeps render host-agnostic so it can *also* mount in the review pane later. | user | FR-10 |
 | **FR-OQ2 — char-delta algorithm** | **Char-level diff over the body** (vendored, no-network — e.g. `diff-match-patch` char mode or `diff`), rework % = changed chars ÷ `max(approvedChars, currentChars)`. Deterministic, recomputable from files. *Line-count proxy rejected — it isn't a true char %.* | eng default | FR-2 |
 | **FR-OQ3 — superseded accounting** | **Separate "wasted review" bar**, NOT folded into the M1 denominator — supersession (100% thrown away) is a distinct failure from edit-churn. | user | FR-6 |
-| **FR-OQ4 — snapshot storage + retention** | **Latest-approved body only**, gzip-compressed, in a **git-ignored** `.minspec/snapshots/` sidecar; rework datapoints appended to a small numeric history (`{approvedAt, reworkPct, engagedMs}`) so the *trend* survives without storing every body. Bounds R3 (no per-round body history). | eng default | FR-1, gates R3 |
+| **FR-OQ4 — baseline storage + retention** | **Reopened 2026-06-27, re-resolved (DR-043): git-native baseline.** The approved body is written as a content-addressed **git blob** (`git hash-object -w`), pinned by a `refs/minspec/snapshots/<specId>` ref (so `git gc` can't prune it), and its **blob SHA** is recorded in the **committed content-free ledger** (#300) — the body is *not* duplicated (git already holds it). Numeric trend history (`{approvedAt, reworkPct, engagedMs}`) unchanged. Gzip `.minspec/snapshots/` kept **only as the non-git fallback**. *Supersedes the original eng-default gzip-sidecar resolution; closes the DR-042 "no committed ground truth" gap.* | user | FR-1, FR-2, Costly #4, gates R3 |
 | **FR-OQ5 — body/frontmatter boundary** | **Strip frontmatter by the existing `parseSpec` split**, diff the body only. No new two-zone delimiter / `coreHash` needed — the parser already separates frontmatter. | eng default | FR-4 |
 | **FR-OQ6 — review-start + engagement** | **Start on first engagement event** (focus / first visible-range change), not file-open; M3 duration = **engaged reading time**, idle gaps > threshold stripped (FR-7a). Engagement (scroll/focus) is sampled — webview DOM fully, plain editor via `onDidChangeTextEditorVisibleRanges`/`Selection`/`ActiveTextEditor` — **only to denoise time**, never a comprehension verdict (FR-7b). Opt-in, content-free (FR-8). | user | FR-7, FR-7a, FR-7b |
 

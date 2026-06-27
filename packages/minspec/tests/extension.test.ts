@@ -788,12 +788,50 @@ describe('activate()', () => {
     });
   });
 
-  it('does not show first-run prompt when .minspec/ exists', () => {
+  it('does not show first-run (bootstrap init) prompt when .minspec/ exists', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
 
     activate(makeMockContext());
 
-    expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+    // The bootstrap "isn't initialized" offer must not fire for an initialized
+    // project. (An empty constitution may still surface its own #320 advisory —
+    // asserted separately below — so we scope this to the init prompt, not "no
+    // toast at all".)
+    const calls = vi.mocked(vscode.window.showInformationMessage).mock.calls;
+    expect(
+      calls.some((c) => String(c[0]).includes("isn't initialized")),
+    ).toBe(false);
+  });
+
+  it('surfaces the #320 propose-draft nudge when an initialized constitution is empty', async () => {
+    // .minspec/ exists; the (auto-mocked) constitution reads as empty/template →
+    // the empty-constitution nudge offers "Propose draft" with a skip option.
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+
+    activate(makeMockContext());
+
+    await vi.waitFor(() => {
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining('no human-authored rules yet'),
+        'Propose draft',
+        "Don't ask again",
+      );
+    });
+  });
+
+  it('suppresses the #320 propose nudge once dismissed (workspaceState skip flag)', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+
+    const ctx = makeMockContext();
+    // Skip flag set → the nudge must not fire.
+    (ctx.workspaceState.get as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+    activate(ctx);
+
+    const calls = vi.mocked(vscode.window.showInformationMessage).mock.calls;
+    expect(
+      calls.some((c) => String(c[0]).includes('no human-authored rules yet')),
+    ).toBe(false);
   });
 
   it('does not show legacy welcome prompt when user has already seen it', () => {

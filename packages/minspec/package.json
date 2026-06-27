@@ -77,6 +77,10 @@
         "title": "MinSpec: Show Constitution Generation Prompt"
       },
       {
+        "command": "minspec.constitutionPropose",
+        "title": "MinSpec: Propose Constitution (draft)"
+      },
+      {
         "command": "minspec.constitutionCompact",
         "title": "MinSpec: Compact Constitution"
       },

@@ -27,6 +27,7 @@ import {
   type GeneratedHashes,
 } from './merge-refresh';
 import { generateSlashCommandShims } from './slash-commands';
+import { detectTools, type DetectedTools } from './tool-detector';
 import { writeEpicIndex } from './epic-manager';
 import { assembleContext } from './constitution-context';
 import { seedProvider, integrateProposal, CONSTITUTION_SECTION_SCHEMA } from './constitution-proposer';
@@ -161,8 +162,12 @@ function missingMarkersMessage(outputPath: string): string {
  * boundary Refresh later uses to update only MinSpec's region. The user is expected
  * to add any custom content OUTSIDE the markers.
  */
-function generateManagedRegionTemplates(rootDir: string): void {
+function generateManagedRegionTemplates(rootDir: string, tools: DetectedTools): void {
   for (const tpl of MANAGED_REGION_TEMPLATES) {
+    // Tool-gated templates (the slash-command shims, #241) are only scaffolded for a
+    // tool the project actually uses; tool-independent templates (CI workflow, git
+    // hooks) have no condition and are always scaffolded.
+    if (tpl.condition && !tpl.condition(tools)) continue;
     const fullPath = path.join(rootDir, tpl.outputPath);
     if (!fs.existsSync(fullPath)) {
       writeManagedFile(fullPath, tpl);
@@ -243,10 +248,15 @@ function ensureHooksPath(rootDir: string): void {
  * Returns the warnings for any files left untouched (missing markers) so the
  * vscode-aware caller can surface them. The file is NEVER modified on a warning.
  */
-function refreshManagedRegionTemplates(rootDir: string): ManagedRegionWarning[] {
+function refreshManagedRegionTemplates(rootDir: string, tools: DetectedTools): ManagedRegionWarning[] {
   const warnings: ManagedRegionWarning[] = [];
 
   for (const tpl of MANAGED_REGION_TEMPLATES) {
+    // Skip a tool-gated template whose tool the project does not use (#241): never
+    // scaffold a Claude shim into a Cursor-only project, and never re-scaffold one a
+    // user removed by uninstalling the tool. Tool-independent templates are unconditional.
+    if (tpl.condition && !tpl.condition(tools)) continue;
+
     const fullPath = path.join(rootDir, tpl.outputPath);
 
     if (!fs.existsSync(fullPath)) {
@@ -325,20 +335,24 @@ export function generateHarnessFiles(rootDir: string): void {
   // false-positive drift toast.
   saveTemplateBaseline(rootDir, computeTemplateBaseline());
 
-  // Scaffold managed-region templates (#249) — non-Markdown harness artifacts (the
-  // CI workflow) the section-merge engine cannot carry — wrapping MinSpec's content
-  // in comment-delimited markers. No content baseline is recorded: the markers
-  // themselves are the boundary Refresh uses to update only MinSpec's region.
-  generateManagedRegionTemplates(rootDir);
+  // Scaffold managed-region templates (#249, #241) — harness artifacts the Markdown
+  // section-merge engine cannot carry (CI workflow, git hooks) PLUS the tool-gated
+  // slash-command shims — wrapping MinSpec's content in comment-delimited markers. No
+  // content baseline is recorded: the markers themselves are the boundary Refresh uses
+  // to update only MinSpec's region. Tools are detected here, AFTER the Markdown
+  // templates are written, so freshly-written CLAUDE.md / .cursorrules gate the shims.
+  const tools = detectTools(rootDir);
+  generateManagedRegionTemplates(rootDir, tools);
 
   // Point git at the scaffolded editor-independent hooks so terminal / other-editor
   // / AI-agent commits run the SDD gates too (DR-037, #247). Idempotent + fail-quiet.
   ensureHooksPath(rootDir);
 
-  // Generate Spec Kit slash-command shims for any detected AI tool.
-  // Tools are re-detected after template generation so freshly written
-  // CLAUDE.md / AGENTS.md / .cursorrules trigger shim creation.
-  generateSlashCommandShims(rootDir);
+  // Inject the AGENTS.md slash-command marker section (already merge-safe). The Claude
+  // per-command files and the Cursor file are now owned by the managed-region path
+  // above, so this is a no-op for those (they already exist with markers); it remains
+  // the writer for the AGENTS.md table.
+  generateSlashCommandShims(rootDir, { tools });
 }
 
 /**
@@ -399,19 +413,22 @@ export function refreshHarnessFiles(rootDir: string): ManagedRegionWarning[] {
   // template next moves upstream (#117).
   saveTemplateBaseline(rootDir, computeTemplateBaseline());
 
-  // Reconcile managed-region templates (#249): re-scaffold if deleted, overwrite
-  // only the marker-bounded MinSpec region (preserving the user's surrounding
-  // content), or skip+warn if the markers were deleted. Collect warnings to return.
-  const managedRegionWarnings = refreshManagedRegionTemplates(rootDir);
+  // Reconcile managed-region templates (#249, #241): re-scaffold if deleted, overwrite
+  // only the marker-bounded MinSpec region (preserving the user's surrounding content),
+  // or skip+warn if the markers were deleted. The slash-command shims ride this path
+  // now, so a guidance update reaches existing projects and a drifted shim is brought
+  // current — the create-only behaviour is gone. Collect warnings to return.
+  const tools = detectTools(rootDir);
+  const managedRegionWarnings = refreshManagedRegionTemplates(rootDir, tools);
 
   // Re-assert git's hooksPath on refresh too (a repo cloned without it, or whose
   // config was reset, regains the gate). Idempotent + fail-quiet (DR-037, #247).
   ensureHooksPath(rootDir);
 
-  // Refresh Spec Kit slash-command shims. Per-command Claude/Cursor files
-  // are only created if missing (user edits preserved); the AGENTS.md
-  // marker section is regenerated in place.
-  generateSlashCommandShims(rootDir);
+  // Re-inject the AGENTS.md slash-command marker section (regenerated in place). The
+  // Claude per-command files and the Cursor file are refreshed by the managed-region
+  // path above, so this no longer owns them.
+  generateSlashCommandShims(rootDir, { tools });
 
   return managedRegionWarnings;
 }

@@ -29,6 +29,16 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 /** Files/trees scanned. `specs/` is excluded by construction (approval-bound). */
 const SCAN_ROOTS = ['docs', 'README.md', 'CLAUDE.md'];
 
+/**
+ * Generated artifacts excluded from the gate: it enforces attribution on the
+ * AUTHORED source (DR bodies), not on derived files. `docs/decisions/INDEX.md`
+ * is regenerated from the DR bodies — gating it would (a) double-enforce and
+ * (b) make this PR perpetually conflict with any concurrent DR addition that
+ * regenerates the index. The attributed DR bodies flow into INDEX on the next
+ * regen.
+ */
+const EXCLUDE = new Set(['docs/decisions/INDEX.md']);
+
 /** Parent-range DR tokens — anything DR-100+ is outside the local register. */
 const PARENT_DR = /DR-([1-9]\d{2,})/g;
 
@@ -50,7 +60,8 @@ function listFiles(root: string): string[] {
     if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
     const child = path.join(abs, entry.name);
     if (entry.isDirectory()) out.push(...listFiles(path.join(root, entry.name)));
-    else if (entry.isFile() && entry.name.endsWith('.md')) out.push(child);
+    else if (entry.isFile() && entry.name.endsWith('.md') && !EXCLUDE.has(path.relative(REPO_ROOT, child)))
+      out.push(child);
   }
   return out;
 }

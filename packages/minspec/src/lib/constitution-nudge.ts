@@ -24,12 +24,25 @@ export interface ConstitutionNudge {
   readonly empty: boolean;
   readonly message: string;
   readonly fixHint: string;
+  /**
+   * The offer-to-fix action surfaced on the nudge toast (#320): the label the
+   * user clicks and the command it runs. Pure metadata — the toast itself is
+   * shown by the (vscode-bearing) command/surface layer, never here (INV-1
+   * Tier-0). The command writes a deterministic DRAFT proposal into the empty
+   * sections (see `constitutionProposeCommand`).
+   */
+  readonly fixActionLabel: string;
+  readonly fixCommandId: string;
 }
 
 const ADVISORY_MESSAGE =
   'MinSpec: your constitution has no human-authored rules yet — consider authoring its Invariants, Principles, Constraints, and Goals.';
 const FIX_HINT =
   'Edit .minspec/constitution.md (review/accept any DRAFT entries MinSpec seeded).';
+/** Label for the offer-to-fix action on the nudge (#320). */
+export const PROPOSE_ACTION_LABEL = 'Propose draft';
+/** The command the offer-to-fix action runs (#320). */
+export const PROPOSE_COMMAND_ID = 'minspec.constitutionPropose';
 
 /**
  * Is the constitution all-template — only comments and MinSpec DRAFT entries,
@@ -112,5 +125,7 @@ export function evaluateConstitution(rootDir: string): ConstitutionNudge {
     empty,
     message: ADVISORY_MESSAGE,
     fixHint: FIX_HINT,
+    fixActionLabel: PROPOSE_ACTION_LABEL,
+    fixCommandId: PROPOSE_COMMAND_ID,
   };
 }
