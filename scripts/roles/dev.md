@@ -30,6 +30,32 @@
 4. All commits use conventional commit format
 5. No `// TODO`, `// FIXME`, `// HACK`, `test.skip`, or stub code in diff
 6. Issue comment posted with summary of changes
+7. `.review-signals.json` written in the worktree root (see below) — without it,
+   the PR's #180 review block renders every judgement signal as UNVERIFIED.
+
+## Review signals (#180 / #256)
+
+After the work is committed, write `.review-signals.json` in the worktree root.
+The dispatcher derives the machine-checkable signals itself (`changedFiles` from
+the diff, `gate` by re-running test/lint/build/validate — those are NOT
+self-reported, and any values you put for them are ignored). You supply ONLY the
+judgement fields, and TRUTHFULLY — an unproven regression renders as ⚠️
+UNVERIFIED, never a checkmark; never set a proof flag for a run you did not do:
+
+```json
+{
+  "rootCause": "<RCDD root cause sentence; \"\" if a pure feature>",
+  "rootCauseFiles": ["<file(s) the cause points at — must appear in your diff>"],
+  "regressionTest": "<fully-qualified name of the distinguishing test, or omit>",
+  "regressionProvenBaseRed": false,
+  "regressionProvenHeadGreen": false
+}
+```
+
+Set `regressionProvenBaseRed` true ONLY if you ran the named test against the
+pre-fix/base code and saw it FAIL; `regressionProvenHeadGreen` true ONLY if you
+ran it against head and saw it PASS. This file is not a substitute for the
+`.agent-summary.md` prose summary.
 
 ## Future
 
