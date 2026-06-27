@@ -248,4 +248,10 @@ Hardening DR-023 (no orphan follow-ups) without surfacing commit friction: on DR
 *Status: proposed · Date: 2026-06-26*
 
 A review-telemetry audit found the entire trust-measurement layer (snapshot, reviewer identity, engagement, outcome-join) specified in detail but 0% built, and approvals.json gitignored so there is no committed ground truth to join against. Sets build order: SPEC-017 M1/M2 outcome metrics (char-rework %, needs no surface ownership) + reviewer identity + committed content-free ledger FIRST; engagement (M3) and the scoped opt-in custom editor (SPEC-018) AFTER, because engagement is meaningless until there is rework to cross it against (FR-9). Rejects the global markdown/PR-intercept tactic as impossible and anti-thesis. Reframes the DR-029 tuning study from one-armed (LLM-only) to two-armed (+ human review-depth → error-rate).
+
+## [DR-043 — Approval baseline stored as a pinned git blob referenced from the committed ledger (not a gzip sidecar)](DR-043.md)
+
+*Status: proposed · Date: 2026-06-27*
+
+Reopens SPEC-017 FR-OQ4 (founder's clarify question: "use git versioning instead of gzip?"). The approved spec body is already in git, so instead of gzipping a per-machine copy into a git-ignored sidecar, mint it as a content-addressed git blob (`git hash-object -w`), pin it with a `refs/minspec/snapshots/` ref so gc can't prune it, and record only the blob SHA in the committed content-free ledger (DR-042 #300) — recovering via `git cat-file`. No duplicated body; committed, shareable, auditable ground truth; one mechanism serves both SPEC-017's baseline and #300's ledger. Dirty-tree-safe (hash-object works on uncommitted bytes); gzip sidecar kept only as the non-git fallback. Supersedes FR-OQ4's eng-default resolution, amends Costly-to-Refactor #4.
 <!-- minspec:dr-index:end -->
