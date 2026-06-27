@@ -227,6 +227,19 @@
       {
         "command": "minspec.validateSpec",
         "title": "MinSpec: Check Spec Completeness"
+      },
+      {
+        "command": "minspec.approveActive",
+        "title": "MinSpec: Approve/Accept Active",
+        "shortTitle": "Approve/Accept",
+        "icon": "$(check-all)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "minspec.approveActive",
+        "key": "alt+a",
+        "when": "editorTextFocus || focusedView == minspecStatus || focusedView == minspecAdrs || focusedView == minspecBacklog"
       }
     ],
     "views": {
