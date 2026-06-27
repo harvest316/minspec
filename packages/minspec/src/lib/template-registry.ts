@@ -10,15 +10,24 @@ import {
   type SectionHashes,
 } from './merge-refresh';
 
-/** Template names that can be rendered */
-export type TemplateName = 'CLAUDE.md' | 'AGENTS.md' | '.cursorrules' | 'DESIGN.md' | 'constitution.md';
+/**
+ * Template names that can be rendered.
+ *
+ * NOTE — `DESIGN.md` is intentionally absent (#206). It is NOT a harness
+ * template: a split-layout `design.md` is a T3+ **Plan-phase** artifact, created
+ * when planning starts, not at init. Scaffolding an empty `DESIGN.md` stub at
+ * init produced a doc the project's own gap-audit (#205) would flag, and — being
+ * a managed template — refresh resurrected it after deletion. Never re-add it
+ * here; both `generateHarnessFiles` and `refreshHarnessFiles` loop over
+ * `TEMPLATE_NAMES`, so membership is exactly "scaffolded + refresh-managed".
+ */
+export type TemplateName = 'CLAUDE.md' | 'AGENTS.md' | '.cursorrules' | 'constitution.md';
 
 /** All template names in generation order */
 export const TEMPLATE_NAMES: readonly TemplateName[] = [
   'CLAUDE.md',
   'AGENTS.md',
   '.cursorrules',
-  'DESIGN.md',
   'constitution.md',
 ] as const;
 
@@ -27,7 +36,6 @@ export const TEMPLATE_OUTPUT_PATHS: Record<TemplateName, string> = {
   'CLAUDE.md': 'CLAUDE.md',
   'AGENTS.md': 'AGENTS.md',
   '.cursorrules': '.cursorrules',
-  'DESIGN.md': 'DESIGN.md',
   'constitution.md': '.minspec/constitution.md',
 };
 
@@ -175,39 +183,6 @@ This project uses MinSpec SDD methodology. Specs in \`{{specsDir}}/\`, decisions
 - Document decisions that are hard to reverse
 `;
 
-const DESIGN_MD_TEMPLATE = `# {{projectName}} — Design Document
-
-## Architecture Overview
-
-<!-- Describe the high-level architecture here -->
-
-## Key Components
-
-<!-- List and describe the main modules/components -->
-
-## Data Flow
-
-<!-- Describe how data flows through the system -->
-
-## Technology Stack
-
-<!-- List key technologies and why they were chosen -->
-
-## Constraints
-
-{{#if constraints}}
-{{#each constraints}}
-- {{this}}
-{{/each}}
-{{else}}
-<!-- Add technical/business constraints here -->
-{{/if}}
-
-## Open Questions
-
-<!-- Track unresolved design questions here -->
-`;
-
 const CONSTITUTION_MD_TEMPLATE = `# {{projectName}} — Constitution
 
 ## Invariants
@@ -268,7 +243,6 @@ export const TEMPLATES: Record<TemplateName, string> = {
   'CLAUDE.md': CLAUDE_MD_TEMPLATE,
   'AGENTS.md': AGENTS_MD_TEMPLATE,
   '.cursorrules': CURSORRULES_TEMPLATE,
-  'DESIGN.md': DESIGN_MD_TEMPLATE,
   'constitution.md': CONSTITUTION_MD_TEMPLATE,
 };
 

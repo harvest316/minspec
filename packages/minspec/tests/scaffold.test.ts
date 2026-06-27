@@ -223,3 +223,44 @@ describe('refreshHarnessFiles()', () => {
     expect(refreshed).toContain('This is a section I added manually.');
   });
 });
+
+/**
+ * Regression (#206): init must NOT scaffold an empty DESIGN.md stub. A
+ * split-layout design doc is a T3+ Plan-phase artifact created when planning
+ * starts, not a harness template. The empty stub it used to emit had no
+ * frontmatter and would be flagged by the project's own brownfield gap-audit
+ * (#205) — and, being a managed template, refresh resurrected it after deletion.
+ * Invariant: fresh init has no self-flagged DESIGN.md, and refresh never
+ * resurrects it.
+ */
+describe('#206 — DESIGN.md is not a harness template', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'minspec-design-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('fresh init does not scaffold DESIGN.md', () => {
+    generateHarnessFiles(tmpDir);
+    expect(fs.existsSync(path.join(tmpDir, 'DESIGN.md'))).toBe(false);
+  });
+
+  it('refresh does not resurrect a user-deleted DESIGN.md', () => {
+    generateHarnessFiles(tmpDir);
+    // Even if a DESIGN.md existed and the user removed it, refresh must leave it gone.
+    expect(fs.existsSync(path.join(tmpDir, 'DESIGN.md'))).toBe(false);
+
+    refreshHarnessFiles(tmpDir);
+    expect(fs.existsSync(path.join(tmpDir, 'DESIGN.md'))).toBe(false);
+  });
+
+  it('DESIGN.md is absent from the recorded harness hashes', () => {
+    generateHarnessFiles(tmpDir);
+    const hashes = loadHashes(tmpDir);
+    expect(hashes['DESIGN.md']).toBeUndefined();
+  });
+});
