@@ -20,6 +20,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ApprovalRecord } from './approval';
+import type { Tier } from './config';
 
 const APPROVALS_DIR = '.minspec/approvals';
 
@@ -51,8 +52,15 @@ export function sidecarPath(rootDir: string, specRelPath: string): string {
  * Shallow shape-validation — drop a malformed sidecar rather than throw. A record
  * must carry the FR-2 fields with the right primitive types; a partial/garbage
  * file is treated as "no record" (so the spec reads unapproved, fail-safe).
+ *
+ * SPEC-017 back-compat (AC-1, Costly #1): `baselineBlob` and `reviewStart` are
+ * validated as `string | undefined` — NEVER required-string. Legacy records
+ * (pre-SPEC-017) lack `baselineBlob`; a required-string check here would silently
+ * drop every existing approval (the gate would flag every approved spec as
+ * unapproved). Instead: absent is VALID, present must be string. `readRecord`
+ * normalizes absent → '' so the required-string type holds in memory (see below).
  */
-function isValidRecord(v: unknown): v is ApprovalRecord {
+function isValidRecord(v: unknown): boolean {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
   const r = v as Record<string, unknown>;
   return (
@@ -61,17 +69,55 @@ function isValidRecord(v: unknown): v is ApprovalRecord {
     typeof r.approvedAt === 'string' &&
     typeof r.approvedBy === 'string' &&
     typeof r.tier === 'string' &&
-    typeof r.migrated === 'boolean'
+    typeof r.migrated === 'boolean' &&
+    // back-compat: legacy records predate baselineBlob → absent is valid (no M1
+    // datapoint), present must be a string. NEVER required, or legacy approvals drop.
+    (r.baselineBlob === undefined || typeof r.baselineBlob === 'string') &&
+    // M3-reserved placeholder: optional, present must be a string.
+    (r.reviewStart === undefined || typeof r.reviewStart === 'string')
   );
 }
 
-/** Read the sidecar record for a spec, or undefined if absent/malformed. */
+/**
+ * Normalize a validated on-disk object to a type-safe in-memory ApprovalRecord.
+ *
+ * SPEC-017 normalization: `baselineBlob` absent on disk (legacy pre-SPEC-017
+ * record) is normalized to `''` so the required-string type always holds in
+ * memory. `readRecord` and `listRecords` both call this after `isValidRecord`.
+ */
+function normalizeRecord(v: unknown): ApprovalRecord {
+  const r = v as Record<string, unknown>;
+  const base = {
+    specPath: r.specPath as string,
+    specHash: r.specHash as string,
+    approvedAt: r.approvedAt as string,
+    approvedBy: r.approvedBy as string,
+    tier: r.tier as Tier,
+    migrated: r.migrated as boolean,
+    baselineBlob: typeof r.baselineBlob === 'string' ? r.baselineBlob : '',
+  };
+  if (typeof r.reviewStart === 'string') {
+    return { ...base, reviewStart: r.reviewStart };
+  }
+  return base;
+}
+
+/**
+ * Read the sidecar record for a spec, or undefined if absent/malformed.
+ *
+ * SPEC-017 normalization (AC-1 back-compat): if the on-disk record lacks
+ * `baselineBlob` (legacy pre-SPEC-017 shape), it is normalized to `''` in memory
+ * so the required-string type `ApprovalRecord.baselineBlob` always holds. This
+ * keeps `readRecord`'s return type honest (no type lie) while preserving every
+ * legacy approval as a valid, readable record. `reviewStart` is left as-is
+ * (undefined when absent, which is correct for the optional field).
+ */
 export function readRecord(rootDir: string, specRelPath: string): ApprovalRecord | undefined {
   const p = sidecarPath(rootDir, specRelPath);
   if (!fs.existsSync(p)) return undefined;
   try {
     const parsed = JSON.parse(fs.readFileSync(p, 'utf-8')) as unknown;
-    return isValidRecord(parsed) ? parsed : undefined;
+    return isValidRecord(parsed) ? normalizeRecord(parsed) : undefined;
   } catch {
     return undefined;
   }
@@ -113,7 +159,7 @@ export function listRecords(rootDir: string): ApprovalRecord[] {
       else if (e.name.endsWith('.json')) {
         try {
           const parsed = JSON.parse(fs.readFileSync(full, 'utf-8')) as unknown;
-          if (isValidRecord(parsed)) out.push(parsed);
+          if (isValidRecord(parsed)) out.push(normalizeRecord(parsed));
         } catch {
           // skip malformed
         }
