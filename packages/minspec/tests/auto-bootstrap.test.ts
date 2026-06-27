@@ -516,11 +516,11 @@ describe('auto-bootstrap', () => {
   });
 
   describe('BOOTSTRAP_STEPS', () => {
-    it('contains init, refresh, classify, then two backfill steps (epics, design-stub) in order', () => {
+    it('contains init, refresh, classify, then three backfill steps (epics, design-stub, tasks.md) in order', () => {
       const kinds = BOOTSTRAP_STEPS.map((s: BootstrapStep) => s.kind);
-      // #315 adds a second `backfill`-kind step (DESIGN.md stub removal) after
-      // the epic backfill step.
-      expect(kinds).toEqual(['init', 'refresh', 'classify', 'backfill', 'backfill']);
+      // #315 adds a second `backfill`-kind step (DESIGN.md stub removal); #225
+      // adds a third (missing-tasks.md creation), after the epic backfill step.
+      expect(kinds).toEqual(['init', 'refresh', 'classify', 'backfill', 'backfill', 'backfill']);
     });
 
     it('command-dispatching steps wire to an existing minspec command', () => {
@@ -541,13 +541,14 @@ describe('auto-bootstrap', () => {
       }
     });
 
-    it('the two backfill steps use DISTINCT skip flags (no cross-suppression)', () => {
+    it('the backfill steps use DISTINCT skip flags (no cross-suppression)', () => {
       const backfills = BOOTSTRAP_STEPS.filter((s) => s.kind === 'backfill');
-      expect(backfills).toHaveLength(2);
+      expect(backfills).toHaveLength(3);
       const keys = backfills.map((s) => s.skipPrefKey);
-      expect(new Set(keys).size).toBe(2);
+      expect(new Set(keys).size).toBe(3);
       expect(keys).toContain('skipBackfillPrompt');
       expect(keys).toContain('skipDesignStubPrompt');
+      expect(keys).toContain('skipTasksMdPrompt');
     });
   });
 
