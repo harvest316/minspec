@@ -42,6 +42,7 @@ packages/minspec/test-fixtures/workspace/.minspec/generated-hashes.json
 # checkout has it. The legacy single-file .minspec/approvals.json stays ignored (it
 # is migrated into the sidecar tree by scripts/migrate-approvals.ts and retired).
 .minspec/approvals.json
+.minspec/approvals.json.bak-*
 
 # Auto-drain opt-in (#239) — personal/machine-local, never inherited by teammates
 .minspec/auto-drain

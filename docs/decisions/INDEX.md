@@ -229,29 +229,35 @@ MinSpec's SDD gates (spec id: frontmatter, RCDD root-cause line, ref-egress leak
 
 *Status: proposed · Date: 2026-06-23*
 
-The next-task signpost emits one task from a deterministic DAG, but the answer and its reasoning are split across three unbuilt surfaces (#48 dependency-map, #182 PR-nodes, #211 PR-queue) with three node vocabularies. One unified graph renders the SPEC-012 DAG with the signpost node at its centre — signpost + 2 layers + "+N" rollups, primary node dominant and sole call-to-action — subsuming all three. A view over the resolver, never a source of truth; spec-after-SPEC-012.
+The next-task signpost (DR-019, SPEC-012) emits **one** next human task from a deterministic cross-artifact DAG. Today the *answer* (one task) and the *reasoning* (the DAG behind it) are separate ideas with separate, unbuilt surfaces: Three surfaces, three node vocabularies, one underlying graph. SPEC-010 FR-4 already requires the signpost to **show its evidence**; a local graph centred on the signpost node *is* that evidence rendered spatially — it turns an opaque verdict ("do X next") into an auditable one ("…because Y…
 
 ## [DR-039 — Goals drive priority — constitution Goals + goal-rank/epic.order as the deterministic human dial; auto-derived WSJF as a future upgrade](DR-039.md)
 
 *Status: proposed · Date: 2026-06-23*
 
-The human priority dial is epic.order (coarse) + ranked project Goals (thematic, mapped via `goal:` frontmatter), read by the resolver as deterministic tie-breaks within a severity class — never an LLM judgement, never overriding a gate. Manual WSJF is demoted (kept for discoverability, not wired to the signpost). The exciting future upgrade: auto-derive WSJF deterministically — size from the classifier, value from goal-rank, risk from consequence analyzers, time from milestones — at zero human ceremony.
+DR-019 makes next-task priority a deterministic DAG; the one thing the DAG cannot derive — relative importance between independent branches — it lifts into the human-set epic.order field. Three gaps surfaced this session: 1. **Is business value computed, and correctly?** Yes, but in the wrong place: a **WSJF** scorer exists (minspec.scoreWsjf, backlog.ts) — human-entered, 4 dimensions × 1–10 — but it scores **GitHub issues only**, is **not wired to the resolver**, and asks for four numbers per issue. That is…
 
 ## [DR-040 — DR-023 follow-ups auto-materialize — friction-free auto-create of missing issues, not a blocking gate](DR-040.md)
 
 *Status: proposed · Date: 2026-06-23*
 
-Hardening DR-023 (no orphan follow-ups) without surfacing commit friction: on DR save, un-materialized `## Follow-ups (tracked)` bullets are auto-filed as issues with the `#ref` written back, while genuinely dangling refs stay a surfaced error. Scoped to the curated section only (threads DR-023's "don't auto-create every consequence" rejection). Closes the DR-019 input leak honestly instead of teaching the resolver to infer priority from prose.
+DR-023 requires every DR to materialize its surfaced work as tracked issues/specs in a ## Follow-ups (tracked) section, with only a **soft validator warning** when items lack a ref. The session asked whether to *harden* this into a blocking gate — because un-materialized follow-ups are the mechanism by which "newer specs/DRs not yet turned into issues/PRs" stay invisible to the next-task DAG (DR-019): the resolver ranks structural edges, so prose-only follow-ups are simply not there.
 
 ## [DR-042 — Outcome metrics before engagement — sequence the trust-measurement build (outcome is the moat, engagement is the garnish)](DR-042.md)
 
 *Status: proposed · Date: 2026-06-26*
 
-A review-telemetry audit found the entire trust-measurement layer (snapshot, reviewer identity, engagement, outcome-join) specified in detail but 0% built, and approvals.json gitignored so there is no committed ground truth to join against. Sets build order: SPEC-017 M1/M2 outcome metrics (char-rework %, needs no surface ownership) + reviewer identity + committed content-free ledger FIRST; engagement (M3) and the scoped opt-in custom editor (SPEC-018) AFTER, because engagement is meaningless until there is rework to cross it against (FR-9). Rejects the global markdown/PR-intercept tactic as impossible and anti-thesis. Reframes the DR-029 tuning study from one-armed (LLM-only) to two-armed (+ human review-depth → error-rate).
+A review-telemetry audit (2026-06-26, 6-agent workflow, claims verified to file:line) asked whether MinSpec can today (a) **prove** the value of SDD and (b) **tune** the "just enough human" thesis (DR-029) — e.g. "this project has a high error rate; can we point to the cursory reviews that were rubber-stamped?"
 
 ## [DR-043 — Approval baseline stored as a pinned git blob referenced from the committed ledger (not a gzip sidecar)](DR-043.md)
 
 *Status: proposed · Date: 2026-06-27*
 
-Reopens SPEC-017 FR-OQ4 (founder's clarify question: "use git versioning instead of gzip?"). The approved spec body is already in git, so instead of gzipping a per-machine copy into a git-ignored sidecar, mint it as a content-addressed git blob (`git hash-object -w`), pin it with a `refs/minspec/snapshots/` ref so gc can't prune it, and record only the blob SHA in the committed content-free ledger (DR-042 #300) — recovering via `git cat-file`. No duplicated body; committed, shareable, auditable ground truth; one mechanism serves both SPEC-017's baseline and #300's ledger. Dirty-tree-safe (hash-object works on uncommitted bytes); gzip sidecar kept only as the non-git fallback. Supersedes FR-OQ4's eng-default resolution, amends Costly-to-Refactor #4.
+SPEC-017 (Trust Dashboard) needs an **approval baseline** — the exact approved spec body at approval time — so it can later char-diff current-vs-approved and report rework % (M1). SPEC-017 FR-OQ4 originally resolved this *by engineering default* to: gzip the latest-approved body into a **git-ignored** .minspec/snapshots/ sidecar.
+
+## [DR-044 — Canonical term for review-gate artifacts is "Approvable"](DR-044.md)
+
+*Status: accepted · Date: 2026-06-27*
+
+MinSpec tracks five artifact kinds that all share one property: a human must read and approve them before work proceeds. The signpost (DR-019) surfaces the single next human task from this set. The approval gate (DR-012 / DR-034) hashes and locks them. Nothing in the codebase named the set as a whole.
 <!-- minspec:dr-index:end -->
