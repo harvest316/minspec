@@ -6,10 +6,12 @@ import {
   classify,
   overrideClassification,
   applyFloor,
+  pickDrivingSignal,
   loadCalibration,
   saveCalibration,
   recordOverride,
   type ClassificationSignal,
+  type ClassificationResult,
   type CalibrationData,
 } from '../src/lib/classifier';
 import { DEFAULT_CONFIG, TIERS, type Tier, type MinspecConfig } from '../src/lib/config';
@@ -26,6 +28,56 @@ function makeSignal(
     ...overrides,
   };
 }
+
+/** Build a minimal ClassificationResult for pickDrivingSignal tests */
+function makeResult(
+  tier: Tier,
+  signals: ClassificationSignal[],
+): ClassificationResult {
+  return { tier, confidence: 0, signals, suggestedPhases: [] };
+}
+
+// ─── pickDrivingSignal() — the "why" behind the tier (#216) ──────────────────
+
+describe('pickDrivingSignal()', () => {
+  it('returns undefined when there are no signals', () => {
+    expect(pickDrivingSignal(makeResult('T1', []))).toBeUndefined();
+  });
+
+  it('picks the signal sitting at the winning tier, not a lower one', () => {
+    const lower = makeSignal({ name: 'lineCount', tierContribution: 'T1', value: 9 });
+    const driver = makeSignal({ name: 'fileCount', tierContribution: 'T3', value: 12 });
+    const picked = pickDrivingSignal(makeResult('T3', [lower, driver]));
+    expect(picked?.name).toBe('fileCount');
+  });
+
+  it('among winning-tier signals, prefers the consequence (blast-radius) axis', () => {
+    const size = makeSignal({ name: 'fileCount', tierContribution: 'T3', value: 5, weight: 9 });
+    const reach = makeSignal({
+      name: 'importersReached',
+      tierContribution: 'T3',
+      value: 23,
+      weight: 1,
+      axis: 'consequence',
+    });
+    // Lower weight, but consequence axis wins as the more meaningful "why".
+    const picked = pickDrivingSignal(makeResult('T3', [size, reach]));
+    expect(picked?.name).toBe('importersReached');
+  });
+
+  it('falls back to highest weight when no signal carries the consequence axis', () => {
+    const a = makeSignal({ name: 'a', tierContribution: 'T2', value: 1, weight: 2 });
+    const b = makeSignal({ name: 'b', tierContribution: 'T2', value: 1, weight: 5 });
+    const picked = pickDrivingSignal(makeResult('T2', [a, b]));
+    expect(picked?.name).toBe('b');
+  });
+
+  it('falls back to the whole signal set if none match the winning tier (defensive)', () => {
+    const only = makeSignal({ name: 'orphan', tierContribution: 'T1', value: 1 });
+    // Result tier T4 but signals only T1 — should still return something.
+    expect(pickDrivingSignal(makeResult('T4', [only]))?.name).toBe('orphan');
+  });
+});
 
 // ─── T0 Tests: Core Classification Invariants ────────────────────────────────
 

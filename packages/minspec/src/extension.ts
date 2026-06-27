@@ -424,7 +424,11 @@ export function activate(context: vscode.ExtensionContext): void {
       );
       const triggerClassify = (uri: vscode.Uri) => {
         if (!isWatchedGitPath(uri.fsPath)) return;
-        vscode.commands.executeCommand('minspec.classify');
+        // Auto mode — passive status-bar line, never the interactive toast.
+        // This fires on every commit; a buttoned verdict here is pure nag (#216).
+        vscode.commands.executeCommand('minspec.classify', undefined, {
+          auto: true,
+        });
       };
       gitWatcher.onDidChange(triggerClassify);
       gitWatcher.onDidCreate(triggerClassify);

@@ -337,19 +337,34 @@ describe('auto-classify git watcher', () => {
 
     const trigger = gitWatcher.onDidChange.mock.calls[0][0] as (u: any) => void;
 
+    // The commit watcher fires classify in AUTO mode — passive, no toast (#216).
+    const AUTO = { auto: true };
+
     // A non-watched path (e.g. .git/config) must be ignored.
     trigger({ fsPath: '/tmp/test-workspace/.git/config' });
-    expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith('minspec.classify');
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
+      'minspec.classify',
+      undefined,
+      AUTO,
+    );
 
-    // A watched path (.git/HEAD) triggers the classify command.
+    // A watched path (.git/HEAD) triggers the classify command in auto mode.
     trigger({ fsPath: '/tmp/test-workspace/.git/HEAD' });
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('minspec.classify');
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'minspec.classify',
+      undefined,
+      AUTO,
+    );
 
     // A refs/heads/* path also triggers (covers the onDidCreate handler too).
     const triggerCreate = gitWatcher.onDidCreate.mock.calls[0][0] as (u: any) => void;
     vi.mocked(vscode.commands.executeCommand).mockClear();
     triggerCreate({ fsPath: '/tmp/test-workspace/.git/refs/heads/main' });
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('minspec.classify');
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'minspec.classify',
+      undefined,
+      AUTO,
+    );
   });
 
   // #203 regression: enabling the setting AFTER activation must start the

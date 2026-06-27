@@ -17,6 +17,7 @@ vi.mock('vscode', () => ({
     showErrorMessage: vi.fn(),
     showQuickPick: vi.fn(),
     createOutputChannel: vi.fn(() => mockChannel),
+    setStatusBarMessage: vi.fn(),
     activeTextEditor: undefined,
   },
   workspace: {
@@ -44,6 +45,20 @@ vi.mock('../src/lib/classifier', () => ({
     const order = ['T1', 'T2', 'T3', 'T4'];
     if (user === undefined) return predicted;
     return order.indexOf(user) > order.indexOf(predicted) ? user : predicted;
+  },
+  // pickDrivingSignal is pure; mirror the real selection (winning-tier signal,
+  // consequence axis first, then weight) so the headline assertions exercise the
+  // command's wiring. Its own logic is unit-tested in classifier.test.ts.
+  pickDrivingSignal: (result: { tier: string; signals: any[] }) => {
+    const atTier = result.signals.filter((s) => s.tierContribution === result.tier);
+    const pool = atTier.length > 0 ? atTier : result.signals;
+    if (pool.length === 0) return undefined;
+    return pool.reduce((best, s) => {
+      const bestC = best.axis === 'consequence' ? 1 : 0;
+      const sC = s.axis === 'consequence' ? 1 : 0;
+      if (sC !== bestC) return sC > bestC ? s : best;
+      return s.weight > best.weight ? s : best;
+    });
   },
   recordOverride: vi.fn(),
 }));
@@ -200,7 +215,7 @@ describe('classifyCommand()', () => {
 
   // ── Happy path — classifies raw signals (no weight calibration) ───────────
 
-  it('calls classify with the raw signals and shows the tier/confidence/phases message', async () => {
+  it('calls classify with the raw signals and shows the tier/driver/phases message', async () => {
     const signals = [makeSignal('fileCount', 4, 'T2', 1)];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
     const result = makeResult('T2', signals, 0.75, ['specify', 'plan']);
@@ -211,8 +226,9 @@ describe('classifyCommand()', () => {
     // DR-021: no applyCalibration step — signals go straight to classify.
     expect(classify).toHaveBeenCalledWith(signals, FAKE_CONFIG);
 
+    // Headline names the DRIVING signal, not a confidence% (#216).
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-      'MinSpec: Current changes → T2 (75% confidence) · specify → plan',
+      'MinSpec: Current changes → T2 · set by fileCount=4 · specify → plan',
       { detail: expect.stringContaining('fileCount=4'), modal: false },
       'Show Details',
       'Auto-classify from now on',
@@ -254,15 +270,34 @@ describe('classifyCommand()', () => {
     );
   });
 
-  it('rounds confidence to nearest integer percent', async () => {
-    const signals = [makeSignal('s', 1, 'T1')];
+  it('headline never shows a confidence percentage (#216 — the meaningless token)', async () => {
+    const signals = [makeSignal('fileCount', 4, 'T2')];
     vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
-    vi.mocked(classify).mockReturnValue(makeResult('T1', signals, 0.334, ['specify']));
+    // A high tier with a LOW agreement fraction — the exact case that read as
+    // "we're 14% sure it's T3".
+    vi.mocked(classify).mockReturnValue(makeResult('T2', signals, 0.14, ['specify', 'plan']));
 
     await classifyCommand(WS);
 
-    const firstArg = vi.mocked(vscode.window.showInformationMessage).mock.calls[0][0] as string;
-    expect(firstArg).toContain('(33% confidence)');
+    const headline = vi.mocked(vscode.window.showInformationMessage).mock.calls[0][0] as string;
+    expect(headline).not.toContain('%');
+    expect(headline).not.toContain('confidence');
+    expect(headline).toContain('set by fileCount=4');
+  });
+
+  it('rounds signal agreement to nearest integer percent in Show Details', async () => {
+    const signals = [makeSignal('s', 1, 'T1')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(makeResult('T1', signals, 0.334, ['specify']));
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
+      'Show Details' as unknown as undefined,
+    );
+
+    await classifyCommand(WS);
+
+    expect(mockChannel.appendLine).toHaveBeenCalledWith(
+      'Signal agreement: 33% (share of signals at the winning tier)',
+    );
   });
 
   // ── DR-021 Decision 2: bump-up affordance ─────────────────────────────────
@@ -344,7 +379,9 @@ describe('classifyCommand()', () => {
 
     expect(vscode.window.createOutputChannel).toHaveBeenCalledWith('MinSpec Classification');
     expect(mockChannel.appendLine).toHaveBeenCalledWith('Tier: T3');
-    expect(mockChannel.appendLine).toHaveBeenCalledWith('Confidence: 50%');
+    expect(mockChannel.appendLine).toHaveBeenCalledWith(
+      'Signal agreement: 50% (share of signals at the winning tier)',
+    );
     expect(mockChannel.appendLine).toHaveBeenCalledWith('Suggested phases: specify → plan → tasks');
     // DR-021 Decision 3: details state tier = scope, not difficulty.
     expect(mockChannel.appendLine).toHaveBeenCalledWith(
@@ -426,5 +463,54 @@ describe('classifyCommand()', () => {
       expect.anything(),
       { specsDir: 'custom/specs' },
     );
+  });
+
+  // ── Auto mode (#216 facet 3): the commit-watcher path must not nag ─────────
+
+  it('auto mode shows a passive status-bar line, no interactive toast', async () => {
+    const signals = [makeSignal('fileCount', 4, 'T2')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(makeResult('T2', signals, 0.75, ['specify', 'plan']));
+
+    await classifyCommand(WS, { auto: true });
+
+    expect(vscode.window.setStatusBarMessage).toHaveBeenCalledWith(
+      'MinSpec: Current changes → T2 · set by fileCount=4 · specify → plan',
+      8000,
+    );
+    // No interrupting toast, no action buttons.
+    expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+  });
+
+  it('auto-mode status-bar line never shows a confidence percentage (#216)', async () => {
+    const signals = [makeSignal('fileCount', 4, 'T2')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(makeResult('T2', signals, 0.14, ['specify', 'plan']));
+
+    await classifyCommand(WS, { auto: true });
+
+    const msg = vi.mocked(vscode.window.setStatusBarMessage).mock.calls[0][0] as string;
+    expect(msg).not.toContain('%');
+    expect(msg).not.toContain('confidence');
+  });
+
+  it('auto mode stays completely silent on a clean tree (no nag after a commit)', async () => {
+    vi.mocked(analyzeGitDiff).mockResolvedValue([]); // staged + unstaged empty
+
+    await classifyCommand(WS, { auto: true });
+
+    expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+    expect(vscode.window.setStatusBarMessage).not.toHaveBeenCalled();
+  });
+
+  it('explicit (non-auto) mode shows the interactive toast, not the status bar', async () => {
+    const signals = [makeSignal('fileCount', 4, 'T2')];
+    vi.mocked(analyzeGitDiff).mockResolvedValueOnce(signals);
+    vi.mocked(classify).mockReturnValue(makeResult('T2', signals, 0.75, ['specify', 'plan']));
+
+    await classifyCommand(WS); // no opts → interactive
+
+    expect(vscode.window.showInformationMessage).toHaveBeenCalled();
+    expect(vscode.window.setStatusBarMessage).not.toHaveBeenCalled();
   });
 });
