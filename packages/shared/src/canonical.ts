@@ -126,3 +126,23 @@ export function canonicalizeSpec(raw: string): string {
 export function specHash(raw: string): string {
   return crypto.createHash('sha256').update(Buffer.from(canonicalizeSpec(raw), 'utf-8')).digest('hex');
 }
+
+// Two boundaries: canonical = frontmatter-minus-lifecycle + body (specHash); getSpecBodyOnly = body only.
+/**
+ * SPEC-017 FR-4 baseline boundary: the spec body AFTER the frontmatter block.
+ *
+ * Reuses the SAME `FRONTMATTER_RE` anchor `canonicalizeSpec` (and `parseSpec`)
+ * use, so there is exactly ONE body-split definition — no second anchor to drift.
+ * EOL is normalized to `\n` first (matching `parseSpec`). A spec with no
+ * frontmatter returns the whole (normalized) content as body.
+ *
+ * Distinct from the canonical-hash boundary on purpose: `specHash` keeps
+ * frontmatter-minus-lifecycle so editing `status`/`phases` does not void approval;
+ * `getSpecBodyOnly` excludes ALL frontmatter so frontmatter churn never registers
+ * as the human reworking the LLM's prose. Pure, Tier-0 (no new dependency).
+ */
+export function getSpecBodyOnly(raw: string): string {
+  const normalized = raw.replace(/\r\n?/g, '\n');
+  const m = normalized.match(FRONTMATTER_RE);
+  return m ? normalized.slice(m[0].length) : normalized;
+}
