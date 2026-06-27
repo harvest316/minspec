@@ -121,6 +121,11 @@ describe('Invariant 2: No backend — no network calls', () => {
     // calls" invariant above still passes; this is git, not a backend). See
     // approval.ts gitConfigEmail.
     'lib/approval.ts',
+    // DR-037 / #247: scaffold points the project's git `core.hooksPath` at
+    // .minspec/hooks (via `git config --local core.hooksPath`) so the
+    // editor-independent SDD hooks run on every commit. Local git config write —
+    // no network, Tier-0. See scaffold.ts ensureHooksPath.
+    'lib/scaffold.ts',
   ]);
 
   // Files allowed to *name* HTTP clients as detection data (not call them). They
