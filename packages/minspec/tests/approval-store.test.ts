@@ -29,6 +29,7 @@ function rec(specPath: string, overrides: Partial<ApprovalRecord> = {}): Approva
     approvedBy: 'paul@harvest316.com',
     tier: 'T3',
     migrated: false,
+    baselineBlob: '', // SPEC-017 FR-1: '' = no M1 datapoint (pre-Slice-3 default)
     ...overrides,
   };
 }
