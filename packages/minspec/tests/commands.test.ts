@@ -69,7 +69,8 @@ vi.mock('../src/lib/active-spec', () => ({
   summarizeActiveSpec: vi.fn(),
 }));
 
-vi.mock('../src/lib/config', () => ({
+vi.mock('../src/lib/config', async (importOriginal) => ({
+  ...(await importOriginal()),
   loadConfig: vi.fn(() => ({ specsDir: 'specs', decisionsDir: 'docs/decisions' })),
   applyVSCodeOverrides: vi.fn(
     (config: Record<string, unknown>) => config,

@@ -150,6 +150,37 @@ export function classify(
   };
 }
 
+/**
+ * The single signal that DROVE the classified tier — the most informative "why".
+ *
+ * `classify()` ranks by max `tierContribution` ("highest wins"), so the tier is
+ * set by whichever signal(s) sit at the winning tier. Among those, prefer the
+ * blast-radius ('consequence') axis as the more meaningful explanation, then the
+ * highest weight. Falls back to the whole signal set if none sit exactly at the
+ * winning tier (defensive — shouldn't happen for a tier derived from them).
+ *
+ * Pure. Used to render a grounded headline ("set by importersReached=23") in
+ * place of the agreement-fraction `confidence%`, which read as a broken
+ * probability — a high tier with a low % looks like "we're 14% sure" when it
+ * actually means "one signal forced it up" (#216). Returns undefined only when
+ * there are no signals at all.
+ */
+export function pickDrivingSignal(
+  result: ClassificationResult,
+): ClassificationSignal | undefined {
+  const atTier = result.signals.filter(
+    (s) => s.tierContribution === result.tier,
+  );
+  const pool = atTier.length > 0 ? atTier : result.signals;
+  if (pool.length === 0) return undefined;
+  return pool.reduce((best, s) => {
+    const bestConseq = best.axis === 'consequence' ? 1 : 0;
+    const sConseq = s.axis === 'consequence' ? 1 : 0;
+    if (sConseq !== bestConseq) return sConseq > bestConseq ? s : best;
+    return s.weight > best.weight ? s : best; // ties keep `best` (stable)
+  });
+}
+
 // ─── User Override ───────────────────────────────────────────────────────────
 
 /**

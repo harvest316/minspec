@@ -95,7 +95,8 @@ vi.mock('../src/lib/traceability', () => ({
   formatLocationString: (...args: unknown[]) => mockFormatLocationString(...args),
 }));
 
-vi.mock('../src/lib/config', () => ({
+vi.mock('../src/lib/config', async (importOriginal) => ({
+  ...(await importOriginal()),
   loadConfig: vi.fn(() => ({ specsDir: 'specs' })),
   resolveAndValidate: vi.fn((root: string, sub: string) => `${root}/${sub}`),
 }));

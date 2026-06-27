@@ -45,7 +45,8 @@ vi.mock('../src/lib/spec', () => ({
   setSpecStatus: vi.fn(),
 }));
 
-vi.mock('../src/lib/config', () => ({
+vi.mock('../src/lib/config', async (importOriginal) => ({
+  ...(await importOriginal()),
   loadConfig: vi.fn(() => ({})),
 }));
 

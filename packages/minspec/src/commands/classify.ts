@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { analyzeGitDiff, buildConsequenceInput } from '../lib/git-analyzer';
-import { classify, applyFloor } from '../lib/classifier';
+import { classify, applyFloor, pickDrivingSignal } from '../lib/classifier';
 import type { ClassificationSignal } from '../lib/classifier';
 import { runConsequenceAnalyzers } from '../lib/consequence-analyzers';
 import { loadConfig, applyVSCodeOverrides, TIERS } from '../lib/config';
@@ -13,7 +13,18 @@ function nextTierUp(tier: Tier): Tier {
   return idx >= 0 && idx < TIERS.length - 1 ? TIERS[idx + 1] : tier;
 }
 
-export async function classifyCommand(folderArg?: string): Promise<void> {
+export async function classifyCommand(
+  folderArg?: string,
+  opts?: { auto?: boolean },
+): Promise<void> {
+  // `auto` = fired by the git-HEAD watcher on every commit, not by the user.
+  // Auto runs surface passively (status bar) and never interrupt; explicit
+  // invocation keeps the full interactive toast. The two used to share one code
+  // path, so ambient commit-runs fell through to the interactive toast — a
+  // buttoned "→ T2" verdict on every commit that approved nothing, pure nag
+  // (#216 facet 3, DR-021 Risk 2).
+  const auto = opts?.auto === true;
+
   const workspaceRoot = folderArg ?? (await resolveTargetFolder());
   if (!workspaceRoot) return;
 
@@ -71,6 +82,26 @@ export async function classifyCommand(folderArg?: string): Promise<void> {
     .map((s) => `${s.name}=${s.value}`)
     .join(', ');
 
+  // Headline names WHY the tier landed here — the single signal that drove it
+  // (max `tierContribution`; classify() is "highest wins"). This replaces the
+  // old "(N% confidence)", an agreement-fraction that read as a broken
+  // probability: a high tier with a low % looked like "we're 14% sure" when it
+  // actually meant "one signal forced it up". (#216 facet 1, lite version.)
+  const driver = pickDrivingSignal(result);
+  const driverLabel = driver ? `${driver.name}=${driver.value}` : null;
+  const headline = `MinSpec: Current changes → ${predictedTier}${
+    driverLabel ? ` · set by ${driverLabel}` : ''
+  } · ${phaseList}`;
+
+  // Auto-on-commit is ambient awareness, not a decision. Surface a passive,
+  // self-dismissing status-bar line — no action buttons that imply a pending
+  // approval there is none of. The interactive toast (below) is reserved for
+  // explicit invocation. (#216 facet 3, DR-021 Risk 2.)
+  if (auto) {
+    vscode.window.setStatusBarMessage(headline, 8000);
+    return;
+  }
+
   // DR-021 Decision 2: bump-up affordance. Advisory, never blocking. Tier is a
   // mechanical-scope floor, not a difficulty read, and the classifier
   // systematically under-tiers subtle small fixes (validated, n=120). Offer a
@@ -89,7 +120,7 @@ export async function classifyCommand(folderArg?: string): Promise<void> {
   // Advisory toast: names the unit (your current diff) and states that nothing
   // is persisted — the result is informational, not a pending action (#203).
   const choice = await vscode.window.showInformationMessage(
-    `MinSpec: Current changes → ${predictedTier} (${confidencePct}% confidence) · ${phaseList}`,
+    headline,
     {
       detail: `Advisory — reflects your current diff; nothing is saved. Signals: ${signalSummary || 'none'}`,
       modal: false,
@@ -100,7 +131,11 @@ export async function classifyCommand(folderArg?: string): Promise<void> {
   if (choice === 'Show Details') {
     const channel = vscode.window.createOutputChannel('MinSpec Classification');
     channel.appendLine(`Tier: ${predictedTier}`);
-    channel.appendLine(`Confidence: ${confidencePct}%`);
+    // "Signal agreement", not "confidence": this is the share of signals at the
+    // winning tier, not a probability the tier is right (#216 — honest label).
+    channel.appendLine(
+      `Signal agreement: ${confidencePct}% (share of signals at the winning tier)`,
+    );
     channel.appendLine(`Suggested phases: ${phaseList}`);
     channel.appendLine('');
     channel.appendLine(
