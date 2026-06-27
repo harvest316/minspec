@@ -33,19 +33,25 @@ while IFS=$'\t' read -r _status path; do
   fi
 done < <(git diff --cached --name-status --diff-filter=A)
 
-# ── #220 gate: INDEX.md status must match each DR's frontmatter status ────────
-# INDEX.md is a DERIVED artifact; the only regeneration paths require the
-# extension to be running. A direct/agent/sed edit to a DR's `status:` bypasses
-# all of them and leaves the INDEX stale. When this commit touches any DR file
-# or the INDEX, run the validator so that drift is un-committable regardless of
-# how the edit was made. Wired the same way as the DR-sequence gate (both live
-# in validate-frontmatter.ts / `npm run validate`).
+# ── validate gate: frontmatter + dangling-ref + DR-index integrity ───────────
+# `npm run validate` (validate-frontmatter.ts) scans the WHOLE artifact corpus:
+# docs/decisions/ (DR sequence + #220 INDEX-status drift), specs/ (frontmatter +
+# epic refs), docs/domain/, docs/epics/, AND the #161 dangling-reference checker
+# over specs/ + docs/decisions/.
+#
+# The trigger was originally scoped to the #220 DR/INDEX gate only (DR/INDEX
+# staged). But the validators that ride the same invocation scan FILES THEY,
+# not the DR-index gate, own — a dangling ref or bad frontmatter introduced in a
+# spec (or domain/epic doc) was never caught locally, only in CI (#316). Widen
+# the trigger to every directory the validator scans, so all of its gates fire at
+# commit, not only on a push. Keep the existing DR/INDEX trigger as a subset.
 # Bypass: DR_INDEX_GATE_OFF=1 git commit ...
 if [ "${DR_INDEX_GATE_OFF:-}" != "1" ] && \
-   git diff --cached --name-only | grep -qE '^docs/decisions/(DR-[0-9].*|INDEX)\.md$'; then
+   git diff --cached --name-only | grep -qE '^(docs/decisions/(DR-[0-9].*|INDEX)\.md|specs/.*\.md|docs/domain/.*\.md|docs/epics/.*\.md)$'; then
   if ! npm run --silent validate >&2; then
-    echo "✖ #220 gate: DR-index status drift (or other frontmatter validation failure)." >&2
-    echo "  Regenerate the DR INDEX (MinSpec: Regenerate DR INDEX) so INDEX.md matches the DR frontmatter." >&2
+    echo "✖ validate gate: frontmatter / dangling-ref / DR-index validation failed." >&2
+    echo "  Fix the reported issue. For DR-index status drift, regenerate the DR INDEX" >&2
+    echo "  (MinSpec: Regenerate DR INDEX) so INDEX.md matches the DR frontmatter." >&2
     echo "  Override: DR_INDEX_GATE_OFF=1 git commit ..." >&2
     fail=1
   fi

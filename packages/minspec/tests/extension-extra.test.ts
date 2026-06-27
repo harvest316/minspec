@@ -91,6 +91,9 @@ vi.mock('vscode', () => ({
     }),
     openTextDocument: vi.fn(() => Promise.resolve({})),
     onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidCloseTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+    textDocuments: [],
     onDidChangeConfiguration: vi.fn((handler: (e: any) => void) => {
       configChangeHandler = handler;
       return { dispose: vi.fn() };
@@ -106,6 +109,11 @@ vi.mock('vscode', () => ({
   languages: {
     registerCodeLensProvider: vi.fn(() => ({ dispose: vi.fn() })),
     registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+    createDiagnosticCollection: vi.fn(() => ({
+      set: vi.fn(),
+      delete: vi.fn(),
+      dispose: vi.fn(),
+    })),
   },
   extensions: {
     getExtension: vi.fn(() => undefined),

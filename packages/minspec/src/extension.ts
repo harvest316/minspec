@@ -40,6 +40,7 @@ import { parseSpec } from './lib/spec';
 import { loadConfig, resolveAndValidate } from './lib/config';
 import { trackActiveAdrEditor } from './lib/active-adr';
 import { resolveTargetFolderNonInteractive } from './lib/resolve-folder';
+import { registerReferenceDiagnostics } from './lib/diagnostics';
 
 export function activate(context: vscode.ExtensionContext): void {
   trackActiveSpecEditor(context);
@@ -352,6 +353,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }),
     );
   }
+
+  // Live dangling-reference diagnostics (#316): surface the #161 ref-checker as
+  // editor squiggles on save/change, reusing the Tier-0 checker unmodified.
+  registerReferenceDiagnostics(context, workspaceRoot);
 
   // First-run experience: legacy welcome toast (kept for users who already
   // had .minspec installed before auto-bootstrap shipped — its workspaceState

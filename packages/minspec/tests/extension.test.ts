@@ -106,9 +106,15 @@ vi.mock('vscode', () => ({
     }),
     openTextDocument: vi.fn(() => Promise.resolve({})),
     onDidSaveTextDocument: vi.fn((handler: (doc: any) => void) => {
-      onSaveHandler = handler;
+      // Capture only the FIRST save listener — the drift-detection handler these
+      // tests exercise. The reference-diagnostics module (#316) registers a
+      // second save listener; without this guard it would clobber onSaveHandler.
+      if (!onSaveHandler) onSaveHandler = handler;
       return { dispose: vi.fn() };
     }),
+    onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidCloseTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+    textDocuments: [],
     onDidChangeConfiguration: vi.fn(() => ({ dispose: vi.fn() })),
   },
   commands: {
@@ -124,6 +130,11 @@ vi.mock('vscode', () => ({
       return { dispose: vi.fn() };
     }),
     registerCompletionItemProvider: vi.fn(() => ({ dispose: vi.fn() })),
+    createDiagnosticCollection: vi.fn(() => ({
+      set: vi.fn(),
+      delete: vi.fn(),
+      dispose: vi.fn(),
+    })),
   },
   extensions: {
     getExtension: vi.fn(() => ({ id: 'mock' })),
