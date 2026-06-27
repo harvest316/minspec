@@ -335,13 +335,17 @@ describe('auto-classify git watcher', () => {
 
     // A watched path (.git/HEAD) triggers the classify command.
     trigger({ fsPath: '/tmp/test-workspace/.git/HEAD' });
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('minspec.classify');
+    // #302: classify is invoked WITH the resolved folder (never folder-less,
+    // which would let it fall through to the interactive project picker).
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('minspec.classify', '/tmp/test-workspace');
 
     // A refs/heads/* path also triggers (covers the onDidCreate handler too).
     const triggerCreate = gitWatcher.onDidCreate.mock.calls[0][0] as (u: any) => void;
     vi.mocked(vscode.commands.executeCommand).mockClear();
     triggerCreate({ fsPath: '/tmp/test-workspace/.git/refs/heads/main' });
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('minspec.classify');
+    // #302: classify is invoked WITH the resolved folder (never folder-less,
+    // which would let it fall through to the interactive project picker).
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('minspec.classify', '/tmp/test-workspace');
   });
 
   // #203 regression: enabling the setting AFTER activation must start the

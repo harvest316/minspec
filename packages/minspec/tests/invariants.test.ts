@@ -557,3 +557,121 @@ Updated setup.
     expect(hashSection('Different content')).not.toBe(hash1);
   });
 });
+
+// ─── Invariant 7: Non-user contexts never reach the interactive folder picker ─
+//
+// #302 root cause: a git-HEAD watcher (machine-triggered by a commit/branch
+// event) invoked `minspec.classify` with NO folder arg, so classifyCommand fell
+// through `folderArg ?? await resolveTargetFolder()` into the INTERACTIVE
+// resolver — which pops vscode.window.showWorkspaceFolderPick in a multi-root
+// workspace — popping a project picker at the user with no command invoked. The
+// only barrier was the PROSE rule at src/lib/resolve-folder.ts:36-37 ("watchers
+// MUST NOT pop a quick-pick"). This block promotes that prose into a
+// machine-checked gate (RCDD Phase-4): make the bad state un-committable.
+//
+// A positive allowlist of "known folder-taking command ids" (the first design)
+// was REJECTED as the validator-asymmetry trap this repo keeps hitting: it would
+// silently miss createEpic/createAdr/constitution and any future folder-taking
+// command. Instead two default-deny sub-gates cover BOTH paths to the picker:
+//   A. DIRECT — the interactive resolveTargetFolder() may be CALLED only from
+//      src/commands/** (user-invoked command bodies). Any other src file calling
+//      it is a non-user context reaching the picker.
+//   B. INDIRECT — in non-command src, EVERY executeCommand('minspec.*') must pass
+//      a folder (2nd arg) unless its id is in NO_FOLDER_COMMAND_IDS.
+//
+// HONEST CAVEAT (tripwire, not proof): this is a literal-source scan. It does NOT
+// catch a command id built from a variable, a call split across lines, or an
+// aliased executeCommand. It guards the CURRENT call style; if that changes,
+// upgrade to an AST scan (ts-morph). Stated so a future reader does not over-trust
+// it (evidence-discipline: a passing gate != exhaustive coverage of the class).
+
+describe('Invariant 7: non-user contexts never reach the interactive folder picker (#302)', () => {
+  const srcRoot = path.resolve(__dirname, '..', 'src');
+
+  function getAllTsFiles(dir: string): string[] {
+    const results: string[] = [];
+    if (!fs.existsSync(dir)) return results;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'test' || entry.name === '__benchmarks__') continue;
+        results.push(...getAllTsFiles(fullPath));
+      } else if (entry.name.endsWith('.ts')) {
+        results.push(fullPath);
+      }
+    }
+    return results;
+  }
+
+  // Strip a trailing `// ...` comment and skip JSDoc/`*` lines so PROSE mentions
+  // of these symbols are never matched as code.
+  function codeOf(line: string): string {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('*') || trimmed.startsWith('//')) return '';
+    const slash = line.indexOf('//');
+    return slash === -1 ? line : line.slice(0, slash);
+  }
+
+  const isCommandFile = (rel: string): boolean =>
+    rel.split(path.sep).includes('commands');
+
+  it('A: the interactive resolveTargetFolder() is called only from src/commands/', () => {
+    // resolveTargetFolderNonInteractive() is the activation/watcher-safe variant,
+    // allowed everywhere. The pattern below matches only the bare interactive
+    // call: the `(` follows the name directly, so `resolveTargetFolderNonInteractive(`
+    // (an extra word before the paren) never matches.
+    const INTERACTIVE_CALL = /\bresolveTargetFolder\s*\(/;
+    const DEF_FILE = path.join('lib', 'resolve-folder.ts'); // the definition itself
+
+    const files = getAllTsFiles(srcRoot);
+    expect(files.length).toBeGreaterThan(0);
+    const violations: { file: string; line: string }[] = [];
+
+    for (const filePath of files) {
+      const rel = path.relative(srcRoot, filePath);
+      if (rel === DEF_FILE || isCommandFile(rel)) continue;
+      const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+      lines.forEach((raw, i) => {
+        if (INTERACTIVE_CALL.test(codeOf(raw))) {
+          violations.push({ file: `${rel}:${i + 1}`, line: raw.trim() });
+        }
+      });
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  it('B: non-command code invokes minspec commands WITH a folder (default-deny)', () => {
+    // Default-deny: ANY executeCommand('minspec.<id>') with no 2nd argument in
+    // non-command source is a violation UNLESS <id> is a known no-folder command.
+    // The safe-list starts EMPTY — today the only such call is the (now-fixed)
+    // git watcher, which passes workspaceRoot. A NEW no-folder command invoked
+    // from non-command code must be added here deliberately; that review is the
+    // gate. Broader than a folder-taking allowlist: createEpic/createAdr/etc. are
+    // caught automatically because they are not safe-listed.
+    const NO_FOLDER_COMMAND_IDS = new Set<string>([
+      // e.g. 'minspec.refreshTree' — add ONLY after confirming the command takes
+      // no folder. (refreshTree is invoked from command bodies, not scanned here.)
+    ]);
+    // executeCommand('minspec.foo') / "..." / `...` with NO second argument
+    // (close-paren immediately after the id literal).
+    const NO_ARG = /executeCommand\(\s*['"`](minspec\.[\w.-]+)['"`]\s*\)/;
+
+    const files = getAllTsFiles(srcRoot);
+    const violations: { file: string; id: string; line: string }[] = [];
+
+    for (const filePath of files) {
+      const rel = path.relative(srcRoot, filePath);
+      if (isCommandFile(rel)) continue;
+      const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+      lines.forEach((raw, i) => {
+        const m = NO_ARG.exec(codeOf(raw));
+        if (m && !NO_FOLDER_COMMAND_IDS.has(m[1])) {
+          violations.push({ file: `${rel}:${i + 1}`, id: m[1], line: raw.trim() });
+        }
+      });
+    }
+
+    expect(violations).toEqual([]);
+  });
+});
