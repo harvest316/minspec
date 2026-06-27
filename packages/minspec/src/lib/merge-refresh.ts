@@ -265,3 +265,42 @@ export function saveTemplateBaseline(rootDir: string, baseline: GeneratedHashes)
   fs.mkdirSync(path.dirname(baselinePath), { recursive: true });
   fs.writeFileSync(baselinePath, JSON.stringify(baseline, null, 2) + '\n');
 }
+
+const WHOLE_FILE_BASELINE_FILENAME = 'whole-file-baseline.json';
+
+/**
+ * Load the whole-file template content baseline from
+ * `.minspec/whole-file-baseline.json`.
+ *
+ * Records the content hash of each scaffolded *whole-file* template (YAML/scripts
+ * — see template-registry.ts `WHOLE_FILE_TEMPLATES`) as of the last
+ * generate/refresh. Refresh compares the file on disk against this to decide
+ * CLEAN (== baseline → safe to update) vs DRIFT (user-edited → preserve). Kept
+ * deliberately SEPARATE from `template-baseline.json` (Markdown section drift) and
+ * `generated-hashes.json` (Markdown edit-preservation) so the three concerns
+ * never alias each other.
+ *
+ * Returns `{}` if the file is missing or invalid.
+ */
+export function loadWholeFileBaseline(rootDir: string): GeneratedHashes {
+  const baselinePath = path.join(rootDir, '.minspec', WHOLE_FILE_BASELINE_FILENAME);
+  if (!fs.existsSync(baselinePath)) {
+    return {};
+  }
+  try {
+    const raw = fs.readFileSync(baselinePath, 'utf-8');
+    return JSON.parse(raw) as GeneratedHashes;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Persist the whole-file template baseline to
+ * `.minspec/whole-file-baseline.json`. See {@link loadWholeFileBaseline}.
+ */
+export function saveWholeFileBaseline(rootDir: string, baseline: GeneratedHashes): void {
+  const baselinePath = path.join(rootDir, '.minspec', WHOLE_FILE_BASELINE_FILENAME);
+  fs.mkdirSync(path.dirname(baselinePath), { recursive: true });
+  fs.writeFileSync(baselinePath, JSON.stringify(baseline, null, 2) + '\n');
+}

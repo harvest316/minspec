@@ -6,6 +6,7 @@
 import {
   parseSections,
   buildSectionHashes,
+  hashSection,
   type GeneratedHashes,
   type SectionHashes,
 } from './merge-refresh';
@@ -263,6 +264,97 @@ export function computeTemplateBaseline(): GeneratedHashes {
     baseline[TEMPLATE_OUTPUT_PATHS[name]] = buildSectionHashes(
       parseSections(TEMPLATES[name]),
     );
+  }
+  return baseline;
+}
+
+// ---------------------------------------------------------------------------
+// Whole-file templates (#249, DR-037)
+//
+// A second class of scaffolded file that the Markdown section-merge engine
+// (`mergeFile` / `parseSections` in merge-refresh.ts) cannot manage: its merge
+// unit is the `## ` heading, so it can only carry Markdown. Non-Markdown harness
+// artifacts — YAML workflows, shell scripts — have no `## ` sections to merge and
+// would be corrupted by section reassembly.
+//
+// Contract: a whole-file template is scaffolded ONCE (only if the output path is
+// absent). On Refresh it is reconciled as a single opaque unit against a recorded
+// content baseline (`.minspec/whole-file-baseline.json`, the drift concept reused
+// from template-baseline.json):
+//   - file missing      → write it (re-scaffold a deleted file, like the Markdown path)
+//   - file == baseline  → CLEAN: the user has not touched it → overwrite with the
+//                         current bundled template (carry upstream updates forward)
+//   - file != baseline  → DRIFT: the user edited it → SKIP, preserving their copy
+// No section merge is ever attempted. This mechanism is the reusable foundation
+// for the hook-script scaffolds (#246/#247) and the python validator (#244).
+// ---------------------------------------------------------------------------
+
+/** A scaffolded file managed as one opaque unit (no Markdown section merge). */
+export interface WholeFileTemplate {
+  /** Stable identifier (used in messages/tests). */
+  readonly name: string;
+  /** Output path relative to project root. */
+  readonly outputPath: string;
+  /** Verbatim file content. Whole-file templates are NOT Handlebars-rendered. */
+  readonly content: string;
+}
+
+/**
+ * GitHub Actions workflow: the authoritative post-push MinSpec validation gate
+ * (DR-037, #249). Runs the Node-tier validator on every push / PR so that
+ * contributors without the local git hooks — or any local bypass — are still
+ * caught before merge. Local hook = fast fail; CI = never-merge guarantee.
+ *
+ * Pinned to a literal YAML string (no Handlebars): it is project-independent and
+ * must remain byte-stable so drift detection is exact.
+ */
+const MINSPEC_VALIDATE_WORKFLOW = `name: MinSpec Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    name: MinSpec SDD validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run MinSpec validation
+        run: npx --yes @aiclarity/minspec-validator
+`;
+
+/** All whole-file templates in scaffold order. */
+export const WHOLE_FILE_TEMPLATES: readonly WholeFileTemplate[] = [
+  {
+    name: 'minspec-validate.yml',
+    outputPath: '.github/workflows/minspec-validate.yml',
+    content: MINSPEC_VALIDATE_WORKFLOW,
+  },
+] as const;
+
+/**
+ * Content-hash baseline for whole-file templates, keyed by output path. Uses the
+ * same {@link GeneratedHashes} shape as the Markdown baseline (path → heading →
+ * hash) for storage symmetry, with a single synthetic `__wholefile__` heading per
+ * file. Hashing the bundled (unrendered) content lets Refresh tell a CLEAN file
+ * (== baseline → safe to update) from a user-edited one (!= baseline → preserve).
+ */
+export const WHOLE_FILE_BASELINE_HEADING = '__wholefile__';
+
+export function computeWholeFileBaseline(): GeneratedHashes {
+  const baseline: Record<string, SectionHashes> = {};
+  for (const tpl of WHOLE_FILE_TEMPLATES) {
+    baseline[tpl.outputPath] = {
+      [WHOLE_FILE_BASELINE_HEADING]: hashSection(tpl.content),
+    };
   }
   return baseline;
 }

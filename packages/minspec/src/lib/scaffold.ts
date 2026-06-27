@@ -5,15 +5,21 @@ import { buildContext, renderTemplate, renderAll } from './template-engine';
 import {
   TEMPLATE_NAMES,
   TEMPLATE_OUTPUT_PATHS,
+  WHOLE_FILE_TEMPLATES,
+  WHOLE_FILE_BASELINE_HEADING,
   computeTemplateBaseline,
+  computeWholeFileBaseline,
 } from './template-registry';
 import {
   parseSections,
   buildSectionHashes,
+  hashSection,
   mergeFile,
   loadHashes,
   saveHashes,
   saveTemplateBaseline,
+  loadWholeFileBaseline,
+  saveWholeFileBaseline,
   type GeneratedHashes,
 } from './merge-refresh';
 import { generateSlashCommandShims } from './slash-commands';
@@ -117,6 +123,69 @@ export function ensureGitignoreEntries(rootDir: string): void {
 }
 
 /**
+ * Scaffold whole-file templates (#249, DR-037) at first init.
+ *
+ * Whole-file templates (YAML workflows, scripts) cannot go through the Markdown
+ * section-merge engine, so they are written verbatim and only if absent — exactly
+ * like the Markdown first-time path. The content baseline recorded by the caller
+ * (`computeWholeFileBaseline`) is what later lets Refresh tell a user-edited file
+ * from an untouched one. Idempotent: an existing file is never overwritten here.
+ */
+function generateWholeFileTemplates(rootDir: string): void {
+  for (const tpl of WHOLE_FILE_TEMPLATES) {
+    const fullPath = path.join(rootDir, tpl.outputPath);
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, tpl.content);
+    }
+  }
+}
+
+/**
+ * Reconcile whole-file templates on Refresh (#249, DR-037).
+ *
+ * For each whole-file template, with no Markdown section merge:
+ *   - file missing      → write it (re-scaffold a deleted managed file)
+ *   - file == baseline  → CLEAN (user never touched it) → overwrite with the
+ *                         current bundled content, carrying upstream updates forward
+ *   - file != baseline  → DRIFT (user edited it) → SKIP, preserving their copy
+ *
+ * The baseline is the content hash recorded at the last generate/refresh
+ * (`.minspec/whole-file-baseline.json`). When no baseline exists yet for a path
+ * (project predating this mechanism) we treat any existing file as user content
+ * and preserve it — never clobbering an unverified file (mirrors the
+ * conservative #117 no-baseline stance).
+ */
+function refreshWholeFileTemplates(rootDir: string): void {
+  const baseline = loadWholeFileBaseline(rootDir);
+  for (const tpl of WHOLE_FILE_TEMPLATES) {
+    const fullPath = path.join(rootDir, tpl.outputPath);
+
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, tpl.content);
+      continue;
+    }
+
+    const recorded = baseline[tpl.outputPath]?.[WHOLE_FILE_BASELINE_HEADING];
+    if (!recorded) {
+      // No like-for-like reference — cannot prove the file is untouched, so
+      // preserve it rather than risk clobbering user edits.
+      continue;
+    }
+
+    const onDisk = fs.readFileSync(fullPath, 'utf-8');
+    if (hashSection(onDisk) === recorded) {
+      // CLEAN: unmodified since scaffold → carry the current template forward.
+      if (onDisk !== tpl.content) {
+        fs.writeFileSync(fullPath, tpl.content);
+      }
+    }
+    // DRIFT: hashes differ → user edited it → leave untouched.
+  }
+}
+
+/**
  * Generate all harness files from templates.
  * Only writes files that do not already exist (first-time init).
  * Stores initial section hashes for future merge-on-refresh.
@@ -162,6 +231,12 @@ export function generateHarnessFiles(rootDir: string): void {
   // user-merged content in generated-hashes.json — the cause of #117's perpetual
   // false-positive drift toast.
   saveTemplateBaseline(rootDir, computeTemplateBaseline());
+
+  // Scaffold whole-file templates (#249) — non-Markdown harness artifacts (the
+  // CI workflow) the section-merge engine cannot carry — and record their content
+  // baseline so refresh can preserve-on-edit / update-on-clean.
+  generateWholeFileTemplates(rootDir);
+  saveWholeFileBaseline(rootDir, computeWholeFileBaseline());
 
   // Generate Spec Kit slash-command shims for any detected AI tool.
   // Tools are re-detected after template generation so freshly written
@@ -222,6 +297,12 @@ export function refreshHarnessFiles(rootDir: string): void {
   // sync with the current bundled template, so drift must read false until the
   // template next moves upstream (#117).
   saveTemplateBaseline(rootDir, computeTemplateBaseline());
+
+  // Reconcile whole-file templates (#249): re-scaffold if deleted, update if the
+  // user never touched it, preserve if they edited it. Then re-record the content
+  // baseline so a later refresh measures drift from the now-current template.
+  refreshWholeFileTemplates(rootDir);
+  saveWholeFileBaseline(rootDir, computeWholeFileBaseline());
 
   // Refresh Spec Kit slash-command shims. Per-command Claude/Cursor files
   // are only created if missing (user edits preserved); the AGENTS.md
