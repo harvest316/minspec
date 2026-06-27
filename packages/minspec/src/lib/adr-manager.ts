@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { loadConfig, applyVSCodeOverrides, resolveAndValidate } from './config';
 import { slugify } from './spec-manager';
 import { epicRefValue } from './epic-manager';
@@ -507,17 +508,77 @@ export function summarizeContext(
 }
 
 /**
+ * The fallback rendered when a DR has no extractable summary text. Treated as a
+ * non-curated value so a later real summary (auto or hand-written) replaces it.
+ */
+const NO_SUMMARY_PLACEHOLDER = '_No summary available._';
+
+/**
+ * Short, stable fingerprint of an auto-derived summary. Embedded in a hidden
+ * per-entry marker so a later regen can tell a HUMAN-EDITED summary apart from
+ * the machine-derived one it last wrote (issue #191): if the visible summary
+ * still hashes to the recorded value, it is still auto and safe to refresh;
+ * if it differs, a human curated it and it must be preserved.
+ */
+function summaryFingerprint(text: string): string {
+  return crypto.createHash('sha256').update(text, 'utf-8').digest('hex').slice(0, 12);
+}
+
+/**
+ * Per-entry summary markers. The OPEN marker carries the fingerprint of the
+ * auto-derived summary that was last written between the markers, so curation
+ * is detectable across regenerations without a second source of truth.
+ */
+function summaryOpenMarker(id: string, autoHash: string): string {
+  return `<!-- dr-summary:${id} auto=${autoHash} -->`;
+}
+function summaryCloseMarker(id: string): string {
+  return `<!-- /dr-summary:${id} -->`;
+}
+
+interface ExistingSummary {
+  /** The visible summary text currently between the per-entry markers. */
+  readonly text: string;
+  /** Fingerprint of the auto summary recorded when this block was last written. */
+  readonly autoHash: string;
+}
+
+/**
+ * Pull the existing per-entry summary block for `id` out of a prior INDEX.md.
+ * Returns the visible text plus the recorded auto-fingerprint, or null when the
+ * entry (or its markers) is absent — e.g. a legacy INDEX from before #191.
+ */
+export function extractExistingSummary(existingIndex: string, id: string): ExistingSummary | null {
+  const re = new RegExp(
+    `${escapeRegex(`<!-- dr-summary:${id} auto=`)}([0-9a-f]+)${escapeRegex(' -->')}\\n([\\s\\S]*?)\\n${escapeRegex(summaryCloseMarker(id))}`,
+  );
+  const m = existingIndex.match(re);
+  if (!m) return null;
+  return { autoHash: m[1], text: m[2].trim() };
+}
+
+/**
  * Read an ADR file and produce a single index entry block.
  * Format:
  *   ## [DR-NNN — Title](DR-NNN-file.md)
  *
  *   *Status: accepted · Date: YYYY-MM-DD*
  *
- *   Summary paragraph (40–80 words).
+ *   <!-- dr-summary:DR-NNN auto=<hash> -->
+ *   Summary paragraph (40–80 words, auto OR human-curated).
+ *   <!-- /dr-summary:DR-NNN -->
+ *
+ * Idempotence + curation (issue #191): the auto summary is derived from the DR
+ * body, but if the prior INDEX held a HAND-EDITED summary for this DR (visible
+ * text whose hash differs from the recorded auto fingerprint), that curated
+ * text is preserved instead of being clobbered. The open marker re-records the
+ * SAME fingerprint in that case, so the entry stays flagged as curated on every
+ * future regen — regeneration never destroys curation.
  */
 export function renderDrEntry(
   summary: AdrSummary,
   options: DrIndexOptions = {},
+  existingIndex?: string,
 ): string {
   let body = '';
   try {
@@ -529,7 +590,29 @@ export function renderDrEntry(
   }
 
   const contextBody = extractContextBody(body);
-  const summaryText = summarizeContext(contextBody, options) || '_No summary available._';
+  const autoText = summarizeContext(contextBody, options) || NO_SUMMARY_PLACEHOLDER;
+  const autoHash = summaryFingerprint(autoText);
+
+  // Decide whether to keep a curated summary from the prior INDEX. A prior
+  // entry is "curated" when its visible text no longer hashes to the auto
+  // fingerprint it was written with (and isn't the empty/placeholder fallback).
+  let summaryText = autoText;
+  let recordedHash = autoHash;
+  if (existingIndex) {
+    const prior = extractExistingSummary(existingIndex, summary.id);
+    if (
+      prior &&
+      prior.text !== '' &&
+      prior.text !== NO_SUMMARY_PLACEHOLDER &&
+      summaryFingerprint(prior.text) !== prior.autoHash
+    ) {
+      // Human-edited — preserve the curated text and keep the original auto
+      // fingerprint so this entry remains detectably curated on later regens.
+      summaryText = prior.text;
+      recordedHash = prior.autoHash;
+    }
+  }
+
   const fileName = path.basename(summary.filePath);
   const metaParts: string[] = [];
   if (summary.status) metaParts.push(`Status: ${summary.status}`);
@@ -541,17 +624,23 @@ export function renderDrEntry(
     '',
     meta,
     meta ? '' : null,
+    summaryOpenMarker(summary.id, recordedHash),
     summaryText,
+    summaryCloseMarker(summary.id),
   ].filter(line => line !== null).join('\n');
 }
 
 /**
  * Build the auto-generated portion of the DR INDEX (between markers).
+ *
+ * `existingIndex` (the prior INDEX.md content) is threaded through so each
+ * entry can preserve a human-curated summary rather than clobber it (#191).
  */
 export function buildDrIndexContent(
   rootDir: string,
   vscodeOverrides?: { decisionsDir?: string },
   options: DrIndexOptions = {},
+  existingIndex?: string,
 ): { content: string; count: number } {
   const adrs = listAdrs(rootDir, vscodeOverrides);
   if (adrs.length === 0) {
@@ -559,7 +648,7 @@ export function buildDrIndexContent(
   }
 
   const header = '# Decision Register\n\n_Architecture decisions for this project. One entry per accepted/proposed DR._\n';
-  const entries = adrs.map(a => renderDrEntry(a, options)).join('\n\n');
+  const entries = adrs.map(a => renderDrEntry(a, options, existingIndex)).join('\n\n');
   return {
     content: `${header}\n${entries}\n`,
     count: adrs.length,
@@ -629,13 +718,159 @@ export function regenerateDrIndex(
   fs.mkdirSync(decisionsDir, { recursive: true });
 
   const indexPath = path.join(decisionsDir, 'INDEX.md');
-  const { content, count } = buildDrIndexContent(rootDir, vscodeOverrides, options);
-
   const existing = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, 'utf-8') : null;
+
+  // Thread the prior INDEX through so per-entry curated summaries survive (#191).
+  const { content, count } = buildDrIndexContent(
+    rootDir,
+    vscodeOverrides,
+    options,
+    existing ?? undefined,
+  );
+
   const merged = mergeDrIndex(existing, content);
   fs.writeFileSync(indexPath, merged, 'utf-8');
 
   return { filePath: indexPath, count };
+}
+
+// ─── INDEX Status-Drift Validation (issue #220) ───────────────────────────────
+
+/** Kind of INDEX↔frontmatter status drift a DR can exhibit. */
+export type DrIndexStatusDriftKind = 'mismatch' | 'missing-entry' | 'orphan-entry';
+
+/**
+ * One INDEX.md / DR-frontmatter status inconsistency.
+ *
+ *  - `mismatch`      — the INDEX `*Status: X*` line disagrees with the DR file's
+ *                      frontmatter `status:` (the eb27e05 drift in #220).
+ *  - `missing-entry` — a DR file exists but has no entry in the INDEX block.
+ *  - `orphan-entry`  — the INDEX has an entry for a DR with no source file.
+ */
+export interface DrIndexStatusDrift {
+  readonly kind: DrIndexStatusDriftKind;
+  readonly id: string;
+  /** The DR frontmatter status (absent for `orphan-entry`). */
+  readonly fileStatus?: string;
+  /** The status the INDEX claims (absent for `missing-entry`). */
+  readonly indexStatus?: string;
+  /** Human-readable, single-line explanation with a suggested action. */
+  readonly message: string;
+}
+
+/** The status the INDEX entry for `id` claims, or null when there is no entry. */
+function indexStatusFor(indexContent: string, id: string): string | null {
+  // Match the entry heading `## [DR-NNN — …]` then the first `*Status: X …*`
+  // line beneath it, before the next entry heading. Mirrors renderDrEntry's
+  // emitted format (`*Status: accepted · Date: …*`).
+  const headingRe = new RegExp(`^##\\s+\\[${escapeRegex(id)}\\b[^\\n]*$`, 'm');
+  const headingMatch = headingRe.exec(indexContent);
+  if (!headingMatch) return null;
+  const after = indexContent.slice(headingMatch.index + headingMatch[0].length);
+  const nextHeading = after.search(/^##\s+\[DR-\d+/m);
+  const block = nextHeading === -1 ? after : after.slice(0, nextHeading);
+  const statusMatch = block.match(/\*\s*Status:\s*([A-Za-z]+)/);
+  return statusMatch ? statusMatch[1].toLowerCase() : null;
+}
+
+/**
+ * Validate that the generated DR INDEX block agrees with each DR file's
+ * frontmatter `status:` — the un-committable gate for the drift in #220, where
+ * a direct/agent/sed edit to a DR's status bypasses every regeneration path and
+ * leaves the derived INDEX stale.
+ *
+ * Pure, offline, Tier-0 (DR-004): reads the DR files + INDEX.md only — no
+ * extension, no network, no AI. Symmetric (validator-asymmetry class): it flags
+ * a value MISMATCH, a DR with no INDEX entry, AND an INDEX entry with no DR — so
+ * drift cannot hide in either direction.
+ *
+ * A repo with no DR files, or no INDEX.md, returns `[]` (nothing to drift).
+ * Pre-MinSpec DRs without frontmatter use the synthetic `proposed` status
+ * `listAdrs` already assigns them, so they validate consistently.
+ *
+ * Determinism: drifts are sorted by id then by kind in a fixed order.
+ *
+ * @param decisionsDir Absolute path to the resolved decisions directory.
+ */
+export function validateDrIndexStatus(decisionsDir: string): DrIndexStatusDrift[] {
+  if (!fs.existsSync(decisionsDir)) return [];
+  const indexPath = path.join(decisionsDir, 'INDEX.md');
+  if (!fs.existsSync(indexPath)) return [];
+
+  const indexContent = fs.readFileSync(indexPath, 'utf-8');
+  const drifts: DrIndexStatusDrift[] = [];
+  const seen = new Set<string>();
+
+  // rootDir for listAdrs is the parent of decisionsDir only when decisionsDir is
+  // the configured location; to stay decoupled from config we read the files
+  // directly here, matching listAdrs' frontmatter handling.
+  for (const entry of fs.readdirSync(decisionsDir).sort()) {
+    const match = entry.match(ADR_FILE_RE);
+    if (!match) continue;
+    const id = `DR-${match[1]}`;
+    seen.add(id);
+
+    let fileStatus = 'proposed';
+    try {
+      const content = fs.readFileSync(path.join(decisionsDir, entry), 'utf-8');
+      const fmMatch = content.match(FRONTMATTER_RE);
+      if (fmMatch) {
+        const fm = parseFrontmatterYaml(fmMatch[1]);
+        if (fm.status && ADR_STATUSES.has(fm.status)) fileStatus = fm.status;
+      }
+    } catch {
+      continue; // unreadable — skip, mirrors listAdrs
+    }
+
+    const idxStatus = indexStatusFor(indexContent, id);
+    if (idxStatus === null) {
+      drifts.push({
+        kind: 'missing-entry',
+        id,
+        fileStatus,
+        message:
+          `${id} (status: ${fileStatus}) has no entry in INDEX.md — ` +
+          `regenerate the DR INDEX (MinSpec: Regenerate DR INDEX).`,
+      });
+    } else if (idxStatus !== fileStatus) {
+      drifts.push({
+        kind: 'mismatch',
+        id,
+        fileStatus,
+        indexStatus: idxStatus,
+        message:
+          `${id}: INDEX.md says "Status: ${idxStatus}" but ${entry} frontmatter says ` +
+          `"status: ${fileStatus}" — regenerate the DR INDEX so it matches the source.`,
+      });
+    }
+  }
+
+  // Orphans: an INDEX entry whose DR file is gone.
+  const entryRe = /^##\s+\[(DR-\d+)\b/gm;
+  let m: RegExpExecArray | null;
+  while ((m = entryRe.exec(indexContent)) !== null) {
+    const id = m[1];
+    if (!seen.has(id)) {
+      drifts.push({
+        kind: 'orphan-entry',
+        id,
+        message:
+          `${id} has an INDEX.md entry but no DR file in ${path.basename(decisionsDir)}/ — ` +
+          `regenerate the DR INDEX to drop the stale entry.`,
+      });
+    }
+  }
+
+  const kindOrder: Record<DrIndexStatusDriftKind, number> = {
+    mismatch: 0,
+    'missing-entry': 1,
+    'orphan-entry': 2,
+  };
+  drifts.sort((a, b) =>
+    a.id !== b.id ? a.id.localeCompare(b.id) : kindOrder[a.kind] - kindOrder[b.kind],
+  );
+
+  return drifts;
 }
 
 // ─── Dedup / Similarity ───────────────────────────────────────────────────

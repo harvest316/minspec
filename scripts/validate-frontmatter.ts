@@ -11,7 +11,7 @@
 
 import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
 import { join, relative, dirname } from 'path';
-import { validateDrSequence } from '../packages/minspec/src/lib/adr-manager';
+import { validateDrSequence, validateDrIndexStatus } from '../packages/minspec/src/lib/adr-manager';
 import {
   validateSplitLayoutCoverage,
   type SplitLayoutFile,
@@ -258,7 +258,22 @@ try {
   // Decisions dir unreadable / absent — nothing to validate, stay silent.
 }
 
-// Rule 8 (non-fatal — Slice-1, #161): dangling-reference checker. Scans every
+// Rule 8 (FATAL): INDEX.md status must match each DR's frontmatter status
+// (issue #220). INDEX.md is a DERIVED artifact whose only regeneration paths
+// require the extension to be running; a direct/agent/sed edit to a DR's status
+// bypasses all of them and leaves the INDEX stale. This gate makes that drift
+// un-committable regardless of how the edit was made. Symmetric — flags a value
+// mismatch, a DR with no INDEX entry, and an INDEX entry with no DR file.
+try {
+  const statusDrifts = validateDrIndexStatus(resolveDecisionsDir());
+  for (const d of statusDrifts) {
+    fail(join(resolveDecisionsDir(), 'INDEX.md'), `DR-index status drift — ${d.message}`);
+  }
+} catch {
+  // Decisions dir / INDEX.md unreadable / absent — nothing to validate.
+}
+
+// Rule 9 (non-fatal — Slice-1, #161): dangling-reference checker. Scans every
 // spec + DR for SPEC/DR/EPIC/file:line citations and WARNS on any that resolve to
 // no existing artifact or file (DR-355 phantoms, drifted line citations, broken
 // research-doc paths). Warn-first by design: the corpus today carries known

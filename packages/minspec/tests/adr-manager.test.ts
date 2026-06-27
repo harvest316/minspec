@@ -26,6 +26,8 @@ import {
   findSimilarAdrs,
   ADR_SIMILARITY_THRESHOLD,
   ADR_STATUS_VALUES,
+  regenerateDrIndex,
+  validateDrIndexStatus,
 } from '../src/lib/adr-manager';
 import { DEFAULT_CONFIG } from '../src/lib/config';
 
@@ -536,6 +538,139 @@ describe('adr-manager', () => {
     it('returns empty for an all-stopword candidate title', () => {
       createAdr(tmpDir, 'Use PostgreSQL for persistence');
       expect(findSimilarAdrs(tmpDir, 'the a an for')).toEqual([]);
+    });
+  });
+
+  // ─── #191: regenerate PRESERVES a curated summary ──────────────────────
+  describe('regenerateDrIndex() — curated-summary preservation (#191)', () => {
+    const decisionsDir = () => path.join(tmpDir, 'docs', 'decisions');
+    const indexPath = () => path.join(decisionsDir(), 'INDEX.md');
+
+    function seedDr(): void {
+      fs.mkdirSync(decisionsDir(), { recursive: true });
+      fs.writeFileSync(
+        path.join(decisionsDir(), 'DR-001-alpha.md'),
+        '---\nid: DR-001\ntitle: Alpha\nstatus: accepted\ndate: 2026-01-01\n---\n\n' +
+          '## Context\n\nThe raw first body paragraph that the auto-summarizer extracts.\n',
+        'utf-8',
+      );
+    }
+
+    it('does not clobber a hand-edited summary on the next regen (T3 regression)', () => {
+      seedDr();
+
+      // First regen seeds the auto summary + per-entry markers.
+      regenerateDrIndex(tmpDir);
+      const auto = fs.readFileSync(indexPath(), 'utf-8');
+      expect(auto).toContain('The raw first body paragraph that the auto-summarizer extracts.');
+      expect(auto).toContain('<!-- dr-summary:DR-001 auto=');
+
+      // A human curates the summary BETWEEN the per-entry markers, leaving the
+      // marker fingerprint intact (exactly the eb27e05 / DR-034 scenario).
+      const curated = 'A hand-written synopsis a reviewer crafted — must survive regen.';
+      const edited = auto.replace(
+        'The raw first body paragraph that the auto-summarizer extracts.',
+        curated,
+      );
+      fs.writeFileSync(indexPath(), edited, 'utf-8');
+
+      // Regenerating (the clobber path) must PRESERVE the curated text.
+      regenerateDrIndex(tmpDir);
+      const after = fs.readFileSync(indexPath(), 'utf-8');
+      expect(after).toContain(curated);
+      expect(after).not.toContain('The raw first body paragraph that the auto-summarizer extracts.');
+    });
+
+    it('keeps the curated summary stable across repeated regens (idempotent)', () => {
+      seedDr();
+      regenerateDrIndex(tmpDir);
+      const curated = 'Curated synopsis that should be a fixed point under regen.';
+      fs.writeFileSync(
+        indexPath(),
+        fs
+          .readFileSync(indexPath(), 'utf-8')
+          .replace('The raw first body paragraph that the auto-summarizer extracts.', curated),
+        'utf-8',
+      );
+
+      regenerateDrIndex(tmpDir);
+      const once = fs.readFileSync(indexPath(), 'utf-8');
+      regenerateDrIndex(tmpDir);
+      const twice = fs.readFileSync(indexPath(), 'utf-8');
+      expect(twice).toBe(once);
+      expect(twice).toContain(curated);
+    });
+
+    it('still refreshes a non-curated (auto) summary when the DR body changes', () => {
+      seedDr();
+      regenerateDrIndex(tmpDir);
+
+      // No human edit — change the DR body and regen; the auto summary updates.
+      fs.writeFileSync(
+        path.join(decisionsDir(), 'DR-001-alpha.md'),
+        '---\nid: DR-001\ntitle: Alpha\nstatus: accepted\ndate: 2026-01-01\n---\n\n' +
+          '## Context\n\nA brand new rationale paragraph after editing the DR body.\n',
+        'utf-8',
+      );
+      regenerateDrIndex(tmpDir);
+      const after = fs.readFileSync(indexPath(), 'utf-8');
+      expect(after).toContain('A brand new rationale paragraph after editing the DR body.');
+      expect(after).not.toContain('The raw first body paragraph that the auto-summarizer extracts.');
+    });
+  });
+
+  // ─── #220: INDEX↔frontmatter status-drift gate ─────────────────────────
+  describe('validateDrIndexStatus() — INDEX status-drift gate (#220)', () => {
+    const decisionsDir = () => path.join(tmpDir, 'docs', 'decisions');
+
+    function seedDr(status: string): void {
+      fs.mkdirSync(decisionsDir(), { recursive: true });
+      fs.writeFileSync(
+        path.join(decisionsDir(), 'DR-001-alpha.md'),
+        `---\nid: DR-001\ntitle: Alpha\nstatus: ${status}\ndate: 2026-01-01\n---\n\n## Context\n\nWhy.\n`,
+        'utf-8',
+      );
+    }
+
+    it('passes when INDEX status matches DR frontmatter', () => {
+      seedDr('accepted');
+      regenerateDrIndex(tmpDir);
+      expect(validateDrIndexStatus(decisionsDir())).toEqual([]);
+    });
+
+    it('flags a status mismatch (the eb27e05 / #220 drift)', () => {
+      seedDr('proposed');
+      regenerateDrIndex(tmpDir); // INDEX now says proposed
+
+      // A direct/agent/sed edit flips frontmatter, bypassing every regen path.
+      setAdrStatus(path.join(decisionsDir(), 'DR-001-alpha.md'), 'accepted');
+
+      const drifts = validateDrIndexStatus(decisionsDir());
+      expect(drifts).toHaveLength(1);
+      expect(drifts[0].kind).toBe('mismatch');
+      expect(drifts[0].id).toBe('DR-001');
+      expect(drifts[0].fileStatus).toBe('accepted');
+      expect(drifts[0].indexStatus).toBe('proposed');
+    });
+
+    it('flags a DR file with no INDEX entry (symmetric — missing direction)', () => {
+      seedDr('accepted');
+      regenerateDrIndex(tmpDir);
+      // Add a second DR but do NOT regen — its entry is missing from the INDEX.
+      fs.writeFileSync(
+        path.join(decisionsDir(), 'DR-002-beta.md'),
+        '---\nid: DR-002\ntitle: Beta\nstatus: proposed\ndate: 2026-01-02\n---\n\n## Context\n\nB.\n',
+        'utf-8',
+      );
+      const drifts = validateDrIndexStatus(decisionsDir());
+      expect(drifts.map(d => d.kind)).toContain('missing-entry');
+      expect(drifts.find(d => d.kind === 'missing-entry')?.id).toBe('DR-002');
+    });
+
+    it('returns [] when decisions dir or INDEX.md is absent', () => {
+      expect(validateDrIndexStatus(decisionsDir())).toEqual([]);
+      seedDr('accepted'); // DR exists but no INDEX.md yet
+      expect(validateDrIndexStatus(decisionsDir())).toEqual([]);
     });
   });
 });
