@@ -1,0 +1,9 @@
+{
+  "specPath": "specs/agent-execute/SPEC-019-execution-substrate/requirements.md",
+  "specHash": "1f1943bda1ffd82baf43443d58a8accdb7bce25cf0e762a5ce3f9edc17e95acf",
+  "approvedAt": "2026-06-29T10:50:10.560Z",
+  "approvedBy": "github@harvest316.com",
+  "tier": "T4",
+  "migrated": false,
+  "baselineBlob": "c2dd3acc74d3abbb5bdc43dd51d214bfc272bddb"
+}

@@ -2,7 +2,7 @@
 id: SPEC-019
 type: requirements
 # 🔒 Once approved, hash-locked: approved bytes recorded in .minspec/approvals.json[SPEC-019].specHash. ANY edit voids approval (hash → stale) — re-run "MinSpec: Approve Spec". DR-012.
-status: specifying
+status: implementing
 tier: T4
 product: agent-execute
 epic: EPIC-007  # Agent Execute Extension
@@ -341,6 +341,42 @@ evidence any capability exists.
   verified before wiring caps. Traces to
   [DR-017](../../../docs/decisions/DR-017.md) (§Usage/quota limits).
 
+  - **Spend-cap time shape — calendar daily + weekly, NOT a mirror of the 5h/7d subscription
+    windows.** The PAYG key is injected **only** as overage spillover (FR-5: subscription-first;
+    PAYG only when the subscription is unavailable or its ceiling is hit), so the spend cap's
+    *trigger* is the subscription 5h/weekly window but its *job* is bounding **dollars** — a
+    budget concept the human reasons about in **calendar** units (the Scrooge budget-owner
+    audience). Two calendar-aligned windows: a **daily cap** (the runaway guard — a stuck loop
+    burning the night) and a **weekly cap** (the actual overage ceiling). Distinct failure
+    modes, not redundant: daily-only over-provisions the week; weekly-only lets one bad day eat
+    the whole budget before anyone notices. The spend cap is **decoupled from the 5h-window
+    mechanics** — FR-14's *concurrency* cap already respects the subscription 5h/weekly quota;
+    the *spend* cap stays a pure dollar budget over calendar time. **Rejected: mirroring
+    Claude's own 5h-rolling / 7d-rolling windows** — (a) the 5h→7d ratio is a *behavioral
+    assumption* (cycles/day × working-days), wrong for weekend/part-time/shared-account devs;
+    (b) rolling windows don't tile, so a rolling-5h cap can't be cleanly multiplied into a
+    weekly number; (c) a rolling window has no clean reset instant, so its "remaining" gauge
+    **cannot be displayed truthfully** — a mis-modelled gauge → surprise mid-task cutoff or
+    silent overspend (never-wrong violation). Calendar windows reset at honest, deterministic
+    instants ("resets at midnight" / "resets Monday").
+
+  - **Spend-cap settings UI — two dollar inputs + an honest derived ratio, no behavioral
+    multiplier.** The surface takes a **daily** and a **weekly** dollar figure directly and
+    shows the *truthful* derived relationship `weekly ÷ daily = N days of headroom` ("at your
+    daily max you'd hit the weekly cap in N days") — a pure ratio that **describes what the user
+    set**, never prescribes a working pattern. Warn when `weekly ÷ daily < ~5` (daily cap loose
+    relative to weekly — one runaway day eats most of the week). Seed default `daily = weekly ÷
+    5` (5 working days), surfaced as an **editable assumption**, never a hard-coded mapping.
+    This **replaces the rejected "reasonable 5h→7d multiplier" affordance**, which would have
+    baked an unstated, often-wrong working-pattern assumption into the UI.
+
+  - **Spend-cap cutoff = degrade to subscription, never hard-fail.** When a PAYG request would
+    exceed either cap, the broker **stops injecting the PAYG key and falls back to
+    subscription-only** (runs throttle on the subscription window) — it does **not** hard-fail
+    the dispatch. Consistent with the FR-10/FR-11 never-throw degrade posture: hitting the spend
+    cap downgrades *throughput*, never the *boundary* or the run. The **broker is the only meter**
+    (CL-15), so the cap reads the broker's running daily/weekly PAYG tally.
+
 ### Untrusted input & injection posture
 
 - **FR-15 (untrusted issue/spec body is DATA, credential-free; injection ≤ a bad
@@ -643,8 +679,9 @@ manual path.
   (untrusted-as-data inner framing), FR-16 (Tier-0). Plus the ported pure logic
   (`parseClaudeOutput`/`extractFixSummary`/verdict-ladder, staleness re-check).
 - **Layer-2 milestone — autonomous (gated, later):** FR-2 (`SandboxRunner` container adapter),
-  FR-3/4/5 (host-side broker + billing modes), FR-6/7/8 (attestation), FR-14 **spend** cap (the
-  concurrency cap itself is v1). Gated by #74 + a dedicated security review (DR-017).
+  FR-3/4/5 (host-side broker + billing modes), FR-6/7/8 (attestation), FR-14 **spend** cap
+  (calendar daily+weekly, degrade-to-subscription cutoff; the concurrency cap itself is v1).
+  Gated by #74 + a dedicated security review (DR-017).
 
 ### OQ disposition
 

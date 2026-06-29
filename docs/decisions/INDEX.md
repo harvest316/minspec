@@ -266,4 +266,16 @@ SPEC-017 (Trust Dashboard) needs an **approval baseline** — the exact approved
 *Status: proposed · Date: 2026-06-28*
 
 The third "Execute" extension (DR-015, working id agent-execute) is named **SealBox** (sealbox.dev registered; resolves DR-015 OQ-4 / #66) and **split into its own private repo `harvest316/sealbox`**, mirroring the ScroogeLLM split (DR-027) and superseding DR-015 OQ-3 (which placed it at `packages/agent-execute` in the monorepo). The sealbox.dev marketing + waitlist site ships now; the specs/EPIC/research migration (SPEC-016, SPEC-019, EPIC-007) is a tracked follow-up.
+
+## [DR-045 — Host-IDE background tasks are Layer-1 visibility, not a Layer-2 substrate](DR-045.md)
+
+*Status: accepted · Date: 2026-06-29*
+
+The host IDE's background-task runner (e.g. Claude Code tacking pending tasks onto VS Code when fanning out agents) executes inside the user's credentialed extension host — making it Layer-1 by SPEC-019's own definitions, never a valid degrade substrate for Layer-2 autonomous dispatch. FR-10 owes one explicit clause naming this third environmental fact so implementers cannot mistake an ambient async runner for an attested container.
+
+## [DR-046 — SealBox obeys rule #8 — worktree isolation + symmetric base-freshness](DR-046.md)
+
+*Status: accepted · Date: 2026-06-29*
+
+Under concurrent git mutation (PRs merging, main edited, sibling-worktree sessions), SPEC-019 FR-13 must keep SealBox dispatch from corrupting the user's checkout. A 7-lens adversarial review confirmed 7 integrity-class races; the fix mandates dedicated-worktree isolation and symmetric base-freshness — verify the true remote tip at BOTH worktree creation AND push — as T0 invariants.
 <!-- minspec:dr-index:end -->
