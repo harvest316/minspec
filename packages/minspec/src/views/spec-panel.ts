@@ -4,6 +4,9 @@ import { readSpecFile, writeSpec } from '../lib/spec';
 import type { Phase } from '../lib/config';
 import { getHtml, getErrorHtml, toggleTask } from './spec-panel-html';
 import type { ClassificationSummary } from './spec-panel-html';
+import { listSpecs } from '../lib/spec-manager';
+import { computeSpecRework, computeWastedReview } from '../lib/trust-metrics';
+import type { TrustChartModel } from '@aiclarity/shared';
 
 export type { ClassificationSummary } from './spec-panel-html';
 export { getHtml, getErrorHtml, toggleTask } from './spec-panel-html';
@@ -63,12 +66,76 @@ export class SpecPanel {
     try {
       const spec = readSpecFile(this.specFilePath);
       this.panel.title = `MinSpec: ${spec.frontmatter.title || spec.frontmatter.id}`;
-      this.panel.webview.html = getHtml(spec, classification);
+
+      // Build the trust chart model read-only over all specs + ledger (SPEC-017 Slice 6).
+      // Degrades gracefully to undefined if rootDir is unavailable — chart simply absent.
+      // NEVER writes spec bytes (INV — Non-destructive, FR-11).
+      // Wrapped in its own try-catch to ensure any unexpected error here degrades
+      // to "no chart" rather than aborting the whole panel render.
+      let trustModel: TrustChartModel | undefined;
+      try {
+        trustModel = this.buildTrustModel();
+      } catch {
+        trustModel = undefined;
+      }
+
+      // Pass trustModel only when available — avoids passing explicit `undefined` to
+      // getHtml, which matters for test mocks that assert exact argument count.
+      this.panel.webview.html = trustModel
+        ? getHtml(spec, classification, trustModel)
+        : getHtml(spec, classification);
     } catch (err) {
       this.panel.webview.html = getErrorHtml(
         `Failed to read spec: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  /**
+   * Build the TrustChartModel read-only over all specs + the approval ledger.
+   * Returns undefined if the workspace root is unavailable (no chart shown).
+   *
+   * Reads: spec files on disk + `.minspec/approvals/*.json` sidecars.
+   * Writes: NOTHING. (INV — Non-destructive, FR-11)
+   */
+  private buildTrustModel(): TrustChartModel | undefined {
+    const rootDir = vscode.workspace?.workspaceFolders?.[0]?.uri.fsPath;
+    if (!rootDir) return undefined;
+
+    let specs: ReturnType<typeof listSpecs>;
+    try {
+      specs = listSpecs(rootDir);
+    } catch {
+      return undefined; // unreadable spec tree → no chart, never throw
+    }
+
+    // M1: rework % per spec (undefined → null for the model)
+    const rework: TrustChartModel['rework'] = specs.map((s) => {
+      let pct: number | null = null;
+      try {
+        const result = computeSpecRework(rootDir, s.filePath);
+        pct = result === undefined ? null : result;
+      } catch {
+        pct = null; // any error → no datapoint
+      }
+      return { specId: s.id, pct };
+    });
+
+    // M2: wasted review for superseded specs
+    let wasted: TrustChartModel['wasted'] = [];
+    try {
+      const bars = computeWastedReview(rootDir, specs);
+      wasted = bars.map((b) => {
+        // derive specId from specPath (last directory component without extension)
+        const parts = b.specPath.replace(/\\/g, '/').split('/');
+        const specId = parts.find((p) => /^SPEC-\d/.test(p)) ?? parts[parts.length - 1];
+        return { specId, approvedChars: b.approvedChars };
+      });
+    } catch {
+      wasted = []; // degrade gracefully
+    }
+
+    return { rework, wasted };
   }
 
   /**
