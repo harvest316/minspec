@@ -14,7 +14,8 @@
 
 import * as fs from 'fs';
 import { reworkPct, getSpecBodyOnly } from '@aiclarity/shared';
-import { getApprovalRecord, recoverBaseline } from './approval';
+import { getApprovalRecord, recoverBaseline, specRelPath } from './approval';
+import type { SpecStatus } from './spec';
 
 /**
  * Compute the M1 char-rework percentage for a spec relative to its approved
@@ -76,4 +77,86 @@ export function computeSpecRework(
 
   // 5. Pure reworkPct — same inputs always produce the same number (INV — Deterministic).
   return reworkPct(baselineBody, currentBody);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPEC-017 Slice 5 — M2: superseded "wasted review" bar (FR-6, AC-5).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One bar in the M2 "wasted review" chart: the chars a human reviewed and
+ * approved for a spec that was later WHOLLY REPLACED (`status: superseded`), and
+ * thus thrown away. `specPath` is the repo-relative POSIX spec path (the ledger
+ * key); `approvedChars` is the length of the approved body at approval time.
+ */
+export interface WastedBar {
+  readonly specPath: string;
+  readonly approvedChars: number;
+}
+
+/**
+ * Minimal structural view of a spec needed to compute the wasted-review bar.
+ * `SpecSummary` (and any richer summary) satisfies this — kept narrow so this
+ * `vscode`-free module never depends on the tree/summary construction layer.
+ */
+export interface WastedReviewSpec {
+  readonly status: SpecStatus;
+  /** Absolute on-disk path users open (`SpecSummary.filePath`). */
+  readonly filePath: string;
+}
+
+/**
+ * M2 — compute the wasted-review bars: for each SUPERSEDED spec, the number of
+ * chars that were approved at approval time (now thrown away by the wholesale
+ * replacement). FR-6: this is a SEPARATE bar — it is NEVER folded into any M1
+ * (`computeSpecRework`) denominator.
+ *
+ * The approved-char count is read from the spec's PRIOR `baselineBlob` body
+ * length, recovered via `getApprovalRecord` + `recoverBaseline`. That baseline is
+ * preserved by the content-addressed blob + ref + committed ledger SHA
+ * INDEPENDENTLY of approval freshness — so even though writing `superseded-by:`
+ * is a canonical content change that VOIDS (stales) the live approval (SPEC-022),
+ * the prior approved-char figure still surfaces correctly. This function does NOT
+ * read or require a fresh `approved` verdict; it reads the surviving baseline.
+ *
+ * A spec superseded BEFORE it was ever approved (no record / no `baselineBlob` /
+ * unrecoverable blob) contributes `approvedChars: 0` — no phantom waste, never a
+ * negative or fabricated figure.
+ *
+ * Non-superseded specs are skipped entirely (no bar). NEVER throws — any per-spec
+ * recovery error degrades that spec to `0`.
+ */
+export function computeWastedReview(
+  rootDir: string,
+  specs: readonly WastedReviewSpec[],
+): WastedBar[] {
+  const bars: WastedBar[] = [];
+  for (const spec of specs) {
+    if (spec.status !== 'superseded') continue; // only wholly-replaced specs waste review
+
+    const specPath = specRelPath(rootDir, spec.filePath);
+    let approvedChars = 0;
+
+    // Read the PRIOR approved baseline length — preserved independently of approval
+    // freshness. No record / absent-or-empty baselineBlob / unrecoverable ⇒ 0
+    // (superseded-before-approved, or both mint paths failed) — no phantom waste.
+    let record;
+    try {
+      record = getApprovalRecord(rootDir, spec.filePath);
+    } catch {
+      record = undefined;
+    }
+    if (record && record.baselineBlob && record.baselineBlob !== '') {
+      let baselineBody: string | undefined;
+      try {
+        baselineBody = recoverBaseline(rootDir, record);
+      } catch {
+        baselineBody = undefined; // documented never-throw; belt-and-suspenders
+      }
+      if (baselineBody !== undefined) approvedChars = baselineBody.length;
+    }
+
+    bars.push({ specPath, approvedChars });
+  }
+  return bars;
 }

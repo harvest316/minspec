@@ -83,10 +83,12 @@ function allRequiredDone(phases: PhaseState): boolean {
 /**
  * The explicit-terminal class (SPEC-022 / DR-034 FR-4, INV-6): a terminal status
  * that is a HUMAN ACT, never inferred from phases. `archived` is the v1 terminal;
- * `superseded` joins when #162 lands and adds it to SpecStatus. `undefined` means
+ * `superseded` (SPEC-017 / #162) joins it now that SpecStatus carries it. Both
+ * slot into the same `if (explicitTerminal) return explicitTerminal;` seam below,
+ * before any phase/approval check (INV-6 — never inferred). `undefined` means
  * "no explicit terminal — derive from {phases, approval}".
  */
-export type ExplicitTerminal = 'archived' | undefined;
+export type ExplicitTerminal = 'archived' | 'superseded' | undefined;
 
 /**
  * Derive the overall spec status — the SINGLE source of truth (SPEC-022 FR-4).
