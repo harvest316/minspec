@@ -278,4 +278,10 @@ The host IDE's background-task runner (e.g. Claude Code tacking pending tasks on
 *Status: accepted · Date: 2026-06-29*
 
 Under concurrent git mutation (PRs merging, main edited, sibling-worktree sessions), SPEC-019 FR-13 must keep SealBox dispatch from corrupting the user's checkout. A 7-lens adversarial review confirmed 7 integrity-class races; the fix mandates dedicated-worktree isolation and symmetric base-freshness — verify the true remote tip at BOTH worktree creation AND push — as T0 invariants.
+
+## [DR-047 — Independent AI review across every Approvable surface](DR-047.md)
+
+*Status: proposed · Date: 2026-06-30*
+
+The independent reviewer-agent from DR-033 §6 covers PRs only. AI-authored Specs, Plans, DRs, constitution invariants, and Epics have no independent read before the human approval gate — a structural gap demonstrated by the 2026-06-29 rubber-stamp session (#344–349, 7 live defects waved through). This DR generalises the pattern to all Approvable types (DR-041), adds a signpost-predicate generalisation (greenlit-for-type before human queue), and establishes a doc-before-code ordering invariant.
 <!-- minspec:dr-index:end -->

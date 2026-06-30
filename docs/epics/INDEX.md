@@ -38,4 +38,8 @@ _Bodies of work grouping specs, decisions, and issues. One entry per epic._
 ## [EPIC-009 — Team Readiness](EPIC-009-team-readiness.md)
 
 *Status: active · slug: `team-readiness` · order: 9*
+
+## [EPIC-010 — Reviewer Across All Approvables](EPIC-010-reviewer-all-approvables.md)
+
+*Status: active · slug: `reviewer-all-approvables` · order: 10*
 <!-- minspec:epic-index:end -->
