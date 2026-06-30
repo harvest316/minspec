@@ -8,6 +8,8 @@ import type { ParsedSpec, TaskItem } from '../lib/spec';
 import type { Phase, Tier } from '../lib/config';
 import { PHASES } from '../lib/config';
 import type { ClassificationSignal } from '../lib/classifier';
+import type { TrustChartModel } from '@aiclarity/shared';
+import { renderTrustChart } from '@aiclarity/shared';
 
 /** Classification result summary for display */
 export interface ClassificationSummary {
@@ -77,8 +79,14 @@ export function toggleTask(spec: ParsedSpec, phase: Phase, taskIndex: number, do
 /**
  * Generate the HTML for the spec panel webview.
  * Pure function — no vscode API dependency.
+ *
+ * @param trustModel  Optional SPEC-017 chart model. When provided, renders a
+ *                    static inline-SVG trust chart section after the
+ *                    classification section. No nonce required — SVG is static
+ *                    (no <script>); CSP `style-src 'unsafe-inline'` covers any
+ *                    <style> inside the SVG (SPEC-017 §Chart CSP-corrected note).
  */
-export function getHtml(spec: ParsedSpec, classification?: ClassificationSummary): string {
+export function getHtml(spec: ParsedSpec, classification?: ClassificationSummary, trustModel?: TrustChartModel): string {
   const { frontmatter, phaseSections } = spec;
 
   const phaseStepsHtml = PHASES.map(phase => {
@@ -128,6 +136,10 @@ export function getHtml(spec: ParsedSpec, classification?: ClassificationSummary
     ? getClassificationHtml(classification)
     : '';
 
+  // SPEC-017 Slice 6: static inline SVG chart — NO nonce needed (no <script>).
+  // CSP `style-src 'unsafe-inline'` already covers the <style> inside the SVG.
+  const chartHtml = trustModel ? getTrustChartHtml(trustModel) : '';
+
   const nonce = crypto.randomBytes(16).toString('base64');
 
   return `<!DOCTYPE html>
@@ -156,6 +168,7 @@ export function getHtml(spec: ParsedSpec, classification?: ClassificationSummary
     </section>
 
     ${classificationHtml}
+    ${chartHtml}
   </div>
   <script nonce="${nonce}">${getScript()}</script>
 </body>
@@ -239,6 +252,19 @@ function getClassificationHtml(classification: ClassificationSummary): string {
         ${signalsHtml}
       </tbody>
     </table>
+  </section>`;
+}
+
+/**
+ * Wrap the inline-SVG chart in a styled section element.
+ * The chart is static SVG — no <script>, no nonce.
+ * SPEC-017 Slice 6, FR-10.
+ */
+function getTrustChartHtml(model: TrustChartModel): string {
+  const svgContent = renderTrustChart(model);
+  return `<section class="trust-chart" aria-label="Trust chart">
+    <h2>Trust Metrics</h2>
+    ${svgContent}
   </section>`;
 }
 
@@ -480,6 +506,14 @@ function getStyles(): string {
 
     .signal-tier {
       font-weight: 600;
+    }
+
+    /* Trust chart section (SPEC-017 Slice 6) */
+    .trust-chart {
+      margin-top: 20px;
+      padding-top: 12px;
+      border-top: 1px solid var(--vscode-panel-border, #333);
+      overflow-x: auto;
     }
   `;
 }
