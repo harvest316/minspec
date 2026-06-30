@@ -26,7 +26,7 @@ priority order — because the requirements' Costly-to-Refactor list is dominate
 **seams** (the two-plane split, the broker, the `SandboxRunner` port, the diff-handoff),
 not by algorithms. Get the seam *shapes* frozen and the cheap-to-swap parts stay cheap.
 
-1. **Freeze the ports before any runtime (CDD / DR-359).** Five TypeScript contracts —
+1. **Freeze the ports before any runtime (contract-driven development).** Five TypeScript contracts —
    `SandboxRunner`, `OutcomeStore`, the broker resolution seam, the `AgentResult` Zod
    schema, and the discriminated `Result<T>` failure union — are authored and unit-tested
    against a **mock runner** first (FR-2: ~95% of the extension is testable with no docker
