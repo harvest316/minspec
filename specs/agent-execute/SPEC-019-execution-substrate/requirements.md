@@ -2,7 +2,7 @@
 id: SPEC-019
 type: requirements
 # 🔒 Once approved, hash-locked: approved bytes recorded in .minspec/approvals.json[SPEC-019].specHash. ANY edit voids approval (hash → stale) — re-run "MinSpec: Approve Spec". DR-012.
-status: specifying
+status: implementing
 tier: T4
 product: agent-execute
 epic: EPIC-007  # Agent Execute Extension
@@ -237,7 +237,10 @@ evidence any capability exists.
   Tier-1 rule): probe at activation; absent → degrade gracefully (show an "install a
   container runtime to enable autonomous dispatch" affordance), **never error**. Every
   runtime/probe seam is `catch → log the reason → return a typed, discriminated fallback`
-  (`{ ok: false, reason: 'no-runtime' | 'spawn-failed' | 'attest-failed' | 'timeout' | ... }`),
+  (`{ ok: false, reason: 'no-runtime' | 'spawn-failed' | 'attest-failed' | 'timeout' |
+  'base-advanced' | 'base-advanced-conflict' | 'git-lock-contention' | 'checkout-moved' | ... }`
+  — the last four are the concurrent-git-mutation fail-soft reasons added by FR-13's
+  reconciliation + isolation rules and [DR-046](../../../docs/decisions/DR-046.md)),
   **not** a bare `null` and **never** a silent black hole — expected degradation
   (no runtime) must be distinguishable from a bug, and the swallowed reason logged +
   inspectable (auditable-via-UI). The never-throw shell stays **thin**; complex logic lives
@@ -268,16 +271,64 @@ evidence any capability exists.
   instructions. Traces to [DR-017](../../../docs/decisions/DR-017.md) (§Diff-handoff) and
   [DR-008](../../../docs/decisions/DR-008.md) (Layer 1 parent-side push/comment).
 
-  - **Base-ref freshness (control-plane creation-time precondition).** *Complementing FR-13's
-    exit-time handoff:* when the control plane **creates** the agent's exec context it branches
-    off **`origin/main` (fetched parent-side), never the stale local `main`.** On a shared
-    checkout the local `main` is frequently stale (global rule #8 — it is never switched/pulled
-    from a session), so basing agent work on it makes the agent build on an outdated tree and
-    emit factually-wrong output (observed: an agent documented an already-merged script as
-    "does not exist" because its base predated the merge). The fetch is a parent-side
+  - **Base-ref freshness + pinned base (control-plane creation-time precondition).**
+    *Complementing FR-13's exit-time handoff:* when the control plane **creates** the agent's
+    exec context it branches off **`origin/main` (fetched parent-side), never the stale local
+    `main`.** On a shared checkout the local `main` is frequently stale (global rule #8 — it is
+    never switched/pulled from a session), so basing agent work on it makes the agent build on
+    an outdated tree and emit factually-wrong output (observed: an agent documented an
+    already-merged script as "does not exist" because its base predated the merge). **The base
+    is captured as an immutable SHA** (`git rev-parse FETCH_HEAD` immediately after the
+    parent-side fetch; the exec context is created off that exact SHA, not the live shared
+    ref), so a concurrent peer fetch or a human merge cannot re-point the base between fetch
+    and create; the `baseSha` travels onto the OutcomeStore record (CL-4) and into the agent's
+    `<untrusted_…>` DATA caveat ("tree pinned at `<sha>`; do not assert non-existence of what
+    you cannot see"). **The exec context is materialised as a dedicated git worktree rooted
+    OUTSIDE every checkout** (`~/code/.worktrees/<repo>/sealbox-<runId>/` — never nested in a
+    working tree, never `/tmp` where the dir vanishes but the `.git` worktree record survives);
+    for L1 (no container, CL-1) this worktree is the agent's **only** fs isolation, for L2 it
+    is what gets snapshotted into the otherwise-clean container. The fetch is a parent-side
     credentialed op; the agent still gets no network tools. (The in-repo
-    `scripts/dispatch-issue.sh` dev-seed demonstrates this discipline — dev-tooling, not the
-    product substrate; see Out of scope.)
+    `scripts/dispatch-issue.sh` dev-seed demonstrates the fetch-and-base discipline —
+    dev-tooling, not the product substrate; see Out of scope.) Traces to
+    [DR-046](../../../docs/decisions/DR-046.md).
+
+  - **Base-ref reconciliation + safe push (control-plane exit-time precondition).** *The
+    symmetric partner the creation-time rule lacked — base-freshness gated BOTH directions
+    ([DR-046](../../../docs/decisions/DR-046.md), closing the FR-13 validator asymmetry).*
+    Because `origin/main` is a moving ref and runs are unbounded, **before** the parent push
+    the control plane re-fetches `origin/main` and compares it to `baseSha`:
+    - **Unchanged →** push as today.
+    - **Advanced →** rebase the agent branch onto the fresh tip **in the worktree** (never on
+      the shared HEAD); on clean rebase, **re-run the FR-13/CL-5 gate** (tests/validate) and
+      **recompute the diff range + `changedFiles`** against the fresh `origin/main` so the
+      `.agent-summary.md` and `gh` comment describe the branch as it will actually merge.
+    - **Rebase conflict, or the merged range overlaps the agent's diff →** do **not** push or
+      comment: emit `{ ok: false, reason: 'base-advanced-conflict' }` (FR-11), label
+      `needs-review`/`agent-rebase-conflict`, surface the diff for human reconciliation
+      (CL-10's asymmetric fail-soft applied at the exit boundary — skip the push only on
+      positive proof of conflict/overlap, never push blind).
+
+    **Push protocol (enforce-by-construction, CL-12).** The push targets a **per-dispatch-unique
+    branch** (`sealbox/<issue>-<ulid>`) — never a reused name, never `main`/`master` — and is
+    **create / fast-forward-only: never `--force`, `--force-with-lease`, or any reset of a
+    remote ref** (unique branches make a force unnecessary, so the push primitive carries no
+    force code path — grep-gated in review, mirroring R7's cred grep). On any non-fast-forward
+    → abort and surface, never auto-force.
+
+    **cwd discipline (bug #83 + base-SHA-guard-misses-switch).** Every parent-side git op runs
+    `git -C <worktree>` with an **explicit refspec** — never a bare `git push`, never a
+    `branch -f`/reset that can move the shared HEAD. The control plane **verifies the user's
+    primary checkout is untouched — branch NAME == intended AND HEAD SHA unmoved — immediately
+    before and after** handoff (a SHA-only guard misses a concurrent `git switch`; check the
+    NAME); on mismatch → STOP, `{ ok: false, reason: 'checkout-moved' }`, push nothing.
+    Git-lock contention (`index.lock`/`packed-refs.lock`/worktrees lock) is a retryable
+    `{ ok: false, reason: 'git-lock-contention' }` that fail-closes rather than dispatching
+    into a half-initialised worktree. **`teardown` is defined for L1** (`git worktree remove
+    --force` + `git branch -D <tempBranch>` on every terminal exit, in a finally/trap, after
+    diff+push); CL-7 orphan reclamation is extended to GC orphaned worktrees + temp branches,
+    and a re-queue mints a **fresh** worktree off a **fresh** fetch (never reuses a stale
+    orphan). Governed by the rule-#8 isolation invariant below.
 
 ### Caps (concurrency always; spend in API mode)
 
@@ -289,6 +340,42 @@ evidence any capability exists.
   for headroom past the subscription ceiling). Exact current Anthropic-plan limits must be
   verified before wiring caps. Traces to
   [DR-017](../../../docs/decisions/DR-017.md) (§Usage/quota limits).
+
+  - **Spend-cap time shape — calendar daily + weekly, NOT a mirror of the 5h/7d subscription
+    windows.** The PAYG key is injected **only** as overage spillover (FR-5: subscription-first;
+    PAYG only when the subscription is unavailable or its ceiling is hit), so the spend cap's
+    *trigger* is the subscription 5h/weekly window but its *job* is bounding **dollars** — a
+    budget concept the human reasons about in **calendar** units (the Scrooge budget-owner
+    audience). Two calendar-aligned windows: a **daily cap** (the runaway guard — a stuck loop
+    burning the night) and a **weekly cap** (the actual overage ceiling). Distinct failure
+    modes, not redundant: daily-only over-provisions the week; weekly-only lets one bad day eat
+    the whole budget before anyone notices. The spend cap is **decoupled from the 5h-window
+    mechanics** — FR-14's *concurrency* cap already respects the subscription 5h/weekly quota;
+    the *spend* cap stays a pure dollar budget over calendar time. **Rejected: mirroring
+    Claude's own 5h-rolling / 7d-rolling windows** — (a) the 5h→7d ratio is a *behavioral
+    assumption* (cycles/day × working-days), wrong for weekend/part-time/shared-account devs;
+    (b) rolling windows don't tile, so a rolling-5h cap can't be cleanly multiplied into a
+    weekly number; (c) a rolling window has no clean reset instant, so its "remaining" gauge
+    **cannot be displayed truthfully** — a mis-modelled gauge → surprise mid-task cutoff or
+    silent overspend (never-wrong violation). Calendar windows reset at honest, deterministic
+    instants ("resets at midnight" / "resets Monday").
+
+  - **Spend-cap settings UI — two dollar inputs + an honest derived ratio, no behavioral
+    multiplier.** The surface takes a **daily** and a **weekly** dollar figure directly and
+    shows the *truthful* derived relationship `weekly ÷ daily = N days of headroom` ("at your
+    daily max you'd hit the weekly cap in N days") — a pure ratio that **describes what the user
+    set**, never prescribes a working pattern. Warn when `weekly ÷ daily < ~5` (daily cap loose
+    relative to weekly — one runaway day eats most of the week). Seed default `daily = weekly ÷
+    5` (5 working days), surfaced as an **editable assumption**, never a hard-coded mapping.
+    This **replaces the rejected "reasonable 5h→7d multiplier" affordance**, which would have
+    baked an unstated, often-wrong working-pattern assumption into the UI.
+
+  - **Spend-cap cutoff = degrade to subscription, never hard-fail.** When a PAYG request would
+    exceed either cap, the broker **stops injecting the PAYG key and falls back to
+    subscription-only** (runs throttle on the subscription window) — it does **not** hard-fail
+    the dispatch. Consistent with the FR-10/FR-11 never-throw degrade posture: hitting the spend
+    cap downgrades *throughput*, never the *boundary* or the run. The **broker is the only meter**
+    (CL-15), so the cap reads the broker's running daily/weekly PAYG tally.
 
 ### Untrusted input & injection posture
 
@@ -385,6 +472,114 @@ in <1 day.)*
   agent-execute, the container runtime, the broker, or any network/AI module; the air-gap is
   preserved (FR-16; [DR-004](../../../docs/decisions/DR-004.md),
   [DR-015](../../../docs/decisions/DR-015.md)).
+- **INV — SealBox obeys rule #8; it never mutates the user's shared checkout (T0).** SealBox
+  is a concurrent automated git actor: every dispatched agent (L1 and L2) operates in a
+  **dedicated worktree** rooted *outside every checkout*
+  (`~/code/.worktrees/<repo>/sealbox-<runId>/` — never nested in a working tree, never `/tmp`).
+  No SealBox code path runs a HEAD-moving git op (checkout/switch/merge/rebase/reset/`branch
+  -f`) on the user's primary checkout, moves the shared HEAD, force-pushes, or force-deletes a
+  ref a peer session may hold; the agent's base is a captured immutable SHA (not a live shared
+  ref); every parent-side git op is `git -C <worktree>` + explicit refspec; the primary
+  checkout's branch NAME + HEAD are verified unchanged before and after handoff; the worktree +
+  temp branch are removed on every terminal exit. Shared `.git` is left as found (FR-13
+  creation/exit sub-bullets; FR-11; global rule #8; [bug #83](../../../docs/decisions/DR-046.md);
+  [DR-046](../../../docs/decisions/DR-046.md)).
+- **INV — Base-freshness is gated symmetrically: creation AND push (T0).** No agent branch is
+  pushed or summarised against a base older than `origin/main` at push time. The base is fresh
+  at creation (pinned SHA off a parent-side fetch) **and** re-validated at exit (re-fetch →
+  rebase-in-worktree on advance → fail-soft to `needs-review` on conflict/overlap), so the
+  "factually-wrong output" failure cannot re-enter mid-run; the push is create/fast-forward-only
+  to a per-dispatch-unique branch — never `--force`/reset of a remote ref (FR-13 reconciliation
+  sub-bullet; CL-5; [DR-046](../../../docs/decisions/DR-046.md)).
+
+## Acceptance Criteria
+
+*Definition-of-done — each item traces its FR(s)/invariant and is the concrete check that the
+requirement is met. All unchecked: nothing here is built (Specify-phase record). **Milestone
+split** (per the v1 / Layer-2 table in Clarify): the Layer-2 items **AC-3, AC-4, AC-5, AC-6,
+AC-7** and the FR-14 **spend** cap gate the autonomous milestone (and #74); the rest are v1
+manual Layer-1.*
+
+- [ ] **(FR-1, INV-agent-never-in-ext-host)** No code path runs `claude -p` (or any agent
+  invocation) in the vsix / extension host; a test greps the exec path and asserts the agent
+  process is spawned only into the execution plane (L2 container / L1 subprocess-in-worktree).
+- [ ] **(FR-2)** The substrate is consumed through one `SandboxRunner` port
+  (`spawn → attest → run → collect-diff → teardown`); a **mock runner** exercises tier-gating,
+  HITL state, diff-handoff and summary→comment with **no docker daemon**; only the docker
+  adapter requires a real daemon (CI-gated). `collect-diff`/push take `execContext` as a
+  **required** typed param (no cwd defaulting).
+- [ ] **(FR-3, INV-sandbox-no-egress)** The sandbox's `ANTHROPIC_BASE_URL` resolves only to the
+  broker socket and carries no real token; the broker is the sole allowlisted egress. Server-side
+  `web_search`/`web_fetch` ride the `/v1/messages` broker call; the CLI's client-side
+  WebFetch/WebSearch are disabled and a sandbox-originated web connection is **refused** (the
+  egress canary stays refused).
+- [ ] **(FR-4)** Switching direct→Scrooge is a **host-side** broker config flip; the sandbox
+  `ANTHROPIC_BASE_URL` is byte-identical before and after, and no scoped key is ever written
+  inside the box.
+- [ ] **(FR-5, OQ-1/#74)** Default billing is **subscription** with **no API key present**
+  (attestation cred-env row asserts `$ANTHROPIC_API_KEY` unset); API/Scrooge mode is opt-in, and
+  even in Scrooge mode the broker tries the subscription first and injects the spend-capped PAYG
+  key only when the subscription is unavailable / at ceiling. (Default-mode plumbing gated on the
+  #74 spike.)
+- [ ] **(FR-6, FR-7, INV-attest-fail-closed)** The attestation probe runs in the **same**
+  container lifecycle **before** any agent code; every negative deny-check (egress, creds-env,
+  creds-files, auth, push, fs-boundary, privilege) **fails** inside the box and is **paired with
+  a positive control that must succeed**. Any should-be-denied capability that succeeds **aborts
+  dispatch** (agent never runs); a deny-check whose positive control also fails → verdict
+  **FAIL**, never inferred-secure.
+- [ ] **(FR-8)** One probe mechanism is **both** the per-dispatch runtime gate and the CI
+  substrate integration test (real daemon); control-plane/logic tests run on the mock with no
+  daemon. The probe asserts **config-correctness only** — it makes no escape-resistance claim
+  (kernel-0-day residual = OQ-2/#73).
+- [ ] **(FR-9, FR-10, FR-11, DR-045)** Manual L1 needs no sandbox; autonomous/cron **requires** a
+  sandbox that passed FR-6. No container runtime → degrade to **L1 manual** (typed
+  `{ok:false, reason:'no-runtime'}` + an install affordance), **never** "off" and **never**
+  unsandboxed autonomy — an ambient host-IDE async runner never enables autonomy. Every
+  runtime/probe seam returns a typed discriminated fallback, never a bare `null`, never throws.
+- [ ] **(FR-12, CL-2, CL-8)** The control plane consumes the **shared classifier**: **T1–T2
+  auto-dispatch**, **T3–T4 → `needs-review`** pending human spec/plan approval. Low self-reported
+  confidence **escalates** a T1–T2 run to review (never auto-approves). The gate's input is the
+  classifier-over-spec (no outcome self-poisoning), with an explicit recovery path so no class is
+  permanently stuck.
+- [ ] **(FR-13, INV-base-freshness-symmetric)** The branch exits as a **diff + `.agent-summary.md`**;
+  the parent reviews, pushes, and comments **after** the agent exits (agent holds no `gh` token;
+  no in-sandbox push). The base is a **pinned SHA** at creation and is **re-validated at push**
+  (re-fetch → rebase-in-worktree on advance → recompute the diff range; conflict/overlap →
+  fail-soft to `needs-review`). A fixture where `origin/main` advances mid-run yields **no
+  stale-based push or comment**.
+- [ ] **(FR-13 push protocol + INV-rule-8)** The push targets a **per-dispatch-unique branch**,
+  is **create/fast-forward-only, never `--force`/reset** (the push wrapper has no force code path
+  — grep-gated). A T0 test runs the handoff while a **sibling worktree on the same checkout
+  switches branches** and asserts the user's primary checkout branch-NAME + HEAD are **unmoved**
+  and the push hit only the agent branch.
+- [ ] **(INV-rule-8, FR-13 cwd/lifecycle, bug #83)** Every dispatched agent runs in a **dedicated
+  worktree** under `~/code/.worktrees/<repo>/sealbox-<runId>/` outside every checkout; all
+  parent-side git ops use `git -C <worktree>`; `teardown` removes the worktree + temp branch on
+  **every** terminal exit; a simulated crash + reclamation sweep leaves **zero** orphan
+  worktrees/branches; git-lock contention → typed retryable fail-closed.
+- [ ] **(FR-14, CL-3, CL-14, CL-15)** A **global concurrency cap** bounds in-flight sandboxes,
+  respecting the shared-account window/weekly/session limits; **API mode** adds a **spend cap**
+  read from the broker meter (the sole billing observer); per-field truncation + a total
+  prompt-size cap guard DoS/cost. (Exact current Anthropic-plan limits verified before wiring.)
+- [ ] **(FR-15, INV-untrusted-data)** The issue/spec body is passed as delimited
+  `<untrusted_…>` **DATA** with an injection-aware preamble; the agent runs credential-free, no
+  push, no egress beyond the broker. A red-team fixture that injects instructions yields **at
+  most a degraded advisory** — never an action, approval, exfiltration, or write. (v1 = trusted
+  self-authored bodies; untrusted gated on #73.)
+- [ ] **(FR-16, INV-tier0)** A dependency-graph test asserts `packages/minspec` and
+  `packages/shared` import **nothing** from agent-execute, the container runtime, the broker, or
+  any network/AI module; any shared type in `packages/shared` is **type-only** (no invocation, no
+  network).
+- [ ] **(CL-5, CL-7, FR-11)** The agent-output contract is **Zod-validated** (seed shape **and**
+  the nested `results[]` shape, so no run silently null-fails); a bundle is rejectable on empty
+  diff / missing-or-empty summary / malformed confidence / tests-failed / `stale-base` /
+  `base-advanced-conflict`. **3 attempts → `blocked`** (terminal ∈ {`completed`|`blocked`|`cancelled`});
+  orphaned runs are reclaimed (soft→re-queue, hard→blocked) and their git-state GC'd **before**
+  re-queue.
+- [ ] **(CL-10, CL-11, CL-13)** A pre-dispatch **"still-actionable?"** re-check runs with
+  asymmetric fail-soft (skip only on positive proof of resolution); empty-diff / no-op outcomes
+  are **closed without a push**; post-success side-effects are a **declared, orchestrator-routed**
+  set run in the control plane — the result handler never reaches into foreign state.
 
 ## Risks & Mitigations
 
@@ -399,6 +594,7 @@ in <1 day.)*
 | R7 | **Isolation regression via a "convenience" grant** — a future edit gives the sandbox creds/network/write to "just push" or "auto-fix". | Low · High | The no-cred/no-egress invariants are standing (T0); any grant needs a superseding DR; the attestation gate (FR-6) would *detect* the regression and fail closed; code-review grep for creds/network in the exec path. |
 | R8 | **Prompt injection via untrusted body** steers the agent to a false result. | Med · Med | DATA-framing + injection-aware prompt + credential-free + no-write (FR-15); blast-radius bounded to a degraded advisory (quality/DoS, not integrity); untrusted bodies gated on #73 (R2). Residual: degraded output, not a breach. |
 | R9 | **HITL-gate confusion — dev-time spec-gate ≠ product gate.** The dev-time dispatch harness enforces spec-approval inside a linked worktree by resolving the canonical `.minspec/approvals.json` via `git rev-parse --git-common-dir` ([DR-031](../../../docs/decisions/DR-031.md), dev-tooling). A future build might try to reuse that mechanism for FR-12's product HITL. | Low · Med | **It does not transfer — record, do not adopt.** FR-12's HITL is the tier-gate + shared classifier + human spec/plan approval, **not** the dev PreToolUse hook. At Layer-2 the `git-common-dir` trick is moot anyway: FR-6 requires the host `$HOME`/checkout **unmounted**, so no canonical main tree exists inside the box to resolve against. DR-031 is the build-time analogue only (`relates_to`, not `depends_on`). |
+| R10 | **Concurrent git mutation corrupts a run or the user's tree.** While a run is in flight the human merges PRs (`origin/main` advances), edits `main` directly, and sibling sessions work in other worktrees on the same `.git`. A 7-lens adversarial audit ([DR-046](../../../docs/decisions/DR-046.md)) confirmed all paths integrity-class: stale-base **factually-wrong output** + mis-stated diff range at exit; a **stale-based / non-ff push**; and (L1, no fs isolation) the agent running in / pushing from the **user's primary checkout** → moved shared HEAD + stranded work (the rule-#8 corruption, SealBox as culprit). | Med · High | The rule-#8 worktree-isolation INV + the symmetric base-freshness INV (creation pin + exit reconcile) + create/ff-only-no-force push + `git -C <worktree>` with pre/post primary-checkout verify + defined L1 teardown & git-state orphan GC (FR-13 creation/exit sub-bullets; FR-11 typed reasons; [DR-046](../../../docs/decisions/DR-046.md)). Residual: a kernel/escape 0-day is out of scope (R2); this closes the *git-concurrency* class only. |
 
 ## Out of scope
 
@@ -483,8 +679,9 @@ manual path.
   (untrusted-as-data inner framing), FR-16 (Tier-0). Plus the ported pure logic
   (`parseClaudeOutput`/`extractFixSummary`/verdict-ladder, staleness re-check).
 - **Layer-2 milestone — autonomous (gated, later):** FR-2 (`SandboxRunner` container adapter),
-  FR-3/4/5 (host-side broker + billing modes), FR-6/7/8 (attestation), FR-14 **spend** cap (the
-  concurrency cap itself is v1). Gated by #74 + a dedicated security review (DR-017).
+  FR-3/4/5 (host-side broker + billing modes), FR-6/7/8 (attestation), FR-14 **spend** cap
+  (calendar daily+weekly, degrade-to-subscription cutoff; the concurrency cap itself is v1).
+  Gated by #74 + a dedicated security review (DR-017).
 
 ### OQ disposition
 
