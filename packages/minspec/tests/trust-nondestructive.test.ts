@@ -19,6 +19,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { approveSpec, canonicalSpecHash } from '../src/lib/approval';
+import { computeSpecRework, computeWastedReview } from '../src/lib/trust-metrics';
+import { renderTrustChart } from '@aiclarity/shared';
 
 let tmp: string;
 
@@ -119,5 +121,96 @@ describe('INV — Non-destructive: approveSpec writes no spec bytes (Slice 3)', 
     // The sidecar lives in .minspec/approvals/, NOT in the spec dir
     const sidecarDir = path.join(tmp, '.minspec', 'approvals');
     expect(fs.existsSync(sidecarDir)).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slice 6 — Non-destructive: building TrustChartModel + rendering chart
+//            writes ZERO spec bytes and changes NO specHash.
+//            (FR-11, INV — Non-destructive, AC-9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('INV — Non-destructive: building TrustChartModel + rendering chart (Slice 6)', () => {
+  it('computeSpecRework writes no bytes to the spec file', () => {
+    initGitRepo(tmp);
+    const { absPath, originalBytes } = writeFixtureSpec(tmp, SPEC_REL);
+
+    // Call computeSpecRework — must return undefined (no approval record yet) without mutating.
+    const result = computeSpecRework(tmp, absPath);
+    expect(result).toBeUndefined(); // no approval record → no datapoint (not a failure)
+
+    const afterBytes = fs.readFileSync(absPath);
+    expect(afterBytes.equals(originalBytes)).toBe(true);
+  });
+
+  it('computeSpecRework does not change the specHash', () => {
+    initGitRepo(tmp);
+    const { absPath } = writeFixtureSpec(tmp, SPEC_REL);
+
+    const hashBefore = canonicalSpecHash(absPath);
+
+    computeSpecRework(tmp, absPath);
+
+    const hashAfter = canonicalSpecHash(absPath);
+    expect(hashAfter).toBe(hashBefore);
+  });
+
+  it('computeWastedReview writes no bytes to any spec file', () => {
+    initGitRepo(tmp);
+    const { absPath, originalBytes } = writeFixtureSpec(tmp, SPEC_REL);
+
+    const specs = [{ status: 'specifying' as const, filePath: absPath }];
+    computeWastedReview(tmp, specs);
+
+    const afterBytes = fs.readFileSync(absPath);
+    expect(afterBytes.equals(originalBytes)).toBe(true);
+  });
+
+  it('renderTrustChart writes nothing to disk and does not throw', () => {
+    // Collect all files in tmp BEFORE calling renderTrustChart
+    const filesBefore = fs.readdirSync(tmp).sort();
+
+    const output = renderTrustChart({ rework: [], wasted: [] });
+
+    // renderTrustChart must return a non-empty string (the empty-chart SVG)
+    expect(typeof output).toBe('string');
+    expect(output.length).toBeGreaterThan(0);
+
+    // Nothing was written to disk
+    const filesAfter = fs.readdirSync(tmp).sort();
+    expect(filesAfter).toEqual(filesBefore);
+  });
+
+  it('building model + rendering chart over a fixture spec does not mutate spec bytes or specHash', () => {
+    initGitRepo(tmp);
+    const { absPath, originalBytes } = writeFixtureSpec(tmp, SPEC_REL);
+    const hashBefore = canonicalSpecHash(absPath);
+
+    // Simulate what buildTrustModel() does in spec-panel.ts:
+    //   1. compute M1 rework per spec (read-only)
+    //   2. compute M2 wasted review (read-only)
+    //   3. render chart (pure string→string)
+    const specs = [{ id: 'SPEC-TEST', status: 'specifying' as const, filePath: absPath }];
+
+    const reworkPct = computeSpecRework(tmp, absPath); // undefined → null
+    const wastedBars = computeWastedReview(tmp, specs);
+
+    const model = {
+      rework: [{ specId: 'SPEC-TEST', pct: reworkPct === undefined ? null : reworkPct }],
+      wasted: wastedBars.map((b) => ({ specId: 'SPEC-TEST', approvedChars: b.approvedChars })),
+    };
+
+    const chartSvg = renderTrustChart(model);
+
+    // Chart must be produced (non-empty SVG)
+    expect(chartSvg).toContain('<svg');
+    expect(chartSvg).not.toContain('<script');
+
+    // Spec bytes and hash unchanged
+    const afterBytes = fs.readFileSync(absPath);
+    expect(afterBytes.equals(originalBytes)).toBe(true);
+
+    const hashAfter = canonicalSpecHash(absPath);
+    expect(hashAfter).toBe(hashBefore);
   });
 });

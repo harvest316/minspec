@@ -156,6 +156,10 @@ export const STATUS_GROUPS: StatusGroup[] = [
   { label: 'Implementing', statuses: ['implementing'], defaultExpanded: true },
   { label: 'Done', statuses: ['done'], defaultExpanded: false },
   { label: 'Archived', statuses: ['archived'], defaultExpanded: false },
+  // `superseded` (SPEC-017 / #162) is an explicit terminal like `archived` —
+  // its own collapsed terminal lane (the forced SPEC-015 INV-1 lane decision,
+  // not left partial). Renders after Archived (terminal lanes trail active ones).
+  { label: 'Superseded', statuses: ['superseded'], defaultExpanded: false },
 ];
 
 // --- Tree node classes ---
@@ -189,6 +193,7 @@ function statusIcon(status: SpecStatus): string {
     case 'implementing': return 'sync';
     case 'done': return 'check';
     case 'archived': return 'archive';
+    case 'superseded': return 'arrow-swap'; // mirrors ADR superseded glyph
     default: return 'circle-outline';
   }
 }

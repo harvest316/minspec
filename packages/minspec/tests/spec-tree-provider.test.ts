@@ -296,18 +296,19 @@ describe('SpecTreeProvider', () => {
   });
 
   describe('getChildren(undefined) — root level', () => {
-    it('returns a rollup node plus 4 lifecycle group nodes (SPEC-015)', () => {
+    it('returns a rollup node plus 5 lifecycle group nodes (SPEC-015; +Superseded SPEC-017)', () => {
       const root = provider.getChildren(undefined);
       expect(root[0]).toBeInstanceOf(RollupNode);
-      expect(groupsOf(provider)).toHaveLength(4);
+      expect(groupsOf(provider)).toHaveLength(5);
     });
 
-    it('returns groups in order: Specifying, Implementing, Done, Archived (SPEC-015)', () => {
+    it('returns groups in order: Specifying, Implementing, Done, Archived, Superseded (SPEC-015 / SPEC-017)', () => {
       const groups = groupsOf(provider);
       expect(groups[0].label).toBe('Specifying');
       expect(groups[1].label).toBe('Implementing');
       expect(groups[2].label).toBe('Done');
       expect(groups[3].label).toBe('Archived');
+      expect(groups[4].label).toBe('Superseded');
     });
 
     it('Specifying and Implementing groups are expanded by default', () => {
@@ -317,11 +318,12 @@ describe('SpecTreeProvider', () => {
       expect(groups[1].collapsibleState).toBe(2);
     });
 
-    it('Done and Archived groups are collapsed by default', () => {
+    it('Done, Archived and Superseded groups are collapsed by default', () => {
       const groups = groupsOf(provider);
-      // Collapsed = 1
+      // Collapsed = 1 (terminal lanes)
       expect(groups[2].collapsibleState).toBe(1);
       expect(groups[3].collapsibleState).toBe(1);
+      expect(groups[4].collapsibleState).toBe(1); // Superseded (terminal)
     });
 
     it('shows spec count in group description', () => {
@@ -330,6 +332,7 @@ describe('SpecTreeProvider', () => {
       expect(groups[1].description).toBe('(1)'); // implementing
       expect(groups[2].description).toBe('(1)'); // done
       expect(groups[3].description).toBe('(1)'); // archived
+      expect(groups[4].description).toBe('(0)'); // superseded (none in ALL_SPECS)
     });
 
     it('shows (0) when group is empty', () => {
@@ -337,7 +340,7 @@ describe('SpecTreeProvider', () => {
       provider = new SpecTreeProvider('/fake/workspace', mockListSpecs);
 
       const groups = groupsOf(provider);
-      expect(groups.map((g) => g.description)).toEqual(['(0)', '(0)', '(0)', '(0)']);
+      expect(groups.map((g) => g.description)).toEqual(['(0)', '(0)', '(0)', '(0)', '(0)']);
     });
   });
 
@@ -540,6 +543,12 @@ describe('SpecTreeProvider', () => {
 // is asymmetric on purpose (DR-003): it asserts every status HAS a lane, so
 // adding a value to SPEC_STATUSES without assigning a lane fails loudly here.
 describe('STATUS_GROUPS invariants (SPEC-015)', () => {
+  // SPEC-017 Slice 5 red→green note: this INV-1 case is the forced lane gate for
+  // the `superseded` enum addition. It only becomes runnable-RED once `superseded`
+  // is added to SPEC_STATUSES (spec.ts step 1) — at that point `STATUS_GROUPS` no
+  // longer covers every status and this assertion fails ("status 'superseded' has
+  // no lane"). Mapping the `Superseded` lane in spec-tree-provider.ts (step 2)
+  // turns it GREEN again. Before the enum edit the gate is green but un-exercised.
   it('INV-1: lanes cover every SpecStatus exactly once (total + disjoint)', () => {
     const mapped = STATUS_GROUPS.flatMap((g) => g.statuses);
     // total: every enum status appears in some lane
@@ -562,6 +571,7 @@ describe('STATUS_GROUPS invariants (SPEC-015)', () => {
       'Implementing',
       'Done',
       'Archived',
+      'Superseded',
     ]);
   });
 });

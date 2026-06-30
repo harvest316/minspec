@@ -11,7 +11,7 @@ export type PhaseStatus = 'pending' | 'in-progress' | 'done' | 'skipped';
  * status (e.g. the tree's status lanes, SPEC-015 INV-1) import it so adding a
  * status here forces a decision everywhere it matters.
  */
-export const SPEC_STATUSES = ['new', 'specifying', 'implementing', 'done', 'archived'] as const;
+export const SPEC_STATUSES = ['new', 'specifying', 'implementing', 'done', 'archived', 'superseded'] as const;
 
 /** Lifecycle status of the entire spec */
 export type SpecStatus = typeof SPEC_STATUSES[number];
@@ -69,6 +69,15 @@ export interface SpecFrontmatter {
    * (a `design` file legitimately has no in-file `## Plan`). Absent = single-file.
    */
   readonly type?: string;
+  /**
+   * Successor reference for a `superseded` spec (SPEC-017 / #162): `superseded-by:
+   * SPEC-NNN` names what wholly replaced this spec. A recognized, content-class
+   * frontmatter field — required when `status: superseded` (validated by
+   * `spec-validator.ts`), absent otherwise. Because it is a canonical-hashed
+   * content field, adding it voids the live approval (SPEC-022), which M2's
+   * wasted-review bar reads through the PRESERVED prior baseline, not the live one.
+   */
+  readonly supersededBy?: string;
 }
 
 /** Complete parsed spec */
@@ -268,6 +277,10 @@ export function parseSpec(content: string): ParsedSpec {
     epic: (fmParsed.epic as string) || undefined,
     product: (fmParsed.product as string) || undefined,
     type: (fmParsed.type as string) || undefined,
+    // `superseded-by: SPEC-NNN` — recognized successor ref (SPEC-017 / #162). Keyed
+    // by the hyphenated YAML key; surfaced camelCased on the frontmatter so writers
+    // preserve it on round-trip rather than silently dropping it.
+    supersededBy: (fmParsed['superseded-by'] as string) || undefined,
     phases: {
       specify: phaseStatusOf(fmPhases.specify),
       clarify: phaseStatusOf(fmPhases.clarify),
@@ -341,6 +354,9 @@ function serializeFrontmatter(fm: SpecFrontmatter): string {
   // DR-012 "Editing voids approval" reminder line was removed here (it lied after
   // SPEC-022). Editing the BODY or any other frontmatter field still voids it.
   lines.push(`status: ${fm.status}`);
+  // Successor ref for a superseded spec — emit only when present so a non-superseded
+  // spec stays superseded-by-less. Preserves the field on a writeSpec round-trip.
+  if (fm.supersededBy) lines.push(`superseded-by: ${fm.supersededBy}`);
   lines.push(`created: ${fm.created}`);
   if (fm.epic) lines.push(`epic: ${fm.epic}`);
   // Owning product slug (SPECS-pane prefix-strip key). Emit only when present so a

@@ -603,6 +603,30 @@ describe('SPEC-022 deriveStatus — INV-6 (terminal is a human act, never inferr
   it('explicitTerminal overrides every other rule (even all-pending)', () => {
     expect(deriveStatus(createInitialPhases(), 'unapproved', 'archived')).toBe('archived');
   });
+
+  // SPEC-017 Slice 5 — `superseded` is the second explicit terminal. Same INV-6
+  // honesty contract as `archived`: derived ONLY from the explicit human act,
+  // never inferred from phases.
+  it('returns superseded ONLY when explicitTerminal==="superseded", never from phases', () => {
+    const allDone = makePhases({
+      specify: 'done', clarify: 'done', plan: 'done', tasks: 'done', implement: 'done',
+    });
+    // explicit terminal set → superseded even though phases would derive 'done'.
+    expect(deriveStatus(allDone, 'approved', 'superseded')).toBe('superseded');
+    // No phases configuration ever yields 'superseded' without the explicit act —
+    // not from all-done, not from all-pending, regardless of approval verdict.
+    for (const verdict of ['approved', 'stale', 'unapproved'] as const) {
+      expect(deriveStatus(allDone, verdict, undefined)).not.toBe('superseded');
+      expect(deriveStatus(createInitialPhases(), verdict, undefined)).not.toBe('superseded');
+    }
+  });
+
+  it('superseded explicit terminal overrides every other rule (even all-pending + unapproved)', () => {
+    // Precedes the approval/staleness check: a superseded spec whose approval is
+    // now stale (supersession voids it) still derives `superseded`, not `specifying`.
+    expect(deriveStatus(createInitialPhases(), 'unapproved', 'superseded')).toBe('superseded');
+    expect(deriveStatus(createInitialPhases(), 'stale', 'superseded')).toBe('superseded');
+  });
 });
 
 describe('SPEC-022 getSpecStatus — preview-only shim (regression)', () => {
