@@ -12,8 +12,14 @@
  * *user's own* authenticated `gh` CLI, and ONLY behind explicit user opt-in
  * wired up by the caller (see init.ts). MinSpec opens no socket itself — the
  * same posture by which it already shells `git`. The ONLY always-on path is the
- * zero-network docs link ({@link RULESET_DOCS_URL}); detection and creation are
- * both gated. The exact Tier-0 interpretation is to be ratified by a DR (#356).
+ * zero-network docs link ({@link RULESET_DOCS_URL}). The two `gh api` network
+ * actions — the rulesets READ ({@link hasRequiredChecksRuleset}) and the create
+ * POST ({@link createRequiredChecksRuleset}) — BOTH sit behind a SINGLE explicit
+ * "Set up" consent prompt the caller shows first; neither runs until the user
+ * opts in. (Detecting `gh` readiness via {@link isGhReady} shells the user's
+ * `gh` to *probe* the local CLI, the same way MinSpec probes `git`; the consent
+ * gate guards the network read of the user's *repository*.) The exact Tier-0
+ * interpretation is to be ratified by a DR (#356).
  *
  * Purity / testability: the detection/creation functions never import
  * `child_process` at a call site — all process execution is funnelled through
@@ -154,6 +160,10 @@ export async function isGhReady(run: CommandRunner): Promise<boolean> {
  * Returns `false` (offer to create) on ANY read/parse failure or non-zero exit
  * — we never want a flaky read to suppress the advisory, and a wrong "already
  * configured" is the worse error (it would silently leave the repo unprotected).
+ *
+ * Network read of the user's repository — the caller MUST only invoke this after
+ * explicit user consent ("Set up"); it is never reached on a path the user has
+ * not opted into.
  *
  * @returns whether a qualifying ruleset already exists.
  */
