@@ -371,11 +371,13 @@ The host IDE (the Claude Code VS Code extension) now surfaces **pending backgrou
 SPEC-019's **FR-13** hands the agent's branch out as a diff and has the credentialed control plane push it **after the agent exits**. Its one concurrency guard is a *creation-time* sub-bullet: branch off origin/main (fetched parent-side), never the stale local main. The session question: SealBox does not run in a vacuum — concurrently the human **merges PRs** (origin/main advances), **edits main directly**, and **other Claude Code sessions work in sibling worktrees** on the same .git. Does FR-13 keep SealBox from getting…
 <!-- /dr-summary:DR-046 -->
 
-## [DR-047 — Independent AI review across every Approvable surface](DR-047.md)
+## [DR-047 — Independent AI review across every Approvable surface — generalises DR-033 §6 from PR-only to all Approvable types](DR-047.md)
 
 *Status: proposed · Date: 2026-06-30*
 
-The independent reviewer-agent from DR-033 §6 covers PRs only. AI-authored Specs, Plans, DRs, constitution invariants, and Epics have no independent read before the human approval gate — a structural gap demonstrated by the 2026-06-29 rubber-stamp session (#344–349, 7 live defects waved through). This DR makes AI review the universal floor — it runs on **every** doc type MinSpec produces or consumes (spec, plan, design.md, tasks.md, DR, constitution, epic, issue, PR), including non-human-approvable types — and **decouples** the AI-reviewed set (all docs) from the human-gated set (the critical subset). It amends DR-041's Approvable union (+ plan, design.md, tasks.md, constitution); adds dev-opt-in auto-approve for low-criticality docs (design.md/tasks.md/issue) and a per-dev coverage slider (dogfood default = max); generalises the signpost predicate (greenlit ∧ prior-gates ∧ human-gate-open) to all human-gated types; and softens the §3 ordering gate to block only *implementing* code, not unrelated code in a mixed PR.
+<!-- dr-summary:DR-047 auto=7fdce4e973c0 -->
+Whether an AI-reviewed doc needs a *human* gate depends on its criticality and the dev's coverage setting (Decisions 5–6), not on whether it was AI-reviewed. Every approvable is AI-reviewed; only the critical subset is human-gated. 1. **AI-authored by design.** The architect agent, Specify agent, and Propose-Constitution agent draft Specs, DRs, and constitution invariants. The human approval that follows is the **only check** — there is no independent review before the author hands work to the human. Self-attestation (author → human…
+<!-- /dr-summary:DR-047 -->
 
 ## [DR-048 — Memory-poisoning defence + reality-checking split by tier; promptfoo is a dev-time harness, never a shipped dependency](DR-048.md)
 
@@ -387,7 +389,7 @@ Three founder asks arrived as "add to one of our vsix": (1) **memory-poisoning d
 
 ## [DR-049 — SealBox is public / open-source — the moat stays in private Scrooge, not in the sandbox](DR-049.md)
 
-*Status: proposed · Date: 2026-06-29*
+*Status: accepted · Date: 2026-06-29*
 
 <!-- dr-summary:DR-049 auto=e07e8891a9de -->
 DR-044 §2 put SealBox in a **private** repo, mirroring DR-027's ScroogeLLM split, to protect "the credential-boundary design as the pre-launch differentiator." The founder questioned that: SealBox is **hard to monetize directly**, so what does privacy actually protect? A 3-lens pressure-test (wf_0a57ce70-32b: steelman-private, steelman-public, scrooge-funnel) returned **2 public (high confidence) : 1 private (med)** — and the private lens **conceded its own core**: *"do not defend privacy on the credential-boundary code; that case is genuinely weak."*
