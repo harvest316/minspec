@@ -371,19 +371,19 @@ The host IDE (the Claude Code VS Code extension) now surfaces **pending backgrou
 SPEC-019's **FR-13** hands the agent's branch out as a diff and has the credentialed control plane push it **after the agent exits**. Its one concurrency guard is a *creation-time* sub-bullet: branch off origin/main (fetched parent-side), never the stale local main. The session question: SealBox does not run in a vacuum — concurrently the human **merges PRs** (origin/main advances), **edits main directly**, and **other Claude Code sessions work in sibling worktrees** on the same .git. Does FR-13 keep SealBox from getting…
 <!-- /dr-summary:DR-046 -->
 
-## [DR-047 — SealBox is public / open-source — the moat stays in private Scrooge, not in the sandbox](DR-047.md)
-
-*Status: proposed · Date: 2026-06-29*
-
-<!-- dr-summary:DR-047 auto=e07e8891a9de -->
-DR-044 §2 put SealBox in a **private** repo, mirroring DR-027's ScroogeLLM split, to protect "the credential-boundary design as the pre-launch differentiator." The founder questioned that: SealBox is **hard to monetize directly**, so what does privacy actually protect? A 3-lens pressure-test (wf_0a57ce70-32b: steelman-private, steelman-public, scrooge-funnel) returned **2 public (high confidence) : 1 private (med)** — and the private lens **conceded its own core**: *"do not defend privacy on the credential-boundary code; that case is genuinely weak."*
-<!-- /dr-summary:DR-047 -->
-
 ## [DR-048 — Memory-poisoning defence + reality-checking split by tier; promptfoo is a dev-time harness, never a shipped dependency](DR-048.md)
 
-*Status: proposed · Date: 2026-06-30*
+*Status: accepted · Date: 2026-06-30*
 
 <!-- dr-summary:DR-048 auto=9866edcb0ae5 -->
 Three founder asks arrived as "add to one of our vsix": (1) **memory-poisoning defences + scanning**, (2) inherit useful **promptfoo** capabilities, (3) a **reality-checker** that cross-checks a *response* — verify a URL exists *and* contains what the response claims — delivered as a footer link or an opt-in always-on mode.
 <!-- /dr-summary:DR-048 -->
+
+## [DR-049 — SealBox is public / open-source — the moat stays in private Scrooge, not in the sandbox](DR-049.md)
+
+*Status: proposed · Date: 2026-06-29*
+
+<!-- dr-summary:DR-049 auto=e07e8891a9de -->
+DR-044 §2 put SealBox in a **private** repo, mirroring DR-027's ScroogeLLM split, to protect "the credential-boundary design as the pre-launch differentiator." The founder questioned that: SealBox is **hard to monetize directly**, so what does privacy actually protect? A 3-lens pressure-test (wf_0a57ce70-32b: steelman-private, steelman-public, scrooge-funnel) returned **2 public (high confidence) : 1 private (med)** — and the private lens **conceded its own core**: *"do not defend privacy on the credential-boundary code; that case is genuinely weak."*
+<!-- /dr-summary:DR-049 -->
 <!-- minspec:dr-index:end -->
