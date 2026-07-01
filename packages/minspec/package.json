@@ -248,9 +248,7 @@
         "command": "minspec.approveActive",
         "key": "alt+a",
         "when": "editorTextFocus || minspec.markdownPreviewActive || focusedView == minspecStatus || focusedView == minspecAdrs || focusedView == minspecBacklog"
-      }
-    ],
-    "keybindings": [
+      },
       {
         "command": "minspec.nextTask",
         "key": "ctrl+k ctrl+n",
