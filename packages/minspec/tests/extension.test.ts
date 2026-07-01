@@ -15,6 +15,7 @@ const mockSpecTreeProvider = { refresh: vi.fn() };
 const mockAdrTreeProvider = { refresh: vi.fn() };
 const mockBacklogTreeProvider = { refresh: vi.fn(), refreshIfStale: vi.fn() };
 const mockStatusBar = { update: vi.fn(), dispose: vi.fn() };
+const mockNextTaskStatusBar = { update: vi.fn(), dispose: vi.fn() };
 const mockSpecPanel = { show: vi.fn(), refresh: vi.fn(), dispose: vi.fn() };
 const mockCodeLensProvider = { refresh: vi.fn() };
 const mockSpecFileLensProvider = { refresh: vi.fn() };
@@ -219,6 +220,13 @@ vi.mock('../src/views/backlog-view', () => ({
 vi.mock('../src/views/status-bar', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/views/status-bar')>()),
   MinSpecStatusBar: vi.fn(function () { return mockStatusBar; }),
+  MinSpecNextTaskStatusBar: vi.fn(function () { return mockNextTaskStatusBar; }),
+}));
+// Stub the next-task command factory + cheap computeNextTask so activate's
+// status-bar wiring runs without building a real graph (no fs in this mock).
+vi.mock('../src/commands/next-task', () => ({
+  nextTaskCommand: vi.fn(() => vi.fn()),
+  computeNextTask: vi.fn(() => null),
 }));
 vi.mock('../src/views/spec-panel', () => ({
   SpecPanel: vi.fn(function () { return mockSpecPanel; }),
@@ -652,11 +660,12 @@ describe('activate()', () => {
   // File system watchers
   // -------------------------------------------------------------------------
 
-  it('creates four file system watchers (specs, adrs, traceability, approvals)', () => {
+  it('creates five file system watchers (specs, adrs, traceability, approvals, epics)', () => {
     activate(makeMockContext());
 
-    // DR-012 added the .minspec/approvals.json watcher → 4 (was 3).
-    expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalledTimes(4);
+    // DR-012 added the approvals watcher → 4 (was 3); SPEC-012 signpost wiring
+    // added the docs/epics/** watcher (epic status feeds the next-task resolver) → 5.
+    expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalledTimes(5);
   });
 
   it('wires spec watcher callbacks to refresh tree and panel', () => {

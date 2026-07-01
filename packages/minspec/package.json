@@ -93,6 +93,10 @@
         "title": "MinSpec: Show SDD Status"
       },
       {
+        "command": "minspec.nextTask",
+        "title": "MinSpec: Go to Next Review Task"
+      },
+      {
         "command": "minspec.refreshTree",
         "title": "MinSpec: Refresh Spec Tree",
         "icon": "$(refresh)"
@@ -244,6 +248,14 @@
         "command": "minspec.approveActive",
         "key": "alt+a",
         "when": "editorTextFocus || focusedView == minspecStatus || focusedView == minspecAdrs || focusedView == minspecBacklog"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "minspec.nextTask",
+        "key": "ctrl+k ctrl+n",
+        "mac": "cmd+k cmd+n",
+        "when": "workspaceFolderCount != 0"
       }
     ],
     "views": {

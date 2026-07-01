@@ -22,7 +22,8 @@ import { EpicReorderDragAndDropController } from './views/epic-dnd-controller';
 import { AdrTreeProvider } from './views/adr-tree-provider';
 import { FrontmatterCompletionProvider } from './views/frontmatter-completion';
 import { BacklogTreeProvider } from './views/backlog-view';
-import { MinSpecStatusBar, fromFrontmatter } from './views/status-bar';
+import { MinSpecStatusBar, MinSpecNextTaskStatusBar, fromFrontmatter } from './views/status-bar';
+import { nextTaskCommand, computeNextTask } from './commands/next-task';
 import { SpecPanel } from './views/spec-panel';
 import { loadSession, saveSession, addToScope, isFileInScope } from './lib/session';
 import { detectTools, getToolFilePath, type DetectedTools } from './lib/tool-detector';
@@ -125,6 +126,32 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = new MinSpecStatusBar();
   statusBar.update(null);
 
+  // Next-task signpost status bar (SPEC-012 / DR-019). Workspace-wide; click /
+  // chord → minspec.nextTask. Cached value, recomputed only on debounced file
+  // events below — never rebuilt on render.
+  const nextTaskStatusBar = new MinSpecNextTaskStatusBar();
+  let nextTaskTimer: ReturnType<typeof setTimeout> | undefined;
+  const refreshNextTask = () => {
+    if (!workspaceRoot) {
+      nextTaskStatusBar.update(null);
+      return;
+    }
+    if (nextTaskTimer) clearTimeout(nextTaskTimer);
+    nextTaskTimer = setTimeout(() => {
+      try {
+        nextTaskStatusBar.update(computeNextTask(workspaceRoot));
+      } catch {
+        nextTaskStatusBar.update(null);
+      }
+    }, 300);
+  };
+  // Initial paint (synchronous; computeNextTask is itself fail-safe).
+  try {
+    nextTaskStatusBar.update(workspaceRoot ? computeNextTask(workspaceRoot) : null);
+  } catch {
+    nextTaskStatusBar.update(null);
+  }
+
   // CodeLens providers (Phase 7)
   const codeLensProvider = new MinSpecCodeLensProvider(workspaceRoot);
   const specFileLensProvider = new MinSpecSpecFileLensProvider(workspaceRoot);
@@ -169,6 +196,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('minspec.constitutionPropose', constitutionProposeCommand),
     vscode.commands.registerCommand('minspec.classify', classifyCommand),
     vscode.commands.registerCommand('minspec.status', statusCommand(workspaceRoot)),
+    vscode.commands.registerCommand('minspec.nextTask', nextTaskCommand(workspaceRoot)),
     vscode.commands.registerCommand('minspec.refreshTree', () => {
       specTreeProvider.refresh();
       adrTreeProvider.refresh();
@@ -255,6 +283,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     { dispose: () => specPanel.dispose() },
     statusBar,
+    nextTaskStatusBar,
   );
 
   // Watch spec files — refresh tree + status bar on changes
@@ -282,6 +311,8 @@ export function activate(context: vscode.ExtensionContext): void {
     } else {
       statusBar.update(null);
     }
+    // Spec/approval/phase changes can change the next human task — recompute.
+    refreshNextTask();
   };
 
   watcher.onDidChange(onSpecsChanged);
@@ -306,6 +337,8 @@ export function activate(context: vscode.ExtensionContext): void {
   let adrIndexTimer: ReturnType<typeof setTimeout> | undefined;
   const onAdrsChanged = (uri?: vscode.Uri) => {
     adrTreeProvider.refresh();
+    // ADR status (proposed→accepted) is a resolver input — recompute the signpost.
+    refreshNextTask();
     if (uri && path.basename(uri.fsPath).toLowerCase() === 'index.md') return;
     if (!workspaceRoot) return;
     if (adrIndexTimer) clearTimeout(adrIndexTimer);
@@ -345,17 +378,41 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Watch approvals.json — refresh spec tree so approval badges stay current
   // when the gate hook, CLI, or another window changes approval state.
+  // Covers both the legacy `.minspec/approvals.json` map and the DR-034 path-keyed
+  // sidecars under `.minspec/approvals/**` (the real approval ground truth that
+  // feeds the next-task resolver's per-spec `approvalState`).
   const approvalsWatcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(
       workspaceRoot,
-      '.minspec/approvals.json',
+      '.minspec/approvals{.json,/**}',
     ),
   );
-  const onApprovalsChanged = () => specTreeProvider.refresh();
+  const onApprovalsChanged = () => {
+    specTreeProvider.refresh();
+    // Approval state (approved/stale/unapproved) is a resolver input — recompute.
+    refreshNextTask();
+  };
   approvalsWatcher.onDidChange(onApprovalsChanged);
   approvalsWatcher.onDidCreate(onApprovalsChanged);
   approvalsWatcher.onDidDelete(onApprovalsChanged);
   context.subscriptions.push(approvalsWatcher);
+
+  // Watch epics — epic status (proposed/active) and order are resolver inputs, so
+  // an epic edit (e.g. promote) can change the next task. The decisions watcher
+  // covers docs/decisions only; epics live under docs/epics/**.
+  const epicsDir = vscode.workspace.getConfiguration('minspec').get<string>('epicsDir', 'docs/epics');
+  const epicsWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(workspaceRoot, `${epicsDir}/**/*.md`),
+  );
+  const onEpicsChanged = () => {
+    specTreeProvider.refresh();
+    adrTreeProvider.refresh();
+    refreshNextTask();
+  };
+  epicsWatcher.onDidChange(onEpicsChanged);
+  epicsWatcher.onDidCreate(onEpicsChanged);
+  epicsWatcher.onDidDelete(onEpicsChanged);
+  context.subscriptions.push(epicsWatcher);
 
   // Drift detection: monitor file saves
   if (workspaceRoot) {

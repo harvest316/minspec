@@ -11,6 +11,7 @@
  */
 
 import * as vscode from 'vscode';
+import type { NextTask } from '@aiclarity/shared';
 import type { SpecFrontmatter, PhaseStatus } from '../lib/spec';
 import type { Phase, Tier } from '../lib/config';
 import { PHASES, DEFAULT_CONFIG } from '../lib/config';
@@ -148,6 +149,56 @@ export class MinSpecStatusBar {
       label: spec
         ? `MinSpec: ${spec.id}, tier ${spec.tier}, phase ${spec.currentPhase ?? 'done'}, ${computeProgress(spec.phases, spec.tier)}`
         : 'MinSpec: No active spec',
+    };
+    this.statusBarItem.show();
+  }
+
+  /** Clean up resources */
+  dispose(): void {
+    this.statusBarItem.dispose();
+  }
+}
+
+// ─── Next-Task signpost status bar (SPEC-012 / DR-019) ──────────────────────
+
+/**
+ * Format the next-task status bar text. A dedicated, workspace-wide signpost
+ * item (distinct from the per-spec progress item above): it shows the single
+ * next HUMAN review imperative, or a clear ✓ when the queue is empty.
+ *   null → '$(check) MinSpec: clear'
+ *   task → '$(arrow-right) MinSpec: <imperative>'   e.g. "Approve SPEC-001"
+ */
+export function formatNextTaskText(task: NextTask | null): string {
+  if (!task) return '$(check) MinSpec: clear';
+  return `$(arrow-right) MinSpec: ${task.imperative}`;
+}
+
+/**
+ * The workspace-wide next-task signpost. Clicking it (or the `minspec.nextTask`
+ * chord) reveals the target artifact and shows the imperative. The displayed
+ * `NextTask` is cached by the caller and only recomputed on debounced file
+ * events — `update()` itself never rebuilds the graph (keep it cheap).
+ */
+export class MinSpecNextTaskStatusBar {
+  private statusBarItem: vscode.StatusBarItem;
+
+  constructor() {
+    this.statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      99, // just left of the per-spec progress item (priority 100)
+    );
+    this.statusBarItem.command = 'minspec.nextTask';
+  }
+
+  /** Update the signpost. Pass null to show the "clear" state. */
+  update(task: NextTask | null): void {
+    const text = formatNextTaskText(task);
+    this.statusBarItem.text = text;
+    this.statusBarItem.tooltip = task
+      ? task.evidence.explanation
+      : 'No pending review tasks.';
+    this.statusBarItem.accessibilityInformation = {
+      label: task ? `MinSpec next task: ${task.imperative}` : 'MinSpec: no pending review tasks',
     };
     this.statusBarItem.show();
   }

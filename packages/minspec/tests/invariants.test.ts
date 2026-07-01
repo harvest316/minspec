@@ -562,3 +562,59 @@ Updated setup.
     expect(hashSection('Different content')).not.toBe(hash1);
   });
 });
+
+// ─── INV-CONSUME: signpost wiring consumes the resolver, never reimplements it ──
+
+describe('INV-CONSUME: next-task resolver is consumed from @aiclarity/shared', () => {
+  const srcRoot = path.resolve(__dirname, '..', 'src');
+
+  function allSrcTsFiles(dir: string): string[] {
+    const out: string[] = [];
+    if (!fs.existsSync(dir)) return out;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'test' || entry.name === '__benchmarks__') continue;
+        out.push(...allSrcTsFiles(full));
+      } else if (entry.name.endsWith('.ts')) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  const srcFiles = allSrcTsFiles(srcRoot);
+
+  it('the adapter + command import the resolver from @aiclarity/shared', () => {
+    const adapter = fs.readFileSync(path.join(srcRoot, 'lib', 'artifact-graph.ts'), 'utf-8');
+    const command = fs.readFileSync(path.join(srcRoot, 'commands', 'next-task.ts'), 'utf-8');
+    expect(adapter).toMatch(/from\s+['"]@aiclarity\/shared['"]/);
+    expect(adapter).toMatch(/ArtifactGraph/);
+    expect(command).toMatch(/resolveNextTask/);
+    expect(command).toMatch(/from\s+['"]@aiclarity\/shared['"]/);
+  });
+
+  it('resolver-internal logic is NOT duplicated anywhere under src', () => {
+    // Identifiers that live ONLY in packages/shared/src/next-task.ts. Their
+    // appearance in minspec source would mean the severity/coherence/cycle engine
+    // was re-implemented instead of consumed — the INV-CONSUME breach.
+    const forbidden = [
+      'detectIncoherence',
+      'detectCycles',
+      'compareRanked',
+      'gateCleared',
+      'coherence.spec-ahead-of-epic',
+      'promote.proposed-with-children',
+    ];
+    const offenders: string[] = [];
+    for (const file of srcFiles) {
+      const content = fs.readFileSync(file, 'utf-8');
+      for (const needle of forbidden) {
+        if (content.includes(needle)) {
+          offenders.push(`${path.relative(srcRoot, file)} contains "${needle}"`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
