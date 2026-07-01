@@ -41,6 +41,7 @@ import { findActiveSpec, trackActiveSpecEditor } from './lib/active-spec';
 import { parseSpec } from './lib/spec';
 import { loadConfig, resolveAndValidate } from './lib/config';
 import { trackActiveAdrEditor } from './lib/active-adr';
+import { recordApprovableView } from './lib/recent-approvables';
 import { resolveTargetFolderNonInteractive } from './lib/resolve-folder';
 import { registerReferenceDiagnostics } from './lib/diagnostics';
 import { evaluateConstitution } from './lib/constitution-nudge';
@@ -48,6 +49,46 @@ import { evaluateConstitution } from './lib/constitution-nudge';
 export function activate(context: vscode.ExtensionContext): void {
   trackActiveSpecEditor(context);
   trackActiveAdrEditor(context);
+
+  // Most-recently-viewed approvables: record each approvable the user focuses so
+  // Alt+A's preview picker (commands/approve-active.ts) can offer them
+  // reverse-chronologically. Records the instant-before-preview editor too,
+  // since Ctrl-Shift-V previews the active editor.
+  recordApprovableView(vscode.window.activeTextEditor?.document?.uri?.fsPath);
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((e) =>
+      recordApprovableView(e?.document?.uri?.fsPath),
+    ),
+  );
+
+  // `minspec.markdownPreviewActive` context key — true when the focused tab is a
+  // markdown preview webview. Lets the Alt+A keybinding fire over a preview,
+  // where `editorTextFocus` is false (a webview is never a text editor). The
+  // command then routes to the most-recently-viewed picker.
+  const isMarkdownPreviewTab = (): boolean => {
+    const tab = vscode.window.tabGroups?.activeTabGroup?.activeTab as
+      | { input?: { viewType?: string } }
+      | undefined;
+    const viewType = tab?.input?.viewType;
+    return typeof viewType === 'string' && /markdown.*preview/i.test(viewType);
+  };
+  const syncPreviewContext = (): void => {
+    void vscode.commands.executeCommand(
+      'setContext',
+      'minspec.markdownPreviewActive',
+      isMarkdownPreviewTab(),
+    );
+  };
+  syncPreviewContext();
+  // tabGroups is guarded: it can be absent in tests' vscode mock and on engines
+  // older than the API (mirrors the optional access in lib/active-spec.ts).
+  const tabGroups = vscode.window.tabGroups;
+  if (tabGroups?.onDidChangeTabs) {
+    context.subscriptions.push(tabGroups.onDidChangeTabs(syncPreviewContext));
+  }
+  if (tabGroups?.onDidChangeTabGroups) {
+    context.subscriptions.push(tabGroups.onDidChangeTabGroups(syncPreviewContext));
+  }
   // Activation-time root: the folder containing the active editor (multi-root
   // safe), else the first folder, else ''. Non-interactive — never prompts at
   // startup. All file watchers below derive their base from this single value
