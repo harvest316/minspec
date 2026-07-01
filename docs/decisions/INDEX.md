@@ -394,4 +394,12 @@ Three founder asks arrived as "add to one of our vsix": (1) **memory-poisoning d
 <!-- dr-summary:DR-049 auto=e07e8891a9de -->
 DR-044 §2 put SealBox in a **private** repo, mirroring DR-027's ScroogeLLM split, to protect "the credential-boundary design as the pre-launch differentiator." The founder questioned that: SealBox is **hard to monetize directly**, so what does privacy actually protect? A 3-lens pressure-test (wf_0a57ce70-32b: steelman-private, steelman-public, scrooge-funnel) returned **2 public (high confidence) : 1 private (med)** — and the private lens **conceded its own core**: *"do not defend privacy on the credential-boundary code; that case is genuinely weak."*
 <!-- /dr-summary:DR-049 -->
+
+## [DR-050 — Shelling the user's own authenticated gh/CLI on explicit consent does not violate the zero-network-in-core invariant](DR-050.md)
+
+*Status: proposed · Date: 2026-07-01*
+
+<!-- dr-summary:DR-050 auto=0000000000000000 -->
+Invariant #1 ("MinSpec makes zero network calls in its core path") and DR-004's Tier-0 rule do not prohibit shelling the user's own installed and authenticated CLI (gh, like git) when all three conditions hold: MinSpec opens no socket itself, every network-triggering action requires explicit per-action user consent, and a zero-network default fallback remains intact. Ratifies the Tier-0 boundary pre-committed by #365 (ruleset-advisor invariants.test.ts allowlist entry). Triggered by #356 + #365 review.
+<!-- /dr-summary:DR-050 -->
 <!-- minspec:dr-index:end -->
