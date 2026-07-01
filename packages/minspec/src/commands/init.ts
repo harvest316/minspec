@@ -9,11 +9,12 @@ import { getRepoFromRemote } from '../lib/github';
 import {
   type CommandRunner,
   RULESET_DOCS_URL,
-  REQUIRED_CHECK_CONTEXTS,
+  DEFAULT_REQUIRED_CHECK_CONTEXTS,
   createRequiredChecksRuleset,
   defaultCommandRunner,
   hasRequiredChecksRuleset,
   isGhReady,
+  resolveCheckContexts,
 } from '../lib/ruleset-advisor';
 
 /**
@@ -178,19 +179,17 @@ export async function offerScaffoldCommit(
 // Post-init branch-ruleset advisory (#356)
 // ---------------------------------------------------------------------------
 
-/** Toast action: open the GitHub rulesets docs page. */
+/** Toast action: open the GitHub rulesets docs page (zero-network-path fallback). */
 const RULESET_DOCS_ACTION = 'View GitHub docs';
-/** Toast action: create the required-status-checks ruleset via the user's gh. */
-const RULESET_CREATE_ACTION = 'Create ruleset';
 /**
- * Consent-prompt action: proceed past the gate — run the `gh api` READ (and, if
- * no qualifying ruleset exists, OFFER to create one). The SINGLE gate that all
- * `gh api` network actions (read + create) sit behind.
+ * Create-offer action: WRITE the ruleset via the user's `gh` (the MUTATING
+ * action). This click IS the consent for the mutation (DR-050 Amendment
+ * 2026-07-01) — the create fires only when the user picks it.
  */
-const RULESET_CONSENT_ACTION = 'Set up';
-/** Consent-prompt action: decline — make ZERO `gh api` calls. */
+const RULESET_CREATE_ACTION = 'Create ruleset';
+/** Create-offer action: decline — make no `gh api` write. */
 const RULESET_DECLINE_ACTION = 'Not now';
-/** Consent-prompt action: open the docs instead of touching the network. */
+/** Create-offer action: open the rulesets docs instead of creating. */
 const RULESET_LEARN_MORE_ACTION = 'Learn more';
 
 /**
@@ -202,6 +201,14 @@ const RULESET_LEARN_MORE_ACTION = 'Learn more';
  * property co-located with its use rather than relying on a distant regex.
  */
 const REPO_SLUG_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+/**
+ * VS Code setting id for the configurable required-status-check contexts the
+ * created ruleset enforces. Read at create time; unset → the default
+ * ({@link DEFAULT_REQUIRED_CHECK_CONTEXTS}). Users add e.g. `build` or the
+ * opt-in `ready-to-merge` here without a code change.
+ */
+const REQUIRED_CHECKS_SETTING = 'minspec.ruleset.requiredChecks';
 
 /** Dependencies for {@link offerRulesetAdvisory}, injectable for tests. */
 export interface RulesetAdvisoryDeps {
@@ -217,6 +224,38 @@ export interface RulesetAdvisoryDeps {
    * toast-free (and gh-free) on non-repo init flows.
    */
   isRepo?: (folder: string) => boolean;
+  /**
+   * The status-check contexts the CREATED ruleset should require. Defaults to
+   * reading the `minspec.ruleset.requiredChecks` setting (see
+   * {@link resolveRequiredChecks}); falls back to
+   * {@link DEFAULT_REQUIRED_CHECK_CONTEXTS} when unset/malformed. Injectable so
+   * tests can assert the configured set is honoured without touching VS Code
+   * config.
+   */
+  requiredChecks?: readonly string[];
+}
+
+/**
+ * Resolve the required-status-check contexts for the created ruleset from the
+ * `minspec.ruleset.requiredChecks` setting, falling back to
+ * {@link DEFAULT_REQUIRED_CHECK_CONTEXTS} when the setting is unset, not an
+ * array, or empty. The final normalisation (dedupe / trim / non-empty fallback)
+ * is done by {@link resolveCheckContexts} in the pure lib, so an unset setting
+ * and a blank one both land on the default. Best-effort: any config read failure
+ * degrades to the default.
+ */
+export function resolveRequiredChecks(): string[] {
+  let configured: unknown;
+  try {
+    configured = vscode.workspace
+      .getConfiguration()
+      .get<unknown>(REQUIRED_CHECKS_SETTING);
+  } catch {
+    configured = undefined;
+  }
+  return resolveCheckContexts(
+    Array.isArray(configured) ? (configured as readonly string[]) : undefined,
+  );
 }
 
 /** Show an info toast linking the rulesets docs, with a one-click open action. */
@@ -229,29 +268,39 @@ async function linkRulesetDocs(
 }
 
 /**
- * NON-BLOCKING post-init advisory (#356): nudge the user toward a branch
- * ruleset that requires CI status checks on the default branch.
+ * NON-BLOCKING post-init advisory (#356, reworked per DR-050 Amendment
+ * 2026-07-01): nudge the user toward a branch ruleset that requires CI status
+ * checks on the default branch — but only surface a toast when there is
+ * something for the user to DO.
  *
- * Network discipline (Tier-0 boundary): the ONLY always-on path is the
- * zero-network docs link. EVERY `gh api` network action — BOTH the *read*
- * (listing existing rulesets) AND the *create* (POST) — sits behind a SINGLE
- * explicit consent gate ("Set up"), in addition to `gh` availability. We never
- * probe a user's repo over the network until they have opted in:
+ * Network discipline (Tier-0 boundary, per DR-050 Amendment 2026-07-01): the
+ * READ-ONLY CONFIG PROBE runs AUTONOMOUSLY; only the MUTATING create is
+ * consent-gated.
  *   - not a git repo → return (zero process, zero toast).
  *   - `gh` missing/unauthed → info toast linking the docs. Zero `gh api`. Done.
- *   - `gh` ready + no GitHub remote → docs link. Zero `gh api`. Done.
- *   - `gh` ready + repo resolves → ONE consent prompt BEFORE any `gh api` read:
- *       - "Set up"    → run the READ; if a qualifying ruleset already exists,
- *         brief "already configured" toast; else OFFER to create → on "Create
- *         ruleset" POST via gh (success → toast; 403/error → docs link).
- *       - "Not now"   → ZERO `gh api` calls. Return.
- *       - "Learn more"/dismiss → open the docs (zero further network).
+ *   - `gh` ready + no GitHub remote (or a malformed slug) → docs link. Zero
+ *     `gh api`. Done.
+ *   - `gh` ready + repo resolves → AUTO-PROBE (read-only `gh api .../rulesets`
+ *     GET of the repo's OWN settings, no consent toast):
+ *       - a qualifying ruleset ALREADY EXISTS → SILENT. No toast at all.
+ *       - NONE found → exactly ONE toast offering to create one:
+ *         [Create ruleset] [Not now] [Learn more].
+ *           - "Create ruleset" → POST via gh (this click IS the consent for the
+ *             mutation). success → toast; 403/error → docs link.
+ *           - "Not now"/dismiss → nothing.
+ *           - "Learn more"     → open the rulesets docs.
  *
- * Note `isGhReady` itself shells the user's own `gh` (`gh --version`, then
- * `gh auth status`) to *detect* readiness — the same local capability probe by
- * which MinSpec already shells `git`. The consent gate guards the network READ
- * of the user's *repository* (`gh api repos/{owner}/{repo}/rulesets`), which is
- * the action the user is consenting to.
+ * Why the probe is autonomous: `isGhReady` and `hasRequiredChecksRuleset` are a
+ * read-only capability probe + a GET of the repo's OWN configuration — they
+ * egress no user artifacts, spec content, or telemetry (the same class as
+ * MinSpec shelling `git fetch`). Per DR-050 they need no prior consent toast.
+ * Only the CREATE mutates the repo, so it is the one action gated on an explicit
+ * click.
+ *
+ * The created ruleset's required checks come from
+ * {@link resolveRequiredChecks} (the `minspec.ruleset.requiredChecks` setting,
+ * default {@link DEFAULT_REQUIRED_CHECK_CONTEXTS}); `deps.requiredChecks`
+ * overrides it for tests.
  *
  * Best-effort: any failure is swallowed (at worst the docs link), and never
  * affects the init result.
@@ -275,7 +324,7 @@ export async function offerRulesetAdvisory(
     if (!(await isGhReady(run))) {
       await linkRulesetDocs(
         'MinSpec: protect your default branch with a ruleset that requires CI ' +
-          `(${REQUIRED_CHECK_CONTEXTS.join(', ')}) status checks. ` +
+          `(${DEFAULT_REQUIRED_CHECK_CONTEXTS.join(', ')}) status checks. ` +
           'Install/authenticate the `gh` CLI to let MinSpec offer to create one, or see the GitHub docs.',
         openExternal,
       );
@@ -285,7 +334,7 @@ export async function offerRulesetAdvisory(
     const repo = await resolveRepo(folder);
     if (!repo) {
       // gh is ready but we cannot identify the GitHub repo (no github.com
-      // remote). Nothing to read or create against → docs link only.
+      // remote). Nothing to probe or create against → docs link only.
       await linkRulesetDocs(
         'MinSpec: to require CI status checks on your default branch, add a ' +
           'GitHub remote, then create a branch ruleset — see the GitHub docs.',
@@ -307,49 +356,33 @@ export async function offerRulesetAdvisory(
     }
     const [owner, name] = repo.split('/');
 
-    // CONSENT GATE — the single explicit opt-in that BOTH the `gh api` READ and
-    // the create POST sit behind. Until the user clicks "Set up", MinSpec makes
-    // ZERO `gh api` calls against their repository.
-    const consent = await vscode.window.showInformationMessage(
-      'MinSpec can check / set up a GitHub branch ruleset requiring CI ' +
-        `(${REQUIRED_CHECK_CONTEXTS.join(' + ')}) status checks on ${repo}'s default ` +
-        'branch (uses your `gh` CLI).',
-      RULESET_CONSENT_ACTION,
+    // AUTO-PROBE (read-only config GET) — runs autonomously, NO consent toast.
+    // A GET of the repo's OWN rulesets egresses no user data (same class as
+    // `git fetch`); per DR-050 Amendment 2026-07-01 no prior opt-in is required.
+    // A qualifying ruleset already protects the default branch → SILENT (there
+    // is nothing for the user to do, so we show no toast at all).
+    if (await hasRequiredChecksRuleset(owner, name, run)) {
+      return;
+    }
+
+    // None found → exactly ONE toast: offer to create. This is the ONLY toast
+    // in the happy path, and it is the consent gate for the MUTATING create.
+    const requiredChecks = deps.requiredChecks ?? resolveRequiredChecks();
+    const choice = await vscode.window.showInformationMessage(
+      `MinSpec: ${repo} has no branch ruleset requiring CI checks ` +
+        `(${requiredChecks.join(' + ')}) on its default branch. Create one?`,
+      RULESET_CREATE_ACTION,
       RULESET_DECLINE_ACTION,
       RULESET_LEARN_MORE_ACTION,
     );
-    if (consent !== RULESET_CONSENT_ACTION) {
-      // "Not now", "Learn more", or dismissed → NO `gh api` read/create. The
-      // only side effect is opening the docs when the user asked to learn more.
-      if (consent === RULESET_LEARN_MORE_ACTION) openExternal(RULESET_DOCS_URL);
-      return;
-    }
-
-    // READ (network) — only reached past the explicit "Set up" consent above. A
-    // qualifying ruleset already protects the default branch → brief
-    // confirmation, no offer.
-    if (await hasRequiredChecksRuleset(owner, name, run)) {
-      vscode.window.showInformationMessage(
-        `MinSpec: your default branch already has a ruleset requiring status checks (${repo}).`,
-      );
-      return;
-    }
-
-    // None found → OFFER (the same consent already covers the create; this is
-    // the final go/no-go for the POST).
-    const choice = await vscode.window.showInformationMessage(
-      `MinSpec: ${repo} has no ruleset requiring CI status checks on its default branch. ` +
-        `Create one requiring ${REQUIRED_CHECK_CONTEXTS.join(' + ')}?`,
-      RULESET_CREATE_ACTION,
-      RULESET_DOCS_ACTION,
-    );
 
     if (choice === RULESET_CREATE_ACTION) {
-      // CREATE (network) — only reached on explicit "Create ruleset".
-      const outcome = await createRequiredChecksRuleset(owner, name, run);
+      // CREATE (MUTATING network) — reached ONLY on the explicit "Create
+      // ruleset" click; that click IS the consent for the mutation (DR-050).
+      const outcome = await createRequiredChecksRuleset(owner, name, run, requiredChecks);
       if (outcome.created) {
         vscode.window.showInformationMessage(
-          `MinSpec: created a ruleset requiring ${REQUIRED_CHECK_CONTEXTS.join(' + ')} on ${repo}'s default branch.`,
+          `MinSpec: created a ruleset requiring ${requiredChecks.join(' + ')} on ${repo}'s default branch.`,
         );
         return;
       }
@@ -364,8 +397,9 @@ export async function offerRulesetAdvisory(
       return;
     }
 
-    // Dismissed or chose "View GitHub docs" → link the docs (zero further network).
-    if (choice === RULESET_DOCS_ACTION) openExternal(RULESET_DOCS_URL);
+    // "Learn more" → open the rulesets docs. "Not now"/dismiss → nothing (no
+    // further network).
+    if (choice === RULESET_LEARN_MORE_ACTION) openExternal(RULESET_DOCS_URL);
   } catch {
     // Advisory only — never let a ruleset-advisory failure break init.
   }
@@ -398,9 +432,10 @@ export async function initCommand(
   // Post-init "what to commit" hint + offer (#222). Best-effort, non-modal,
   // never blocks the init result.
   await offerScaffoldCommit(folder, deps);
-  // Post-init branch-ruleset advisory (#356). NON-BLOCKING; the only always-on
-  // path is a zero-network docs link — every `gh api` network action (the read
-  // AND the create) sits behind a single explicit "Set up" consent gate.
+  // Post-init branch-ruleset advisory (#356; reworked per DR-050 Amendment
+  // 2026-07-01). NON-BLOCKING; the read-only config PROBE runs autonomously
+  // (no consent toast) — a ruleset that already exists is silent — and only the
+  // MUTATING create is consent-gated behind an explicit "Create ruleset" click.
   // Failures never affect the init result.
   await offerRulesetAdvisory(folder, deps?.ruleset);
 }

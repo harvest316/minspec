@@ -1,31 +1,47 @@
 /**
- * Ruleset advisor (#356).
+ * Ruleset advisor (#356, reworked per DR-050 Amendment 2026-07-01).
  *
  * After `MinSpec: Initialize`, advise the user about a GitHub branch *ruleset*
- * that requires CI status checks (`lint`, `test`) on the repo's default branch.
+ * that requires CI status checks (default `lint`, `test`) on the repo's default
+ * branch.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * TIER-0 NETWORK BOUNDARY (load-bearing)
  * ──────────────────────────────────────────────────────────────────────────
  * MinSpec core "makes zero network calls in its core path." Every function in
  * this module that touches the network does so ONLY by shelling out to the
- * *user's own* authenticated `gh` CLI, and ONLY behind explicit user opt-in
- * wired up by the caller (see init.ts). MinSpec opens no socket itself — the
- * same posture by which it already shells `git`. The ONLY always-on path is the
- * zero-network docs link ({@link RULESET_DOCS_URL}). The two `gh api` network
- * actions — the rulesets READ ({@link hasRequiredChecksRuleset}) and the create
- * POST ({@link createRequiredChecksRuleset}) — BOTH sit behind a SINGLE explicit
- * "Set up" consent prompt the caller shows first; neither runs until the user
- * opts in. (Detecting `gh` readiness via {@link isGhReady} shells the user's
- * `gh` to *probe* the local CLI, the same way MinSpec probes `git`; the consent
- * gate guards the network read of the user's *repository*.) The exact Tier-0
- * interpretation is to be ratified by a DR (#356).
+ * *user's own* authenticated `gh` CLI. MinSpec opens no socket itself — the same
+ * posture by which it already shells `git`.
+ *
+ * Two distinct classes of network action live here, gated differently per
+ * DR-050 (Amendment 2026-07-01):
+ *
+ *   - READ-ONLY CONFIG PROBE (autonomous) — {@link isGhReady} (probe the *local*
+ *     `gh`) and {@link hasRequiredChecksRuleset} (a `gh api .../rulesets` GET of
+ *     the repo's OWN settings). These egress NO user artifacts, spec content, or
+ *     telemetry — they read the repo's own configuration, the same class as
+ *     MinSpec shelling `git fetch`. They run AUTONOMOUSLY on init once `gh` is
+ *     ready and the repo resolves; NO prior consent toast is required.
+ *
+ *   - MUTATING / EGRESSING ACTION (consent-gated) — {@link
+ *     createRequiredChecksRuleset} (the `gh api -X POST .../rulesets` that WRITES
+ *     a ruleset to the repo). This mutates the user's repository, so it fires
+ *     ONLY on the user's explicit "Create ruleset" click — that click IS the
+ *     consent for the mutation. Nothing writes autonomously.
+ *
+ * The ONLY toast shown is the single "create one?" offer — and only when the
+ * autonomous probe finds NO qualifying ruleset. If one already exists the whole
+ * flow is silent. The always-available fallback ({@link RULESET_DOCS_URL}) makes
+ * zero network calls.
+ *
+ * Every MUTATING network action is consent-gated; the read-only probe is
+ * autonomous. This is ratified by DR-050 (Amendment 2026-07-01).
  *
  * Purity / testability: the detection/creation functions never import
  * `child_process` at a call site — all process execution is funnelled through
  * an injected {@link CommandRunner}, so tests mock the runner and NEVER hit the
  * real network or create a real ruleset. The single sanctioned spawn point is
- * {@link defaultCommandRunner}, wired in only behind the opt-in advisory.
+ * {@link defaultCommandRunner}, wired in only behind the post-init advisory.
  */
 
 import { execFile } from 'child_process';
@@ -34,8 +50,19 @@ import { execFile } from 'child_process';
 export const RULESET_DOCS_URL =
   'https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository';
 
-/** Status-check contexts the created ruleset requires on the default branch. */
-export const REQUIRED_CHECK_CONTEXTS: readonly string[] = ['lint', 'test'];
+/**
+ * DEFAULT status-check contexts the created ruleset requires on the default
+ * branch when the user has not overridden them.
+ *
+ * Deliberately `lint` + `test` only — the two checks the standard MinSpec CI
+ * already reports on every repo. `ready-to-merge` is intentionally EXCLUDED: it
+ * is asserted by MinSpec's reviewer only after it auto-labels a PR, so making it
+ * a *required* status check at init time would block EVERY merge on a fresh repo
+ * (no reviewer wired yet, no reviewer on a solo repo). Users who want it opt in
+ * via the `minspec.ruleset.requiredChecks` setting (read at create time in
+ * init.ts) — see {@link resolveRequiredChecks} there.
+ */
+export const DEFAULT_REQUIRED_CHECK_CONTEXTS: readonly string[] = ['lint', 'test'];
 
 /** Default ruleset name MinSpec proposes. */
 export const RULESET_NAME = 'MinSpec required status checks';
@@ -71,7 +98,8 @@ export type CommandRunner = (
  * invariant) and NOT at the call sites: the detection/creation functions above
  * are pure and take an injected runner, so they never import `child_process`
  * directly. This factory is the single sanctioned process-spawn point and is
- * only ever wired in behind the explicit, opt-in post-init advisory.
+ * only ever wired in behind the post-init advisory (autonomous read-only probe;
+ * consent-gated create).
  *
  * Captures stdout/stderr and the exit code WITHOUT throwing on a non-zero exit
  * (so callers branch on the code), optionally writes `stdin` to the process,
@@ -134,9 +162,10 @@ async function runSafe(
  * write rulesets, so for our purposes it is "unavailable" and we fall back to
  * the zero-network docs link.
  *
- * This itself runs the user's `gh` (which may probe github.com for auth), so it
- * too is gated by the caller behind the post-init advisory — it is never on a
- * core path that runs unconditionally.
+ * This runs the user's own local `gh` (`gh --version`, then `gh auth status`) to
+ * PROBE the local CLI's readiness — a read-only capability probe in the same
+ * class as MinSpec shelling `git`. It egresses no user data and needs no consent
+ * toast; it runs autonomously as the first step of the post-init advisory.
  */
 export async function isGhReady(run: CommandRunner): Promise<boolean> {
   const version = await runSafe(run, 'gh', ['--version']);
@@ -161,9 +190,11 @@ export async function isGhReady(run: CommandRunner): Promise<boolean> {
  * — we never want a flaky read to suppress the advisory, and a wrong "already
  * configured" is the worse error (it would silently leave the repo unprotected).
  *
- * Network read of the user's repository — the caller MUST only invoke this after
- * explicit user consent ("Set up"); it is never reached on a path the user has
- * not opted into.
+ * READ-ONLY CONFIG PROBE — a `gh api .../rulesets` GET of the repo's OWN
+ * settings. It egresses no user artifacts, spec content, or telemetry (the same
+ * class as `git fetch`), so per DR-050 (Amendment 2026-07-01) the caller runs it
+ * AUTONOMOUSLY on init — no prior consent toast. Only the subsequent CREATE
+ * (which mutates the repo) is consent-gated.
  *
  * @returns whether a qualifying ruleset already exists.
  */
@@ -245,21 +276,42 @@ function rulesetGuardsDefaultBranchChecks(detail: unknown): boolean {
 }
 
 /**
- * Build the POST body for a ruleset that requires the `lint` and `test` status
- * checks on the repo's default branch.
+ * Normalise a caller-supplied list of check contexts down to a clean,
+ * de-duplicated, non-empty `string[]`, falling back to
+ * {@link DEFAULT_REQUIRED_CHECK_CONTEXTS} when the input is absent, not an
+ * array, or empty-after-trimming. Pure — the single place that decides which
+ * contexts end up in the payload, so the fallback is honoured whether the
+ * config setting is unset, malformed, or blank.
+ */
+export function resolveCheckContexts(checks?: readonly string[]): string[] {
+  if (!Array.isArray(checks)) return [...DEFAULT_REQUIRED_CHECK_CONTEXTS];
+  const cleaned = Array.from(
+    new Set(
+      checks
+        .filter((c): c is string => typeof c === 'string')
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0),
+    ),
+  );
+  return cleaned.length > 0 ? cleaned : [...DEFAULT_REQUIRED_CHECK_CONTEXTS];
+}
+
+/**
+ * Build the POST body for a ruleset that requires the given status `checks`
+ * (default {@link DEFAULT_REQUIRED_CHECK_CONTEXTS} — `lint` + `test`) on the
+ * repo's default branch.
  *
- * Intentionally does NOT require the `ready-to-merge` check by default. That
- * check is asserted by MinSpec's reviewer only after it auto-labels a PR with
- * `ai-review:pass`; making it a *required* status check at init time would
- * block EVERY merge until that reviewer pipeline is wired and labelling — a
- * footgun for a repo that just ran init. So we ship the two checks every repo
- * already has from the standard CI (lint + test) and leave `ready-to-merge` to
- * be added deliberately once the reviewer is live (#350).
+ * The check set is configurable so a user can add e.g. `build` or the opt-in
+ * `ready-to-merge` via the `minspec.ruleset.requiredChecks` setting without a
+ * code change; the caller (init.ts) reads that setting and threads it through
+ * here. `ready-to-merge` stays OUT of the default because it would block every
+ * merge on a fresh repo until MinSpec's reviewer is wired and labelling (#350).
  *
  * Targets the default branch via the `~DEFAULT_BRANCH` ref sentinel, so the
  * payload is repo-agnostic (no need to resolve the branch name first).
  */
-export function createRulesetPayload(): Record<string, unknown> {
+export function createRulesetPayload(checks?: readonly string[]): Record<string, unknown> {
+  const contexts = resolveCheckContexts(checks);
   return {
     name: RULESET_NAME,
     target: 'branch',
@@ -275,7 +327,7 @@ export function createRulesetPayload(): Record<string, unknown> {
         type: 'required_status_checks',
         parameters: {
           strict_required_status_checks_policy: false,
-          required_status_checks: REQUIRED_CHECK_CONTEXTS.map((context) => ({
+          required_status_checks: contexts.map((context) => ({
             context,
             // No integration_id pin — match the check by context name from any
             // app/runner (the standard GitHub Actions CI reports these).
@@ -299,18 +351,22 @@ export interface CreateRulesetOutcome {
 /**
  * Create the ruleset by POSTing {@link createRulesetPayload} through the user's
  * `gh`. The JSON body is streamed to `gh api --input -` over stdin so we never
- * shell-interpolate it.
+ * shell-interpolate it. `checks` selects which status-check contexts the ruleset
+ * requires (default {@link DEFAULT_REQUIRED_CHECK_CONTEXTS}).
  *
- * Network write — caller MUST only invoke this after explicit user consent. On
- * a 403 (token lacks repo-admin) we report `forbidden: true` so the caller can
- * fall back to the docs link rather than surfacing a raw error.
+ * MUTATING network action — the caller MUST only invoke this on the user's
+ * explicit "Create ruleset" click (that click IS the consent for the mutation;
+ * see DR-050 Amendment 2026-07-01). On a 403 (token lacks repo-admin) we report
+ * `forbidden: true` so the caller can fall back to the docs link rather than
+ * surfacing a raw error.
  */
 export async function createRequiredChecksRuleset(
   owner: string,
   repo: string,
   run: CommandRunner,
+  checks?: readonly string[],
 ): Promise<CreateRulesetOutcome> {
-  const body = JSON.stringify(createRulesetPayload());
+  const body = JSON.stringify(createRulesetPayload(checks));
   // Stream the JSON body over stdin (`--input -`) so it is never
   // shell-interpolated into the argv.
   const result = await runSafe(

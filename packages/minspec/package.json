@@ -437,6 +437,17 @@
           "type": "boolean",
           "default": false,
           "description": "Always use the AI pass when backfilling epics (skips the per-run 'AI-enhanced?' prompt). Set globally by choosing 'Always' on that prompt — a personal preference that follows you across projects. Runs 'claude -p' locally; the extension makes no network calls. Off by default."
+        },
+        "minspec.ruleset.requiredChecks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lint",
+            "test"
+          ],
+          "description": "Status-check contexts the post-init branch-ruleset advisory requires when it creates a ruleset on your default branch. Defaults to 'lint' + 'test' (the checks the standard CI reports). Add e.g. 'build' or 'ready-to-merge' to require them too. 'ready-to-merge' is intentionally NOT in the default because it would block every merge until MinSpec's reviewer is wired and labelling — enable it here once your reviewer pipeline is live. Read at create time; the create only runs on your explicit 'Create ruleset' click."
         }
       }
     },

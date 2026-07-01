@@ -1,26 +1,33 @@
 /**
- * T2/T1 — ruleset advisor (#356).
+ * T2/T1 — ruleset advisor (#356, reworked per DR-050 Amendment 2026-07-01).
  *
- * Covers the contract cases from the issue:
+ * New posture: the read-only config PROBE runs AUTONOMOUSLY on init (no consent
+ * toast); only the MUTATING create is consent-gated behind an explicit "Create
+ * ruleset" click. Covers the contract cases from the issue:
  *   1. gh absent            → docs link, NO read/create network.
- *   2. gh present + exists   → "already configured", NO offer.
- *   3. gh present + none     → offer to create.
- *   4. create success        → success toast.
+ *   2. gh present + exists   → SILENT (no toast at all), NO create.
+ *   3. gh present + none     → exactly ONE create-offer toast.
+ *   4. create success        → success toast (create only on explicit click).
  *   5. create 403            → docs-link fallback.
+ *   6. configurable checks   → the created payload honours the configured set.
  *
- * Plus the consent gate added by the security review: BOTH the `gh api` READ and
- * the create POST sit behind a single explicit "Set up" prompt. "Not now" /
- * "Learn more" / dismiss → ZERO `gh api` calls beyond the gh-readiness probe.
+ * The auto-probe (`gh api .../rulesets` GET of the repo's OWN settings) fires
+ * WITHOUT any consent toast once `gh` is ready and the repo resolves — the same
+ * class as MinSpec shelling `git fetch`. The create POST fires ONLY on the
+ * explicit "Create ruleset" click. "Not now"/"Learn more"/dismiss → NO POST.
  *
  * The command runner is ALWAYS mocked — these tests NEVER hit the real network
- * and NEVER create a real ruleset. They also assert the Tier-0 boundary: with no
- * consent, ZERO `gh api` subcommands run; when `gh` is unavailable, ZERO `gh`
- * subcommands beyond the availability probe run.
+ * and NEVER create a real ruleset. They also assert the Tier-0 boundary: when
+ * `gh` is unavailable, ZERO `gh` subcommands beyond the availability probe run;
+ * and no MUTATING POST ever fires without the explicit create click.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mock vscode (only what the advisory touches) ────────────────────────────
+
+/** Value returned by the mocked `vscode.workspace.getConfiguration().get()`. */
+let mockConfigValue: unknown = undefined;
 
 vi.mock('vscode', () => ({
   window: {
@@ -29,6 +36,9 @@ vi.mock('vscode', () => ({
   },
   env: { openExternal: vi.fn() },
   Uri: { parse: (s: string) => ({ toString: () => s }) },
+  workspace: {
+    getConfiguration: () => ({ get: () => mockConfigValue }),
+  },
 }));
 
 // ─── Imports ─────────────────────────────────────────────────────────────────
@@ -38,14 +48,15 @@ import {
   type CommandResult,
   type CommandRunner,
   RULESET_DOCS_URL,
-  REQUIRED_CHECK_CONTEXTS,
+  DEFAULT_REQUIRED_CHECK_CONTEXTS,
   RULESET_NAME,
   createRulesetPayload,
   createRequiredChecksRuleset,
   hasRequiredChecksRuleset,
   isGhReady,
+  resolveCheckContexts,
 } from '../src/lib/ruleset-advisor';
-import { offerRulesetAdvisory } from '../src/commands/init';
+import { offerRulesetAdvisory, resolveRequiredChecks } from '../src/commands/init';
 
 // ─── Test runner factory ─────────────────────────────────────────────────────
 
@@ -94,6 +105,7 @@ const showInfo = vscode.window.showInformationMessage as ReturnType<typeof vi.fn
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockConfigValue = undefined;
 });
 
 // =============================================================================
@@ -200,30 +212,87 @@ describe('hasRequiredChecksRuleset()', () => {
 // Pure library: payload
 // =============================================================================
 
+/** Extract the required-check contexts from a built payload. */
+function payloadContexts(payload: Record<string, unknown>): string[] {
+  const rules = (payload as {
+    rules: Array<{ type: string; parameters: { required_status_checks: Array<{ context: string }> } }>;
+  }).rules;
+  const rule = rules.find((r) => r.type === 'required_status_checks');
+  return rule!.parameters.required_status_checks.map((c) => c.context);
+}
+
 describe('createRulesetPayload()', () => {
-  it('requires lint + test on the default branch and OMITS ready-to-merge', () => {
+  it('requires lint + test on the default branch and OMITS ready-to-merge by default', () => {
     const payload = createRulesetPayload() as {
       name: string;
       target: string;
       enforcement: string;
       conditions: { ref_name: { include: string[] } };
-      rules: Array<{ type: string; parameters: { required_status_checks: Array<{ context: string }> } }>;
-    };
+    } & Record<string, unknown>;
 
     expect(payload.name).toBe(RULESET_NAME);
     expect(payload.target).toBe('branch');
     expect(payload.enforcement).toBe('active');
     expect(payload.conditions.ref_name.include).toContain('~DEFAULT_BRANCH');
 
-    const rule = payload.rules.find((r) => r.type === 'required_status_checks');
-    expect(rule).toBeDefined();
-    const contexts = rule!.parameters.required_status_checks.map((c) => c.context);
-    expect(contexts).toEqual([...REQUIRED_CHECK_CONTEXTS]);
+    const contexts = payloadContexts(payload);
+    expect(contexts).toEqual([...DEFAULT_REQUIRED_CHECK_CONTEXTS]);
     expect(contexts).toContain('lint');
     expect(contexts).toContain('test');
     // ready-to-merge would block every merge until the reviewer auto-labels —
     // it must NOT be a default required check.
     expect(contexts).not.toContain('ready-to-merge');
+  });
+
+  it('CONFIGURABLE: honours a caller-supplied check set (e.g. adds build + ready-to-merge)', () => {
+    const payload = createRulesetPayload(['lint', 'test', 'build', 'ready-to-merge']);
+    const contexts = payloadContexts(payload);
+    expect(contexts).toEqual(['lint', 'test', 'build', 'ready-to-merge']);
+    // Opt-in only: it appears because the caller asked for it, not by default.
+    expect(contexts).toContain('ready-to-merge');
+  });
+
+  it('falls back to the default when given an empty check set', () => {
+    const contexts = payloadContexts(createRulesetPayload([]));
+    expect(contexts).toEqual([...DEFAULT_REQUIRED_CHECK_CONTEXTS]);
+  });
+});
+
+describe('resolveCheckContexts()', () => {
+  it('returns the default when undefined / not an array', () => {
+    expect(resolveCheckContexts(undefined)).toEqual([...DEFAULT_REQUIRED_CHECK_CONTEXTS]);
+    expect(resolveCheckContexts('lint' as unknown as string[])).toEqual([
+      ...DEFAULT_REQUIRED_CHECK_CONTEXTS,
+    ]);
+  });
+
+  it('trims, drops blanks, and de-duplicates a configured set', () => {
+    expect(resolveCheckContexts([' lint ', 'test', 'test', '', 'build'])).toEqual([
+      'lint',
+      'test',
+      'build',
+    ]);
+  });
+
+  it('falls back to the default when everything is blank', () => {
+    expect(resolveCheckContexts(['', '   '])).toEqual([...DEFAULT_REQUIRED_CHECK_CONTEXTS]);
+  });
+});
+
+describe('resolveRequiredChecks() (reads minspec.ruleset.requiredChecks)', () => {
+  it('returns the default when the setting is unset', () => {
+    mockConfigValue = undefined;
+    expect(resolveRequiredChecks()).toEqual([...DEFAULT_REQUIRED_CHECK_CONTEXTS]);
+  });
+
+  it('returns the configured set (opt-in ready-to-merge) when set', () => {
+    mockConfigValue = ['lint', 'test', 'ready-to-merge'];
+    expect(resolveRequiredChecks()).toEqual(['lint', 'test', 'ready-to-merge']);
+  });
+
+  it('falls back to the default when the setting is malformed', () => {
+    mockConfigValue = 'not-an-array';
+    expect(resolveRequiredChecks()).toEqual([...DEFAULT_REQUIRED_CHECK_CONTEXTS]);
   });
 });
 
@@ -264,22 +333,43 @@ describe('createRequiredChecksRuleset()', () => {
     expect(outcome.created).toBe(false);
     expect(outcome.forbidden).toBe(false);
   });
+
+  it('CONFIGURABLE: threads the caller-supplied check set into the POSTed body', async () => {
+    const { run, calls } = makeRunner((_c, args) =>
+      args.includes('POST') ? ok('{"id":1}') : undefined,
+    );
+    await createRequiredChecksRuleset('o', 'r', run, ['lint', 'test', 'ready-to-merge']);
+    const post = calls.find((c) => c.args.includes('POST'))!;
+    const body = JSON.parse(post.stdin!) as {
+      rules: Array<{ type: string; parameters: { required_status_checks: Array<{ context: string }> } }>;
+    };
+    const rule = body.rules.find((r) => r.type === 'required_status_checks')!;
+    expect(rule.parameters.required_status_checks.map((c) => c.context)).toEqual([
+      'lint',
+      'test',
+      'ready-to-merge',
+    ]);
+  });
 });
 
 // =============================================================================
 // Wired advisory: offerRulesetAdvisory() (the post-init UX)
 // =============================================================================
 
-describe('offerRulesetAdvisory() — Tier-0 gated post-init advisory (#356)', () => {
+describe('offerRulesetAdvisory() — autonomous probe + single-consent create (#356; DR-050 Amendment)', () => {
   const resolveRepo = vi.fn(async () => 'o/r');
   const openExternal = vi.fn();
   // Treat the folder as a repo so we exercise the gh path; the .git guard is
   // covered separately below.
   const isRepo = () => true;
 
-  /** Default advisory deps with a scripted runner. */
-  function deps(run: CommandRunner) {
-    return { run, resolveRepo, openExternal, isRepo };
+  /**
+   * Default advisory deps with a scripted runner. `requiredChecks` is injected so
+   * the create path never reaches `vscode.workspace` config in these tests unless
+   * a case deliberately omits it.
+   */
+  function deps(run: CommandRunner, requiredChecks: readonly string[] = ['lint', 'test']) {
+    return { run, resolveRepo, openExternal, isRepo, requiredChecks };
   }
 
   beforeEach(() => {
@@ -315,7 +405,7 @@ describe('offerRulesetAdvisory() — Tier-0 gated post-init advisory (#356)', ()
     expect(openExternal).not.toHaveBeenCalled();
   });
 
-  it('CASE 2: gh present + consent + ruleset exists → "already" toast, NO offer, NO create', async () => {
+  it('AUTO-PROBE: the read-only rulesets GET fires on init WITHOUT any consent toast', async () => {
     const { run, calls } = makeRunner((_c, args) => {
       if (args[0] === '--version') return ok('gh 2');
       if (args[0] === 'auth') return ok('ok');
@@ -333,25 +423,46 @@ describe('offerRulesetAdvisory() — Tier-0 gated post-init advisory (#356)', ()
       }
       return undefined;
     });
-    // User consents to the check.
-    showInfo.mockResolvedValueOnce('Set up');
+    // NO showInfo mock queued — the probe must not depend on a user click.
 
     await offerRulesetAdvisory('/ws', deps(run));
 
-    // The first info call IS the consent prompt (3 action buttons).
-    expect(String(showInfo.mock.calls[0][0])).toMatch(/can check \/ set up/i);
-    expect(showInfo.mock.calls[0].slice(1)).toEqual(['Set up', 'Not now', 'Learn more']);
-    // Two info messages total: the consent prompt + the "already configured"
-    // confirmation (the latter carries no action buttons → not an offer).
-    expect(showInfo).toHaveBeenCalledTimes(2);
-    expect(showInfo.mock.calls[1].length).toBe(1);
-    expect(String(showInfo.mock.calls[1][0])).toMatch(/already has a ruleset/i);
-    // No POST was made.
+    // The read-only `gh api .../rulesets` GET ran autonomously (no toast gated it).
+    expect(calls.some((c) => apiPath(c.args) === 'repos/o/r/rulesets')).toBe(true);
+    // And crucially NO consent prompt preceded it.
+    expect(showInfo).not.toHaveBeenCalled();
+  });
+
+  it('CASE 2: gh present + ruleset already exists → SILENT (no toast at all), NO create', async () => {
+    const { run, calls } = makeRunner((_c, args) => {
+      if (args[0] === '--version') return ok('gh 2');
+      if (args[0] === 'auth') return ok('ok');
+      const p = apiPath(args);
+      if (p === 'repos/o/r/rulesets') {
+        return ok(JSON.stringify([{ id: 1, target: 'branch', enforcement: 'active' }]));
+      }
+      if (p === 'repos/o/r/rulesets/1') {
+        return ok(
+          JSON.stringify({
+            conditions: { ref_name: { include: ['~DEFAULT_BRANCH'] } },
+            rules: [{ type: 'required_status_checks' }],
+          }),
+        );
+      }
+      return undefined;
+    });
+
+    await offerRulesetAdvisory('/ws', deps(run));
+
+    // Existing ruleset → nothing for the user to do → ZERO toasts.
+    expect(showInfo).not.toHaveBeenCalled();
+    // The probe ran but no POST was made.
+    expect(calls.some((c) => apiPath(c.args) === 'repos/o/r/rulesets')).toBe(true);
     expect(calls.some((c) => c.args.includes('POST'))).toBe(false);
     expect(openExternal).not.toHaveBeenCalled();
   });
 
-  it('CASE 3+4: gh present + consent + none → offer; on Create → POST + success toast', async () => {
+  it('CASE 3+4: none found → exactly ONE create-offer toast; on Create → POST + success toast', async () => {
     const { run, calls } = makeRunner((_c, args) => {
       if (args[0] === '--version') return ok('gh 2');
       if (args[0] === 'auth') return ok('ok');
@@ -360,43 +471,125 @@ describe('offerRulesetAdvisory() — Tier-0 gated post-init advisory (#356)', ()
       if (args.includes('POST')) return ok('{"id":7}');
       return undefined;
     });
-    // User consents to the check, then accepts the create offer.
-    showInfo.mockResolvedValueOnce('Set up').mockResolvedValueOnce('Create ruleset');
+    // User accepts the sole create offer.
+    showInfo.mockResolvedValueOnce('Create ruleset');
 
     await offerRulesetAdvisory('/ws', deps(run));
 
-    // First info call is the consent prompt; second is the create offer (both
-    // action buttons).
-    expect(String(showInfo.mock.calls[0][0])).toMatch(/can check \/ set up/i);
-    expect(String(showInfo.mock.calls[1][0])).toMatch(/no ruleset requiring/i);
-    expect(showInfo.mock.calls[1].slice(1)).toEqual(['Create ruleset', 'View GitHub docs']);
-    // A POST happened (create) and the success toast fired.
+    // Exactly ONE offer toast (the create prompt) preceded the create...
+    expect(String(showInfo.mock.calls[0][0])).toMatch(/no branch ruleset requiring CI checks/i);
+    expect(showInfo.mock.calls[0].slice(1)).toEqual(['Create ruleset', 'Not now', 'Learn more']);
+    // ...a POST happened and the success toast fired (2 info toasts total).
     expect(calls.some((c) => c.args.includes('POST'))).toBe(true);
-    expect(showInfo).toHaveBeenCalledTimes(3);
-    expect(String(showInfo.mock.calls[2][0])).toMatch(/created a ruleset/i);
+    expect(showInfo).toHaveBeenCalledTimes(2);
+    expect(String(showInfo.mock.calls[1][0])).toMatch(/created a ruleset/i);
     expect(openExternal).not.toHaveBeenCalled();
   });
 
-  it('CASE 3 (declined): gh present + consent + none → offer; dismiss → no POST, no open', async () => {
+  it('CONFIGURABLE: the configured check set is honoured in the created payload', async () => {
+    const { run, calls } = makeRunner((_c, args) => {
+      if (args[0] === '--version') return ok('gh 2');
+      if (args[0] === 'auth') return ok('ok');
+      if (apiPath(args) === 'repos/o/r/rulesets' && !args.includes('POST')) return ok('[]');
+      if (args.includes('POST')) return ok('{"id":7}');
+      return undefined;
+    });
+    showInfo.mockResolvedValueOnce('Create ruleset');
+
+    // Inject an extended check set (build + opt-in ready-to-merge).
+    await offerRulesetAdvisory('/ws', deps(run, ['lint', 'test', 'build', 'ready-to-merge']));
+
+    const post = calls.find((c) => c.args.includes('POST'))!;
+    const body = JSON.parse(post.stdin!) as {
+      rules: Array<{ type: string; parameters: { required_status_checks: Array<{ context: string }> } }>;
+    };
+    const rule = body.rules.find((r) => r.type === 'required_status_checks')!;
+    expect(rule.parameters.required_status_checks.map((c) => c.context)).toEqual([
+      'lint',
+      'test',
+      'build',
+      'ready-to-merge',
+    ]);
+    // The offer toast also names the configured set.
+    expect(String(showInfo.mock.calls[0][0])).toMatch(/ready-to-merge/);
+  });
+
+  it('CONFIGURABLE: with no injected checks the create reads the config setting', async () => {
+    const { run, calls } = makeRunner((_c, args) => {
+      if (args[0] === '--version') return ok('gh 2');
+      if (args[0] === 'auth') return ok('ok');
+      if (apiPath(args) === 'repos/o/r/rulesets' && !args.includes('POST')) return ok('[]');
+      if (args.includes('POST')) return ok('{"id":7}');
+      return undefined;
+    });
+    // The `minspec.ruleset.requiredChecks` setting adds `build`.
+    mockConfigValue = ['lint', 'test', 'build'];
+    showInfo.mockResolvedValueOnce('Create ruleset');
+
+    // Omit deps.requiredChecks so resolveRequiredChecks() reads the config.
+    await offerRulesetAdvisory('/ws', { run, resolveRepo, openExternal, isRepo });
+
+    const post = calls.find((c) => c.args.includes('POST'))!;
+    const body = JSON.parse(post.stdin!) as {
+      rules: Array<{ type: string; parameters: { required_status_checks: Array<{ context: string }> } }>;
+    };
+    const rule = body.rules.find((r) => r.type === 'required_status_checks')!;
+    expect(rule.parameters.required_status_checks.map((c) => c.context)).toEqual([
+      'lint',
+      'test',
+      'build',
+    ]);
+  });
+
+  it('CASE 3 (declined): none found → offer; "Not now" → no POST, no open', async () => {
     const { run, calls } = makeRunner((_c, args) => {
       if (args[0] === '--version') return ok('gh 2');
       if (args[0] === 'auth') return ok('ok');
       if (apiPath(args) === 'repos/o/r/rulesets' && !args.includes('POST')) return ok('[]');
       return undefined;
     });
-    showInfo
-      .mockResolvedValueOnce('Set up') // consent to the check
-      .mockResolvedValueOnce(undefined); // dismiss the create offer
+    showInfo.mockResolvedValueOnce('Not now'); // decline the create offer
 
     await offerRulesetAdvisory('/ws', deps(run));
 
-    // The READ ran (consent given) but no POST followed the dismissed offer.
+    // The probe ran, one offer toast fired, but no POST followed the decline.
     expect(calls.some((c) => apiPath(c.args) === 'repos/o/r/rulesets' && !c.args.includes('POST'))).toBe(true);
+    expect(calls.some((c) => c.args.includes('POST'))).toBe(false);
+    expect(showInfo).toHaveBeenCalledTimes(1);
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
+  it('CASE (Learn more): none found → offer; "Learn more" → docs link, no POST', async () => {
+    const { run, calls } = makeRunner((_c, args) => {
+      if (args[0] === '--version') return ok('gh 2');
+      if (args[0] === 'auth') return ok('ok');
+      if (apiPath(args) === 'repos/o/r/rulesets' && !args.includes('POST')) return ok('[]');
+      return undefined;
+    });
+    showInfo.mockResolvedValueOnce('Learn more');
+
+    await offerRulesetAdvisory('/ws', deps(run));
+
+    expect(openExternal).toHaveBeenCalledWith(RULESET_DOCS_URL);
+    expect(calls.some((c) => c.args.includes('POST'))).toBe(false);
+  });
+
+  it('CASE (dismissed): none found → offer; Escape → no POST, no open', async () => {
+    const { run, calls } = makeRunner((_c, args) => {
+      if (args[0] === '--version') return ok('gh 2');
+      if (args[0] === 'auth') return ok('ok');
+      if (apiPath(args) === 'repos/o/r/rulesets' && !args.includes('POST')) return ok('[]');
+      return undefined;
+    });
+    showInfo.mockResolvedValueOnce(undefined); // dismissed
+
+    await offerRulesetAdvisory('/ws', deps(run));
+
     expect(calls.some((c) => c.args.includes('POST'))).toBe(false);
     expect(openExternal).not.toHaveBeenCalled();
   });
 
-  it('CASE 5: consent + create returns 403 → docs-link fallback', async () => {
+  it('CASE 5: create returns 403 → docs-link fallback', async () => {
     const { run } = makeRunner((_c, args) => {
       if (args[0] === '--version') return ok('gh 2');
       if (args[0] === 'auth') return ok('ok');
@@ -405,19 +598,18 @@ describe('offerRulesetAdvisory() — Tier-0 gated post-init advisory (#356)', ()
       return undefined;
     });
     showInfo
-      .mockResolvedValueOnce('Set up') // consent to the check
       .mockResolvedValueOnce('Create ruleset') // accept offer
       .mockResolvedValueOnce('View GitHub docs'); // click docs on the fallback toast
 
     await offerRulesetAdvisory('/ws', deps(run));
 
-    // Fallback message (3rd info call) mentions the admin-scope reason and opens
+    // Fallback message (2nd info call) mentions the admin-scope reason and opens
     // the docs.
-    expect(String(showInfo.mock.calls[2][0])).toMatch(/repo-admin scope/i);
+    expect(String(showInfo.mock.calls[1][0])).toMatch(/repo-admin scope/i);
     expect(openExternal).toHaveBeenCalledWith(RULESET_DOCS_URL);
   });
 
-  it('gh ready but no GitHub remote → docs link, no read/create', async () => {
+  it('gh ready but no GitHub remote → docs link, no probe/create', async () => {
     const { run, calls } = makeRunner((_c, args) => {
       if (args[0] === '--version') return ok('gh 2');
       if (args[0] === 'auth') return ok('ok');
@@ -428,59 +620,8 @@ describe('offerRulesetAdvisory() — Tier-0 gated post-init advisory (#356)', ()
 
     await offerRulesetAdvisory('/ws', deps(run));
 
-    expect(calls.some((c) => apiPath(c.args)?.startsWith('repos/'))).toBe(false);
+    expect(calls.some((c) => isRepoApiCall(c.args))).toBe(false);
     expect(openExternal).toHaveBeenCalledWith(RULESET_DOCS_URL);
-  });
-
-  it('CONSENT GATE: gh ready + repo resolves but "Not now" → ZERO gh api read/create', async () => {
-    const { run, calls } = makeRunner((_c, args) => {
-      if (args[0] === '--version') return ok('gh 2');
-      if (args[0] === 'auth') return ok('ok');
-      // Any `gh api` call here means the gate leaked — fail loudly.
-      return undefined;
-    });
-    showInfo.mockResolvedValueOnce('Not now'); // declines at the consent gate
-
-    await offerRulesetAdvisory('/ws', deps(run));
-
-    // The consent prompt fired exactly once...
-    expect(showInfo).toHaveBeenCalledTimes(1);
-    expect(String(showInfo.mock.calls[0][0])).toMatch(/can check \/ set up/i);
-    expect(showInfo.mock.calls[0].slice(1)).toEqual(['Set up', 'Not now', 'Learn more']);
-    // ...and NOT A SINGLE `gh api` repos call ran — only the gh-readiness probe
-    // (`gh --version`, `gh auth status`). This is the defect the review caught:
-    // the READ must not fire without consent.
-    expect(calls.every((c) => !isRepoApiCall(c.args))).toBe(true);
-    expect(calls.map((c) => c.args[0])).toEqual(['--version', 'auth']);
-    expect(openExternal).not.toHaveBeenCalled();
-  });
-
-  it('CONSENT GATE: "Learn more" → docs link, still ZERO gh api read/create', async () => {
-    const { run, calls } = makeRunner((_c, args) => {
-      if (args[0] === '--version') return ok('gh 2');
-      if (args[0] === 'auth') return ok('ok');
-      return undefined;
-    });
-    showInfo.mockResolvedValueOnce('Learn more');
-
-    await offerRulesetAdvisory('/ws', deps(run));
-
-    expect(openExternal).toHaveBeenCalledWith(RULESET_DOCS_URL);
-    expect(calls.every((c) => !isRepoApiCall(c.args))).toBe(true);
-  });
-
-  it('CONSENT GATE: dismissed (Escape) → no docs link, ZERO gh api read/create', async () => {
-    const { run, calls } = makeRunner((_c, args) => {
-      if (args[0] === '--version') return ok('gh 2');
-      if (args[0] === 'auth') return ok('ok');
-      return undefined;
-    });
-    showInfo.mockResolvedValueOnce(undefined); // dismissed
-
-    await offerRulesetAdvisory('/ws', deps(run));
-
-    expect(openExternal).not.toHaveBeenCalled();
-    expect(calls.every((c) => !isRepoApiCall(c.args))).toBe(true);
   });
 
   it('DEFENSE-IN-DEPTH: a malformed resolved slug never reaches `gh api`', async () => {
@@ -495,10 +636,9 @@ describe('offerRulesetAdvisory() — Tier-0 gated post-init advisory (#356)', ()
 
     await offerRulesetAdvisory('/ws', deps(run));
 
-    // Treated like "no GitHub repo": docs link, NO consent prompt, NO `gh api`,
-    // and crucially no consent prompt was even shown for a bad slug.
+    // Treated like "no GitHub repo": docs link, NO `gh api` repos call at all
+    // (neither the read-only probe nor a create).
     expect(calls.every((c) => !isRepoApiCall(c.args))).toBe(true);
-    expect(showInfo.mock.calls.every((c) => !/can check \/ set up/i.test(String(c[0])))).toBe(true);
     expect(openExternal).toHaveBeenCalledWith(RULESET_DOCS_URL);
   });
 
