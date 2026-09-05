@@ -15,8 +15,11 @@
  * mangling a hand-authored rationale is worse than a caught parity error.
  */
 import { describe, it, expect } from 'vitest';
-import { reconcileBodyStatus } from '../src/lib/adr-manager';
+import { reconcileBodyStatus, statusProseWouldInvert, setAdrStatus } from '../src/lib/adr-manager';
 import { inspectAllStatusClaims } from '../src/lib/status-parity';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 const doc = (bodyStatus: string) =>
   `---\nid: DR-999\nstatus: proposed\n---\n\n# DR-999: Thing\n\n## Status\n\n${bodyStatus}\n\n## Context\n\nUnrelated **Proposed** word that must not be touched.\n`;
@@ -108,5 +111,64 @@ describe('#1624 — the writer covers every shape the parity reader recognises',
     const claims = inspectAllStatusClaims(out, 'dr').filter((c) => c.kind === 'comparable');
     expect(claims.length).toBeGreaterThan(0);
     for (const c of claims) expect((c as { token: string }).token).toBe('accepted');
+  });
+});
+
+// ─── #1833: prose that NEGATES a status word must refuse, not invert ─────────
+//
+// reconcileBodyStatus swaps the token and cannot see the rest of the sentence.
+// Accepting DR-088 produced "**Accepted** 2026-08-24. Not accepted, and an agent
+// must never mint that." — and `npm run validate` PASSES on it, because the #626
+// parity rule compares the token to the frontmatter and never reads the clause
+// after it. The mechanism that keeps the gate green produced the exact false
+// signpost the gate exists to prevent.
+//
+// Narrow by measurement, not by taste: across the 27 DRs carrying a body status
+// claim, "mentions a status word" fires on 9 — nearly all benign history
+// ("Accepted 2026-08-05. Proposed 2026-06-23"), where swapping is correct.
+// "Negates a status word" fires on exactly 1: DR-088.
+describe('#1833 — a status line whose prose negates a status word', () => {
+  const dr088 = (token: string) =>
+    `---\nid: DR-088\nstatus: proposed\n---\n\n# DR-088\n\n## Status\n\n**${token}** 2026-08-24. Not accepted, and an agent must never mint that.\n\n## Context\n\nc\n`;
+
+  it('THE #1833 CASE: is detected', () => {
+    const r = statusProseWouldInvert(dr088('Proposed'), 'accepted');
+    expect(r).not.toBeNull();
+    expect(r!.text).toContain('Not accepted');
+  });
+
+  it('is NOT rewritten — the pure function leaves it alone rather than inverting it', () => {
+    const doc = dr088('Proposed');
+    expect(reconcileBodyStatus(doc, 'accepted')).toBe(doc);
+  });
+
+  it('setAdrStatus REFUSES, and writes nothing at all', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dr1833-'));
+    const f = path.join(dir, 'DR-088.md');
+    fs.writeFileSync(f, dr088('Proposed'));
+    const before = fs.readFileSync(f, 'utf-8');
+    expect(() => setAdrStatus(f, 'accepted')).toThrow(/negates a status word/);
+    // The load-bearing half: refusing AFTER writing frontmatter would leave the file
+    // asserting two statuses — the very state this mechanism exists to prevent.
+    expect(fs.readFileSync(f, 'utf-8')).toBe(before);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('benign HISTORY is still rewritten — the rule is negation, not mention', () => {
+    // "Accepted 2026-08-05 … Proposed 2026-06-23" records history; swapping is right.
+    const hist = `---\nid: DR-039\nstatus: proposed\n---\n\n# DR-039\n\n## Status\n\nProposed 2026-06-23. Superseded plan recorded 2026-06-01.\n\n## Context\n\nc\n`;
+    expect(statusProseWouldInvert(hist, 'accepted')).toBeNull();
+    expect(reconcileBodyStatus(hist, 'accepted')).toContain('Accepted 2026-06-23');
+  });
+
+  it('the whole real corpus stays acceptable — exactly one DR refuses', () => {
+    // Guards against a rule that is technically correct and practically unusable:
+    // an over-broad version blocked acceptance on 9 of 27 DRs.
+    const dir = path.resolve(__dirname, '../../../docs/decisions');
+    const refused = fs
+      .readdirSync(dir)
+      .filter((f) => /^DR-\d+\.md$/.test(f))
+      .filter((f) => statusProseWouldInvert(fs.readFileSync(path.join(dir, f), 'utf-8'), 'accepted'));
+    expect(refused.length).toBeLessThanOrEqual(1);
   });
 });
