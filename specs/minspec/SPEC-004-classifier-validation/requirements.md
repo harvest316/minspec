@@ -6,6 +6,17 @@ status: implementing  # harness built + run (n=120, κ=0.80); findings in tasks.
 product: minspec
 tier: T3
 epic: EPIC-004  # Classifier Validation
+implements:
+  - packages/minspec/tests/classifier-validation.test.ts
+  - scripts/classifier-validation/fetch-swebench.mjs
+  - scripts/classifier-validation/labels.json
+# All three were BORN in 704334ed (`feat(#classifier-validation): SWE-bench validation harness
+# (SPEC-004)`) as pure additions, and each carries an in-file `SPEC-004 / DR-009` provenance
+# header. `classifier.ts`/`git-analyzer.ts` are deliberately NOT owned: Out-of-Scope says this
+# harness "measures; it does not mutate the classifier", and 704334ed does not touch them.
+# `affects:` is empty on purpose — the only other files that commit touched are root
+# `.gitignore` and root `package.json`, and `isValidOwnedPath` rejects both (no `/`), so
+# listing them would be inert noise the gate silently drops.
 ---
 
 # MinSpec — Classifier Validation Harness (Requirements)
