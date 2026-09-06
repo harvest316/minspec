@@ -62,7 +62,13 @@ function decide({
   ).trim();
 }
 
-/** Every action token classify_pr can emit, plus an unknown one. */
+/**
+ * Every action token classify_pr can emit, plus an unknown one. retry-unknown and
+ * skip-unhandled-state are #1803's two new tokens (an UNKNOWN or unrecognised
+ * mergeStateStatus) — included here so the priority gates below (merged, stand-down,
+ * the wall-clock ceiling) are proven to apply to them too, not just the pre-existing
+ * vocabulary.
+ */
 const ALL_ACTIONS = [
   'skip-not-automation',
   'skip-conflict',
@@ -70,6 +76,8 @@ const ALL_ACTIONS = [
   'agent-remediate-review',
   'rebase-only',
   'skip-clean',
+  'retry-unknown',
+  'skip-unhandled-state',
   'some-token-from-the-future',
 ];
 
@@ -203,6 +211,60 @@ describe('shepherd --decide: polling only while something async can still change
   });
 });
 
+// #1803 round 2 (PR #1813 review): classify_pr grew two new tokens — retry-unknown
+// and skip-unhandled-state — for an UNKNOWN or otherwise unrecognised mergeStateStatus.
+// The blocking review finding was that shepherd_decide had NO arm for either, so both
+// fell through the `*)` default to stop-not-automation. Concretely: the creator-
+// shepherd polls its own freshly-pushed PR, GitHub returns UNKNOWN (a routine cold
+// read — the exact case #1803's fix targets), classify_pr returns retry-unknown, and
+// the OLD shepherd_decide reported stop-not-automation — abandoning a PR that IS an
+// automation branch with a false "outside automation scope" message. Each token now
+// gets its own arm, proven distinct from every pre-existing one below.
+describe('shepherd --decide: the two new #1803 classify_pr tokens get their OWN arms (#1813 round 2)', () => {
+  it('retry-unknown does NOT get abandoned as not-automation (the exact blocking finding)', () => {
+    expect(decide({ action: 'retry-unknown' })).not.toBe('stop-not-automation');
+  });
+
+  it('retry-unknown keeps polling — the merge state just has not resolved yet', () => {
+    expect(decide({ action: 'retry-unknown' })).toBe('wait-unknown');
+  });
+
+  it('retry-unknown is a WAIT, not an escape from the FR-4 wall-clock ceiling', () => {
+    expect(decide({ action: 'retry-unknown', elapsed: 3600, maxSecs: 3600 })).toBe('stop-timeout');
+  });
+
+  it('retry-unknown still stands down when the claim is lost (INV-5/D3)', () => {
+    expect(decide({ action: 'retry-unknown', holds: 'no' })).toBe('stand-down');
+  });
+
+  it('skip-unhandled-state does NOT return stop-not-automation (this IS an automation branch)', () => {
+    expect(decide({ action: 'skip-unhandled-state' })).not.toBe('stop-not-automation');
+  });
+
+  it('skip-unhandled-state does NOT collapse into the skip-clean wait/awaiting-human path either', () => {
+    // Folding it into skip-clean's branch would silently re-introduce, one layer up,
+    // the exact "unrecognised state treated as fine" bug #1803 fixed in classify_pr —
+    // the reviewers' core objection to shipping the producer without this consumer.
+    const t = decide({ action: 'skip-unhandled-state', checksPending: 'no', automergeArmed: 'no' });
+    expect(t).not.toBe('stop-awaiting-human');
+    expect(t).not.toBe('wait');
+  });
+
+  it('skip-unhandled-state gets its own honestly-named terminal token', () => {
+    expect(decide({ action: 'skip-unhandled-state' })).toBe('stop-unhandled-state');
+  });
+
+  it('skip-unhandled-state still stands down when the claim is lost (INV-5/D3)', () => {
+    expect(decide({ action: 'skip-unhandled-state', holds: 'no' })).toBe('stand-down');
+  });
+
+  it('a genuinely future/unrecognised token still falls closed to stop-not-automation (no regression)', () => {
+    // Only the two tokens #1803 actually introduced get their own arm — the true
+    // catch-all must still guard anything neither of us has seen yet.
+    expect(decide({ action: 'some-token-from-the-future' })).toBe('stop-not-automation');
+  });
+});
+
 describe('shepherd wiring: the loop is bounded by CODE, not by a token', () => {
   const code = fs.readFileSync(DISPATCH, 'utf-8');
 
@@ -264,6 +326,27 @@ describe('shepherd wiring: the loop is bounded by CODE, not by a token', () => {
 
   it('kills a build that ignores SIGTERM, so the FR-12 ceiling really bounds it', () => {
     expect(code).toMatch(/timeout --kill-after=30s/);
+  });
+
+  // #1813 round 2: BOTH consumers of classify_pr's vocabulary need an arm for the two
+  // #1803 tokens — shepherd_decide (asserted above) AND dispatch-issue.sh's own case
+  // statement, which turns a decide token into actual behaviour. Without an explicit
+  // arm here, `stop-unhandled-state` would silently fall through to `sleep` and keep
+  // polling for the full hour ceiling instead of stopping as its name promises — a
+  // decide-token name that lies about what the caller actually does with it.
+  it('handles wait-unknown and stop-unhandled-state explicitly, not via silent fallthrough', () => {
+    const body = shepherdBody();
+    expect(body).toMatch(/wait-unknown\)/);
+    expect(body).toMatch(/stop-unhandled-state\)/);
+  });
+
+  it('stop-unhandled-state actually stops (returns) rather than looping under its own name', () => {
+    const body = shepherdBody();
+    const start = body.indexOf('stop-unhandled-state)');
+    expect(start, 'stop-unhandled-state arm must exist').toBeGreaterThan(-1);
+    const nextArmOrEnd = body.indexOf(';;', start);
+    const arm = body.slice(start, nextArmOrEnd === -1 ? undefined : nextArmOrEnd);
+    expect(arm).toMatch(/return 0/);
   });
 
   // Regression + gate for the second review round on PR #975. `automerge_armed` read

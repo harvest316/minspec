@@ -47,10 +47,20 @@
 #       <labels_csv> <failing_non_review:yes|no> <ai_review_bad:yes|no> \
 #       [<live_nonself_claim:yes|no>]
 #     → prints ONE action token: skip-not-automation | skip-live-owned | skip-conflict |
-#       agent-remediate-checks | agent-remediate-review | rebase-only | skip-clean
+#       agent-remediate-checks | agent-remediate-review | rebase-only | retry-unknown |
+#       skip-clean | skip-unhandled-state
 #     The 7th argument is OPTIONAL and defaults to "no", so the creator-shepherd's
 #     existing 6-argument call keeps working and is never told to stand down from the
 #     PR it owns.
+#     retry-unknown and skip-unhandled-state are #1803's fix: mergeStateStatus is
+#     computed LAZILY by GitHub, so a cold read is routinely UNKNOWN rather than the
+#     real state. The classifier used to have no arm for that, so it fell through to
+#     the terminal default — which asserted skip-clean (a POSITIVE health claim) for
+#     ANY unrecognised state, not only the genuinely clean one. Now CLEAN is the only
+#     value that returns skip-clean; UNKNOWN gets its own non-terminal retry-unknown
+#     (the call site re-polls once before trusting it, never from --classify itself);
+#     and anything else unrecognised (BLOCKED, UNSTABLE, HAS_HOOKS, or a future GitHub
+#     value) returns skip-unhandled-state instead of silently passing as healthy.
 #   scripts/remediate-pr.sh --count-markers <marker> [author_logins_csv] < comments.json
 #     → prints how many comments the runaway guard would charge to that marker
 #   scripts/remediate-pr.sh --check-markers <marker> <marker> [marker...]
@@ -128,7 +138,30 @@ classify_pr() {
   if [[ "$merge_state" == "BEHIND" ]]; then
     echo "rebase-only"; return 0
   fi
-  echo "skip-clean"
+  # 7. UNKNOWN (#1803) — GitHub computes mergeStateStatus LAZILY, so a cold read
+  #    routinely returns UNKNOWN before the real state is ready, rather than because
+  #    anything is actually wrong. The call site re-polls once, after a short pause,
+  #    BEFORE calling this classifier (still no network call from --classify itself);
+  #    if it is STILL unknown here, that is a genuinely unresolved witness. This must
+  #    NOT fall through to skip-clean's positive health assertion (constitution
+  #    invariant 2: an unreadable witness fails closed and VISIBLY, never quietly).
+  #    retry-unknown is deliberately NON-TERMINAL — unlike skip-conflict, it names no
+  #    human action; it just means "try again once GitHub finishes computing this."
+  if [[ "$merge_state" == "UNKNOWN" ]]; then
+    echo "retry-unknown"; return 0
+  fi
+  # 8. CLEAN is the ONLY state that genuinely asserts health. This used to be the
+  #    implicit "everything else" default sitting where #9 now is — which is exactly
+  #    how UNKNOWN (and BLOCKED/UNSTABLE/HAS_HOOKS alongside it) got silently reported
+  #    healthy. Made explicit so skip-clean can never again drift into a catch-all.
+  if [[ "$merge_state" == "CLEAN" ]]; then
+    echo "skip-clean"; return 0
+  fi
+  # 9. Any OTHER mergeStateStatus (BLOCKED, UNSTABLE, HAS_HOOKS, DRAFT, or a value
+  #    this classifier has simply never seen) is the SAME "unrecognised state"
+  #    shape #1803 fixed for UNKNOWN — it must not silently pass as healthy either.
+  #    Name it as unhandled so a future unknown value fails visibly, not quietly.
+  echo "skip-unhandled-state"
 }
 
 # ── Marker vocabulary + pure counting helpers ──────────────────────────────────
@@ -387,6 +420,32 @@ LABELS_CSV=$(jq -r '[.labels[].name] | join(",")' <<<"$PR_JSON")
 if [[ "$STATE" != "OPEN" ]]; then echo "PR #$PR is $STATE — skipping."; exit 0; fi
 if [[ "$IS_DRAFT" == "true" ]]; then echo "PR #$PR is a draft — skipping."; exit 0; fi
 
+# #1803: GitHub computes mergeStateStatus LAZILY, so the FIRST read after a push is
+# routinely UNKNOWN even on a genuinely healthy PR — not because anything is wrong,
+# just because the computation hasn't finished yet. Re-poll ONCE, after a short pause,
+# before trusting it: a merely-not-yet-computed state resolves almost immediately on a
+# second read, so this one retry converts most UNKNOWNs into their real state without
+# ever falling into classify_pr's retry-unknown arm at all. If it is STILL UNKNOWN
+# after this, retry-unknown correctly holds — this refetch is what makes that arm mean
+# "genuinely unresolved," not "we didn't bother to check twice."
+if [[ "$MERGE_STATE" == "UNKNOWN" ]]; then
+  echo "  mergeStateStatus is UNKNOWN (GitHub computes it lazily) — re-polling once before classifying..."
+  sleep "${MINSPEC_REMEDIATE_UNKNOWN_RETRY_SLEEP:-5}"
+  RETRY_JSON=$(gh pr view "$PR" --repo "$REPO" \
+    --json number,state,isDraft,headRefName,mergeable,mergeStateStatus,labels,statusCheckRollup,title,author 2>/dev/null) || true
+  if [[ -n "$RETRY_JSON" ]]; then
+    PR_JSON="$RETRY_JSON"
+    MERGEABLE=$(jq -r '.mergeable' <<<"$PR_JSON")
+    MERGE_STATE=$(jq -r '.mergeStateStatus' <<<"$PR_JSON")
+    LABELS_CSV=$(jq -r '[.labels[].name] | join(",")' <<<"$PR_JSON")
+    if [[ "$MERGE_STATE" == "UNKNOWN" ]]; then
+      echo "  still UNKNOWN after the re-poll — leaving for the next sweep (retry-unknown), never assuming it's healthy."
+    else
+      echo "  resolved to $MERGE_STATE on re-poll."
+    fi
+  fi
+fi
+
 # Derive the two check booleans the classifier needs from the rollup. A check
 # named exactly "ai-review" is the independent reviewer's own check — treated via
 # the review path, NOT the generic failing-checks path. Everything else failing is
@@ -465,8 +524,25 @@ case "$ACTION" in
       gh pr edit "$PR" --repo "$REPO" --add-label "needs-human-review" 2>/dev/null || true
     fi
     exit 0 ;;
+  retry-unknown)
+    # #1803: mergeStateStatus was STILL UNKNOWN after the one re-poll above — GitHub
+    # hasn't finished computing it. This is deliberately NON-TERMINAL: unlike
+    # skip-conflict, it names no human action and takes no side effect (no label, no
+    # comment, no attempt consumed) — the next scheduled sweep re-reads the PR and
+    # will very likely see a real state by then. Never treat this as skip-clean.
+    echo "  mergeStateStatus is still UNKNOWN — leaving for the next sweep rather than asserting this PR is healthy."
+    exit 0 ;;
   skip-clean)
     echo "  No fixable problem — nothing to do."; exit 0 ;;
+  skip-unhandled-state)
+    # #1803: a mergeStateStatus this classifier doesn't recognise (BLOCKED, UNSTABLE,
+    # HAS_HOOKS, or a future GitHub value) reached the terminal fallthrough. That used
+    # to silently report skip-clean — a positive health claim on a PR that was never
+    # actually confirmed clean. Say so loudly instead and leave it for a human; no
+    # attempt is consumed and no label is added, since this classifier is not
+    # confident enough about the state to characterise it further.
+    echo "  mergeStateStatus '$MERGE_STATE' is not one this classifier recognises — leaving for a human rather than assuming it's healthy." >&2
+    exit 0 ;;
 esac
 
 if $DRY_RUN; then
