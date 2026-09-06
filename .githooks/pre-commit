@@ -137,6 +137,85 @@ if [ "${SECRET_GATE_OFF:-}" != "1" ]; then
   fi
 fi
 
+# ── lockfile-sync gate (#1600) ───────────────────────────────────────────────
+# Adding a workspace package changes what `npm ci` must resolve, but nothing
+# asserted that package.json and package-lock.json still agree. #1589 added
+# `packages/broker` without regenerating the lock, and CI — which installs with
+# `npm ci` — died at the install step of EVERY job. Six checks went red
+# (`DR id uniqueness`, `MinSpec SDD validation`, `lint`, `test`, `ai-review`,
+# `ready-to-merge`) and not one of them ran: the red was the ABSENCE of a result,
+# not a finding. Triage reads that as four broken subsystems and debugs
+# everywhere except the lockfile; the PR sat red for two days.
+#
+# OFFLINE by construction (`--offline`). Measured: npm reports the mismatch with
+# no registry access, and exits 0 when the lock IS in sync — verified both on a
+# synthetic workspace fixture and on this repo with no node_modules present,
+# which is the environment a hook actually runs in. That matters beyond speed:
+# constitution invariant 1 requires core behaviour to work offline, and a gate
+# needing the network would have to fail OPEN on a flaky connection — the
+# silent-gate shape invariant 2 forbids.
+#
+# `--ignore-scripts` because a pre-commit hook must not execute package lifecycle
+# scripts; without it this runs `prepare` on every manifest commit.
+#
+# SCOPED to commits that touch a dependency manifest, so the ordinary docs/spec
+# commit pays nothing.
+#
+# Fails CLOSED only on the RECOGNISED sync error. Any other npm failure (npm
+# absent, cache miss, an npm bug) warns and continues — an optional tool must
+# never wedge a commit, exactly like the gitleaks gate above. The npm output is
+# printed, never swallowed (#1538): a block with no evidence just sends people
+# to the bypass.
+#
+# Known limit: npm reads the WORKING TREE, not the staged index — same as the
+# validate gate below. An unstaged manifest edit is in scope of the check even
+# though it is not in the commit.
+#
+# Bypass: LOCK_GATE_OFF=1 git commit ...
+if [ "${LOCK_GATE_OFF:-}" != "1" ]; then
+  if git diff --cached --name-only --diff-filter=ACMR \
+       | grep -qE '(^|/)package\.json$|(^|/)package-lock\.json$'; then
+    if command -v npm >/dev/null 2>&1; then
+      if ! lock_out=$(npm ci --dry-run --offline --ignore-scripts 2>&1); then
+        if printf '%s' "$lock_out" \
+             | grep -q 'can only install packages when your package.json and package-lock.json'; then
+          printf '%s\n' "$lock_out" | grep -E 'Missing:|Invalid:|code EUSAGE' | sort -u >&2 || true
+          echo "✖ lockfile gate: package-lock.json is out of sync with package.json." >&2
+          echo "  CI installs with \`npm ci\`, which refuses this and exits BEFORE any job body" >&2
+          echo "  runs — every check then reports red without having executed (#1589)." >&2
+          echo "  Fix: npm install --package-lock-only && git add package-lock.json" >&2
+          echo "  Override (rare): LOCK_GATE_OFF=1 git commit ..." >&2
+          fail=1
+        elif printf '%s' "$lock_out" | grep -qE 'ENOTCACHED|ETARGET|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|No match found|request to .* failed|in offline mode'; then
+          # EXPECTED skip: `--offline` cannot resolve something the local npm cache has
+          # never seen (a fresh machine, a new dependency). Quiet, because this is common
+          # and self-corrects the moment the cache warms.
+          echo "⚠ lockfile gate: npm cache cannot answer offline — check SKIPPED (warm it with \`npm install\`)." >&2
+        else
+          # UNRECOGNISED failure. LOUD by design (#1749): the gate did not run, and the
+          # only thing worse than a missing gate is one that is silently missing. A single
+          # ⚠ line scrolls past in commit output, so this is a banner. If npm ever rewords
+          # the sync error, the drift branch above stops matching and EVERY drifted commit
+          # lands here — a banner turns that from an invisible disarm into an obvious one.
+          # The wording itself is pinned by a contract test, so an npm upgrade that changes
+          # it fails CI rather than quietly widening this branch.
+          echo "" >&2
+          echo "  ╔════════════════════════════════════════════════════════════════════╗" >&2
+          echo "  ║  LOCKFILE GATE DID NOT RUN — npm failed in a way it does not know  ║" >&2
+          echo "  ╚════════════════════════════════════════════════════════════════════╝" >&2
+          echo "  Your lock was NOT checked. It may be out of sync, and CI would then fail" >&2
+          echo "  every job at the install step (#1589). npm said:" >&2
+          printf '%s\n' "$lock_out" | head -5 | sed 's/^/      /' >&2
+          echo "  If npm reworded its sync error, the gate needs updating — please report it." >&2
+          echo "" >&2
+        fi
+      fi
+    else
+      echo "⚠ lockfile gate: npm not installed — lockfile sync check SKIPPED." >&2
+    fi
+  fi
+fi
+
 if [ "${ADR_BORN_GATE_OFF:-}" != "1" ]; then
   while IFS=$'\t' read -r _status path; do
     case "$path" in
