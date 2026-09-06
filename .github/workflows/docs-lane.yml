@@ -10,6 +10,12 @@ name: docs-lane
 # PR that touches ANY non-docs path fails this job (misuse alarm) and is NOT
 # auto-merged. Code physically cannot ride the lane. Substantive new DRs/specs
 # simply don't carry the label → normal human review (the DR-055 pattern).
+#
+# Two further refusals, both added by #1847 after this lane armed auto-merge on a PR
+# that was explicitly held: a `hold:*` label stops the lane (and REVOKES an arming an
+# earlier run already made), and so does a change to a `status:` frontmatter line in
+# docs/decisions/** or specs/**, because DR acceptance and spec approval are human acts
+# that happen to be docs-only.
 
 on:
   pull_request:
@@ -79,6 +85,79 @@ jobs:
               "🚫 **docs-lane: outward-facing docs** — this PR changes doc(s) that are **published to users**: \`${outward_bad[*]}\`. README/CHANGELOG render on the Marketplace and GitHub landing pages, LICENSE/NOTICE are legal instruments, \`media/walkthrough/\` ships inside the \`.vsix\`, and \`sites/**\` deploys to minspec.dev on merge — so a wrong word here is published and cannot be un-said by a revert. Auto-merge NOT enabled (#1001); this needs a human merge keystroke. Split the inward docs into their own PR if you want them on the lane." || true
             exit 1
           fi
+          # ── HUMAN-HOLD GATE (#1847) ────────────────────────────────────────────
+          # A `hold:*` label is the maintainer's explicit "no automation lands this"
+          # (DR-072 §3: "no approval lifts it"). It was enforced on the ISSUE-dispatch
+          # side (scripts/approve-on-label.sh, approve-issue.sh, dispatch-issue.sh) and
+          # nowhere on the MERGE side, so it was decorative exactly where it mattered.
+          # Measured on #1741: `hold:human` was applied at 22:09:26 and this lane armed
+          # auto-merge at 22:09:34 — 8 seconds later, on a PR whose auto-merge had
+          # already been disarmed by hand once. Only an unrelated `ai-review:changes`
+          # kept it from landing a DR ratification with no human act (#1816).
+          hold_pattern='^hold:'
+          mapfile -t labels < <(gh api "repos/$REPO/pulls/$PR" -q '.labels[].name')
+          held=()
+          for l in "${labels[@]}"; do
+            if grep -qE "$hold_pattern" <<<"$l"; then held+=("$l"); fi
+          done
+
+          # ── GOVERNANCE STATUS-TRANSITION GATE (#1847) ──────────────────────────
+          # The label gate above only fires when somebody REMEMBERED to apply a label,
+          # so it is a floor, not a fix. This one keys on what the change DOES.
+          # Every human-act artefact in this repo is markdown, so a DR acceptance or a
+          # spec approval is docs-only BY CONSTRUCTION and reads as "inward" to the
+          # outward denylist above — i.e. the lane with the weakest gate is the one
+          # every governance ratification travels down. DR-029 (a DR is born
+          # `proposed`; acceptance is a separate human act) and DR-086 §2 (DR
+          # acceptance and T3/T4 spec approval always stop and ask) both reserve this
+          # transition for a human.
+          #
+          # Deliberately narrow: it fires on a changed `status:` FRONTMATTER LINE, not
+          # on any edit to a governance file. A typo fix in a DR body still rides the
+          # lane, which is the whole point of the lane. Matching the file rather than
+          # the line is the coarse-discriminant mistake (#1754) this is avoiding.
+          govern='^(docs/decisions/|specs/)'
+          status_changed=()
+          while IFS=$'\t' read -r fname patch_b64; do
+            [[ "$fname" =~ $govern ]] || continue
+            [ -n "$patch_b64" ] || continue
+            if printf '%s' "$patch_b64" | base64 -d 2>/dev/null | grep -qE '^[+-]status:'; then
+              status_changed+=("$fname")
+            fi
+          done < <(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+                     -q '.[] | [.filename, (.patch // "" | @base64)] | @tsv')
+
+          if [ "${#held[@]}" -gt 0 ] || [ "${#status_changed[@]}" -gt 0 ]; then
+            # Arming is STICKY: a previous run of this lane may already have enabled
+            # auto-merge before the hold was applied (that is the #1741 sequence), so
+            # refusing to arm now is not sufficient — the earlier arming has to be
+            # revoked. Only attempted when actually armed, so "nothing to disarm" is
+            # not reported as a failure; and NEVER swallowed with `|| true`, because a
+            # disarm that silently fails leaves a held PR armed (constitution
+            # invariant 2 — no silent gate).
+            armed="$(gh pr view "$PR" --repo "$REPO" --json autoMergeRequest -q '.autoMergeRequest.enabledAt // ""')"
+            disarm_note=""
+            if [ -n "$armed" ]; then
+              if gh pr merge --disable-auto --repo "$REPO" "$PR"; then
+                disarm_note=" Auto-merge was already enabled and has been **disarmed**."
+              else
+                echo "::error::docs-lane: could not disarm auto-merge on a held PR — it is STILL ARMED"
+                disarm_note=" ⚠️ Auto-merge was already enabled and could **not** be disarmed — disarm it by hand."
+              fi
+            fi
+            if [ "${#held[@]}" -gt 0 ]; then
+              printf '::error::docs-lane: held by label(s): %s\n' "${held[*]}"
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "🚫 **docs-lane: held** — this PR carries \`${held[*]}\`, which means no automation lands it (DR-072 §3). Auto-merge NOT enabled.${disarm_note} Remove the hold label when a human has decided, then re-run this check." || true
+            fi
+            if [ "${#status_changed[@]}" -gt 0 ]; then
+              printf '::error::docs-lane: governance status transition in: %s\n' "${status_changed[*]}"
+              gh pr comment "$PR" --repo "$REPO" --body \
+                "🚫 **docs-lane: governance status transition** — this PR changes a \`status:\` frontmatter line in \`${status_changed[*]}\`. Accepting a DR or approving a spec is a **human act** (DR-029, DR-086 §2), and it is docs-only by construction, so the docs corpus check above cannot see it. Auto-merge NOT enabled (#1847).${disarm_note} This needs a human merge keystroke. Split any unrelated docs into their own PR if you want those on the lane." || true
+            fi
+            exit 1
+          fi
+
           echo "docs-only ✓ (${#files[@]} file(s)) — enabling auto-merge"
           gh pr merge --auto --squash --repo "$REPO" "$PR"
           gh pr comment "$PR" --repo "$REPO" --body \
