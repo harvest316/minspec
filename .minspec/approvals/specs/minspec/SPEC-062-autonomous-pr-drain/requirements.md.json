@@ -1,9 +1,9 @@
 {
   "specPath": "specs/minspec/SPEC-062-autonomous-pr-drain/requirements.md",
-  "specHash": "e74b933c59ac6927695ce15a6ea19272ff4879a08aef8a19cdc4f6c0a0772798",
-  "approvedAt": "2026-08-27T22:19:36.144Z",
+  "specHash": "a07cd56fdb743718aefeaccabe26074d5a805d872e9aad183b5ef080a6abf5c5",
+  "approvedAt": "2026-09-05T22:49:26.189Z",
   "approvedBy": "github@harvest316.com",
   "tier": "T4",
   "migrated": false,
-  "baselineBlob": "658258c6f536e4502c9978b0979938fb011bdebc"
+  "baselineBlob": "9a767569e2b39ab44fffa519cce1620810dbdc3b"
 }

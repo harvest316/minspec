@@ -1,7 +1,7 @@
 ---
 id: SPEC-062
 type: requirements
-status: specifying   # DERIVED, not a regression. `deriveStatus` (lifecycle.ts:140) returns
+status: planning
   # 'specifying' whenever approvalState !== 'approved' — INV-1, and that guard fires BEFORE
   # the phases are consulted. The 2026-09-05 approval was staled by the #1811 review fixes,
   # so 'planning' here would be DRIFT (`facts status SPEC-062` confirms: MATCH on
