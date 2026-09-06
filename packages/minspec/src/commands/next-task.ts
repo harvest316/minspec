@@ -11,7 +11,7 @@
  */
 
 import * as vscode from 'vscode';
-import { resolveNextTask, type NextTask } from '@aiclarity/shared';
+import { formatImperativeForSignpost, resolveNextTask, type NextTask } from '@aiclarity/shared';
 import { buildArtifactGraph, artifactFileIndex } from '../lib/artifact-graph';
 
 const CLEAR_MESSAGE = "MinSpec: nothing to review — you're clear. ✓";
@@ -71,6 +71,8 @@ export function nextTaskCommand(workspaceRoot: string): () => Promise<void> {
       }
     }
 
-    vscode.window.showInformationMessage(`MinSpec: ${task.imperative}`);
+    // One-line toast — same normalization as the status bar (#1596), so raw
+    // tasks.md markdown/metadata never reaches it either.
+    vscode.window.showInformationMessage(`MinSpec: ${formatImperativeForSignpost(task.imperative)}`);
   };
 }

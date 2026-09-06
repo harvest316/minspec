@@ -11,7 +11,7 @@
  */
 
 import * as vscode from 'vscode';
-import { formatNextTaskLabel, type NextTask } from '@aiclarity/shared';
+import { formatImperativeForSignpost, formatNextTaskLabel, type NextTask } from '@aiclarity/shared';
 
 // SPEC-040 FR-5: `StatusBarSpec`, `fromFrontmatter`, and `computeProgress` moved
 // to `lib/spec-progress.ts`. They are pure frontmatter derivations with Tier-0
@@ -122,8 +122,13 @@ export class MinSpecNextTaskStatusBar {
     this.statusBarItem.tooltip = this.keybindingLabel
       ? `${base}\nShortcut: ${this.keybindingLabel}`
       : base;
+    // Same one-line treatment as the label text (#1596) — screen readers get
+    // the clause-stripped, word-boundary-truncated imperative too, not the
+    // raw tasks.md markdown.
     this.statusBarItem.accessibilityInformation = {
-      label: task ? `MinSpec next task: ${task.imperative}` : 'MinSpec: no pending review tasks',
+      label: task
+        ? `MinSpec next task: ${formatImperativeForSignpost(task.imperative)}`
+        : 'MinSpec: no pending review tasks',
     };
     this.statusBarItem.show();
   }

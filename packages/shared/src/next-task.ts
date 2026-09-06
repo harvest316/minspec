@@ -867,9 +867,15 @@ function generateNodes(
           }`;
 
     const phaseWord = inImplement ? 'implementing' : 'in the tasks phase';
+    // The tooltip is a multi-line surface with room the one-line imperative
+    // doesn't have (#1596), so it carries the FULL `nextItem` — allowlist and
+    // AC/INV trace clause included — rather than the signpost-normalized cut
+    // `formatImperativeForSignpost` produces for the label.
     const explanation =
       hole.kind === 'unchecked-tasks'
-        ? `${s.id} is ${phaseWord} with ${hole.remaining} of ${hole.total} tasks open`
+        ? `${s.id} is ${phaseWord} with ${hole.remaining} of ${hole.total} tasks open${
+            hole.nextItem ? ` — next: ${hole.nextItem}` : ''
+          }`
         : `${s.id} is ${phaseWord} with no task list — progress is untracked`;
 
     ranked.push(
@@ -1174,13 +1180,93 @@ export function resolveNextTask(graph: ArtifactGraph): NextTask | null {
 // =====================================================================
 
 /**
+ * Max characters for the imperative on a ONE-LINE signpost surface (status
+ * bar text, the accessibility label, the toast, the planned DAG-viz node).
+ * Generous relative to `NEXT_ITEM_MAX` (artifact-graph.ts, 80) because this
+ * bounds the WHOLE imperative — `Implement SPEC-NNN: <item>` — not just the
+ * task-item fragment, and clause-stripping below usually shrinks the item
+ * first anyway.
+ */
+const SIGNPOST_IMPERATIVE_MAX = 100;
+
+/**
+ * Trailing clauses `tasks.md` authors for a human reading the checklist next
+ * to the item — the ` - allowlist: …` note and a `(AC-n, INV-n, …)`
+ * acceptance/invariant trace clause — but that are pure noise on a one-line
+ * surface (#1596). Stripped iteratively (rather than once) because the two
+ * can nest in either order, and removing one can expose the other as the new
+ * trailing clause. Anchored to the END of the string only, so an incidental
+ * mid-sentence "allowlist" is never touched.
+ */
+function stripSignpostClauses(text: string): string {
+  let prev: string;
+  let cur = text;
+  do {
+    prev = cur;
+    cur = cur.replace(/\s*[-—]\s*allowlist:\s*.*$/i, '');
+    cur = cur.replace(/\s*\([^()]*\b(?:AC|INV|FR|OQ|CR|CQ)-\d+[^()]*\)\s*$/, '');
+  } while (cur !== prev);
+  return cur;
+}
+
+/**
+ * Strip markdown emphasis (`**bold**`, `_em_`) OUTSIDE inline-code spans and
+ * drop the backtick delimiters themselves — the same code-span-aware rule
+ * `taskItemText` applies upstream (artifact-graph.ts), so an identifier like
+ * `` `read_implement_hole` `` keeps its underscores rather than losing them to
+ * a blanket strip. Most `nextItem` values have already been through that
+ * pass by the time they reach here; this is a defensive no-op for those, and
+ * the real behaviour for any imperative built without it.
+ */
+function stripEmphasisOutsideCode(text: string): string {
+  return text
+    .split('`')
+    .map((seg, i) => (i % 2 === 1 ? seg : seg.replace(/[*_]/g, '')))
+    .join('');
+}
+
+/**
+ * Truncate to `max` code points on a WORD boundary — a mid-token cut reads as
+ * corruption, not brevity. Walks code POINTS, not UTF-16 units, so it can
+ * never split a surrogate pair. A no-op when already within budget.
+ */
+function truncateWordBoundary(text: string, max: number): string {
+  const points = Array.from(text);
+  if (points.length <= max) return text;
+  const cut = points.slice(0, max).join('');
+  const lastSpace = cut.lastIndexOf(' ');
+  const body = (lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trimEnd();
+  return `${body}…`;
+}
+
+/**
+ * Normalize an imperative for a ONE-LINE surface (#1596): strip markdown
+ * emphasis/backticks, drop the trailing allowlist/trace clauses authored for
+ * `tasks.md`'s human readers, collapse whitespace, then truncate on a word
+ * boundary. Pure and idempotent — safe to call on text that has already been
+ * through it, or through `taskItemText` upstream.
+ *
+ * This is the ONE place every one-line surface should route `task.imperative`
+ * through — the status bar, its accessibility label, the `minspec.nextTask`
+ * toast, and the planned DAG-viz node — so they all read identically instead
+ * of each re-deriving (or forgetting) the same cleanup.
+ */
+export function formatImperativeForSignpost(imperative: string): string {
+  const collapsed = stripSignpostClauses(stripEmphasisOutsideCode(imperative))
+    .replace(/\s+/g, ' ')
+    .trim();
+  return truncateWordBoundary(collapsed, SIGNPOST_IMPERATIVE_MAX);
+}
+
+/**
  * The canonical, icon-free next-task label. This is the SINGLE SOURCE OF TRUTH
  * for the wording every surface shows, so the status-bar signpost and the
  * planned DAG-visualisation node (#742/#48) always read identically — "just make
  * sure it says the same thing in both places". Each surface adds its own chrome
  * (the status bar prepends a `$(milestone)` codicon + the "MinSpec" brand; the
  * webview renders its own node styling), but the phrase itself always comes from
- * here.
+ * here, run through {@link formatImperativeForSignpost} so raw `tasks.md`
+ * markdown/metadata never reaches a one-line surface (#1596).
  *
  *   task → `Next Task: <imperative>`   e.g. "Next Task: Accept DR-022"
  *   null → `clear`
@@ -1188,5 +1274,5 @@ export function resolveNextTask(graph: ArtifactGraph): NextTask | null {
  * Pure and deterministic — no vscode, no icons. Same NextTask → same string.
  */
 export function formatNextTaskLabel(task: NextTask | null): string {
-  return task ? `Next Task: ${task.imperative}` : 'clear';
+  return task ? `Next Task: ${formatImperativeForSignpost(task.imperative)}` : 'clear';
 }

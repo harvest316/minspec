@@ -17,6 +17,7 @@ import {
   resolvePipeline,
   resolveCorruption,
   formatNextTaskLabel,
+  formatImperativeForSignpost,
   type ArtifactGraph,
   type EpicNode,
   type SpecNode,
@@ -778,7 +779,9 @@ describe('formatNextTaskLabel — single-source signpost wording', () => {
     });
     const next = resolveNextTask(g)!;
     expect(next.imperative).toBe('Approve SPEC-001');
-    // The label carries the imperative unchanged — so every surface reads the same.
+    // The label runs the imperative through the same one-line normalization
+    // every surface shares (#1596) — a no-op here since there's no tasks.md
+    // markdown/metadata to strip, so it still reads verbatim.
     expect(formatNextTaskLabel(next)).toBe('Next Task: Approve SPEC-001');
   });
 
@@ -786,6 +789,94 @@ describe('formatNextTaskLabel — single-source signpost wording', () => {
     const g = graph({ adrs: [mkAdr('DR-001', 'proposed')] });
     const next = resolveNextTask(g);
     expect(formatNextTaskLabel(next)).toBe(formatNextTaskLabel(next));
+  });
+});
+
+// =====================================================================
+// formatImperativeForSignpost — strips tasks.md authoring residue from a
+// one-line surface (#1596: the signpost was leaking raw markdown, the
+// allowlist clause, and the AC/INV trace clause into the status bar).
+// =====================================================================
+describe('formatImperativeForSignpost — one-line tasks.md cleanup (#1596)', () => {
+  it('drops the trailing " - allowlist: …" clause', () => {
+    expect(
+      formatImperativeForSignpost(
+        'Implement SPEC-038: wire the adapter - allowlist: packages/minspec/tests/ownership.test.ts',
+      ),
+    ).toBe('Implement SPEC-038: wire the adapter');
+  });
+
+  it('drops the trailing "(AC-n, INV-n)" trace clause', () => {
+    expect(formatImperativeForSignpost('Implement SPEC-038: wire the adapter (AC-7, INV-2)')).toBe(
+      'Implement SPEC-038: wire the adapter',
+    );
+  });
+
+  it('drops both clauses however they nest, and strips residual emphasis', () => {
+    // Real tasks.md convention (SPEC-038-spec-code-ownership/tasks.md): the
+    // trace clause precedes the allowlist clause, both em-dash-joined, and
+    // the task title is bold.
+    expect(
+      formatImperativeForSignpost(
+        'Implement SPEC-038: **wire the adapter** *(AC-7, INV-2)* — allowlist: `packages/minspec/tests/ownership.test.ts`',
+      ),
+    ).toBe('Implement SPEC-038: wire the adapter');
+  });
+
+  it('collapses whitespace left behind by clause removal', () => {
+    expect(formatImperativeForSignpost('Implement SPEC-038:   wire   the adapter   (AC-1)')).toBe(
+      'Implement SPEC-038: wire the adapter',
+    );
+  });
+
+  it('truncates a long imperative on a WORD boundary, never mid-token', () => {
+    const long = `Implement SPEC-038: ${'wire the adapter '.repeat(8).trim()}`;
+    const result = formatImperativeForSignpost(long);
+    expect(result.length).toBeLessThanOrEqual(101); // 100 chars + the ellipsis
+    expect(result.endsWith('…')).toBe(true);
+    // No dangling half-word right before the ellipsis.
+    expect(result.slice(0, -1).endsWith(' ')).toBe(false);
+    expect(long.startsWith(result.slice(0, -1))).toBe(true);
+  });
+
+  it('a clean imperative with nothing to strip passes through unchanged', () => {
+    expect(formatImperativeForSignpost('Implement SPEC-038: wire the adapter')).toBe(
+      'Implement SPEC-038: wire the adapter',
+    );
+  });
+
+  it('is idempotent', () => {
+    const once = formatImperativeForSignpost(
+      'Implement SPEC-038: **wire the adapter** *(AC-7, INV-2)* — allowlist: `foo.ts`',
+    );
+    expect(formatImperativeForSignpost(once)).toBe(once);
+  });
+
+  it('end-to-end via a real implement-hole: the label drops what the tooltip keeps', () => {
+    const g = graph({
+      epics: [mkEpic('EPIC-001', 'active', { order: 1 })],
+      specs: [
+        mkSpec('SPEC-038', 'implementing', 'approved', {
+          epic: 'EPIC-001',
+          phase: 'implement',
+          implementHole: {
+            kind: 'unchecked-tasks',
+            remaining: 1,
+            total: 11,
+            nextItem: '(test, T0 — symmetry) wire the adapter (AC-7, INV-2) — allowlist: ownership.test.ts',
+          },
+        }),
+      ],
+    });
+    const next = resolveNextTask(g)!;
+    // The label (status bar / toast / accessibility text) is markdown/metadata-free.
+    expect(formatNextTaskLabel(next)).toBe(
+      'Next Task: Implement SPEC-038: (test, T0 — symmetry) wire the adapter',
+    );
+    // The tooltip-bound explanation keeps the full line — it has the room.
+    expect(next.evidence.explanation).toContain(
+      '— next: (test, T0 — symmetry) wire the adapter (AC-7, INV-2) — allowlist: ownership.test.ts',
+    );
   });
 });
 
@@ -820,7 +911,11 @@ describe('INV-PA — phase-action implement-hole node (#1436)', () => {
     expect(next.kind).toBe('phase-action');
     expect(next.targetId).toBe('SPEC-001');
     expect(next.imperative).toBe('Implement SPEC-001: Wire the adapter');
-    expect(next.evidence.explanation).toBe('SPEC-001 is implementing with 3 of 10 tasks open');
+    // The tooltip-bound explanation carries the full nextItem too (#1596) — it's
+    // a multi-line surface with room the one-line label doesn't have.
+    expect(next.evidence.explanation).toBe(
+      'SPEC-001 is implementing with 3 of 10 tasks open — next: Wire the adapter',
+    );
   });
 
   it('INV-PA-2 (DR-012 gate): an UNAPPROVED spec never emits phase-action, however open its tasks', () => {
@@ -927,7 +1022,9 @@ describe('INV-PA — phase-action implement-hole node (#1436)', () => {
     expect(next.kind).toBe('phase-action');
     expect(next.imperative).toBe('Finish the task list for SPEC-001: Wire the adapter');
     expect(next.imperative).not.toContain('Implement');
-    expect(next.evidence.explanation).toBe('SPEC-001 is in the tasks phase with 3 of 10 tasks open');
+    expect(next.evidence.explanation).toBe(
+      'SPEC-001 is in the tasks phase with 3 of 10 tasks open — next: Wire the adapter',
+    );
   });
 
   it('INV-PA-STATUS: a non-implementing spec emits nothing even when approved and holed', () => {
