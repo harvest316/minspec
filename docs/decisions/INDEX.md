@@ -699,12 +699,12 @@ DR-076 cut the gates that existed for multi-human trust. This is a different cut
 An adversarial analysis of append-only log integrity was run to answer one question: if MinSpec kept a Karpathy-style log.md, how strong an integrity guarantee could it actually carry? Three candidate designs were built and each was handed to an independent red team whose findings overrode the designs' own self-assessments. The full working is at docs/research/log-integrity-2026-08-23.md.
 <!-- /dr-summary:DR-087 -->
 
-## [DR-088 — Ownership declarations leave the canonical approval hash - the decision, the migration, and the unsolved half](DR-088.md)
+## [DR-088 — Ownership declarations leave the canonical approval hash, and the freeze that replaces the alarm draws on the owned set as it stood at approval](DR-088.md)
 
 *Status: proposed · Date: 2026-08-24*
 
-<!-- dr-summary:DR-088 auto=a3444f8d8257 -->
-The founder decided on 2026-08-23, answering #1481 (should implements: be part of the canonicalized spec hash?), that implements: comes out of the canonical approval hash. This record does not relitigate that. It answers what exactly leaves, how the existing approvals migrate, and - honestly - fails to answer what replaces the lost alarm.
+<!-- dr-summary:DR-088 auto=3be0338915c8 -->
+The founder decided on 2026-08-23, answering #1481 (should implements: be part of the canonicalized spec hash?), that implements: comes out of the canonical approval hash. This record does not relitigate that. It answers what exactly leaves, what replaces the lost alarm, and how the existing approvals migrate.
 <!-- /dr-summary:DR-088 -->
 
 ## [DR-089 — The harness manifest records authorship, not disk - and carries a format version, because a poisoned manifest cannot be detected from its contents](DR-089.md)
