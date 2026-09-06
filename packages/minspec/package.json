@@ -657,6 +657,7 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.28.1",
+    "jose": "^6.2.10",
     "mocha": "^11.3.0",
     "vitest": "4.1.7"
   }
