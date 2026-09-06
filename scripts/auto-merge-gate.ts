@@ -601,6 +601,51 @@ const BOUNDARY_ROOT_BASENAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Repo-local GOVERNANCE files matched by exact repo-relative path.
+ *
+ * Deliberately separate from {@link BOUNDARY_SINGLE_FILES} (#1758), which is
+ * derived from `MACHINERY_SINGLE_FILES` — files that GENERATE machinery whose
+ * blast radius reaches every downstream MinSpec-initialised repo. This set is the
+ * opposite scope: settings that govern THIS repo only and ship to nobody. Folding
+ * `.minspec/config.json` into the machinery list would overstate its reach and
+ * change what the ai-review self-edit gate treats as machinery, so the two stay
+ * distinct and `isBoundaryPath` checks both.
+ *
+ * `.minspec/config.json` carries the autonomy setting (DR-086). Flipping
+ * `autonomy: ask -> act` widens what every agent in this repo may do without
+ * asking, and item 6 of that DR's own stop list is "anything that would edit
+ * this list, or the autonomy setting itself".
+ *
+ * WHAT THIS IS: a SECOND, INDEPENDENT WITNESS — not a closed hole.
+ *
+ * A setting-only diff is ALREADY ineligible without this rule. `classifyBlast`
+ * is deny-by-default since #490 (absence of an affirmative low signal means
+ * high), and `.minspec/config.json` is neither docs nor test, so it can never
+ * earn `low_blast_docs_test_only` from {@link detectLowBlastDocsTest}. The
+ * counterfactual is asserted, not assumed, in
+ * packages/minspec/tests/autonomy-setting-boundary.test.ts ("is a SECOND
+ * witness: the diff is already held without it, and still held with it").
+ *
+ * An earlier version of this comment claimed the setting "could auto-merge with
+ * nobody reading it", citing only `isBoundaryPath(...) === false`. That proxy
+ * shows the detector returned false; it does not show auto-merge was reachable.
+ * The claim was wrong and is recorded here so it is not re-derived.
+ *
+ * It earns its place because the hold otherwise rests on a SINGLE producer
+ * (constitution invariant 2), and one widening of the docs/test classifier would
+ * remove it silently. {@link detectLowBlastDocsTest} excludes `isBoundaryPath`
+ * files, so this rule is exactly the hook that keeps the setting out of any
+ * future low-blast certification.
+ *
+ * EXACT paths, not a `.minspec/` prefix and not a `config.json` basename: the
+ * prefix would sweep 61 approval sidecars and classify every routine approval
+ * HIGH, and the basename would match any `config.json` anywhere in the tree. A
+ * gate that fires constantly gets routed around, and one people route around is
+ * worse than none, because it still reads as protection.
+ */
+const BOUNDARY_GOVERNANCE_PATHS: ReadonlySet<string> = new Set(['.minspec/config.json']);
+
+/**
  * Package-manager / build-tool config matched by basename. `tsconfig*.json`
  * (paths / emit / strictness) is matched via prefix+suffix rather than an exact
  * set, since project references add arbitrarily-named variants
@@ -631,6 +676,7 @@ export function isBoundaryPath(rawPath: string): boolean {
     if (p === prefix.slice(0, -1) || p.startsWith(prefix) || p.includes('/' + prefix)) return true;
   }
   if (BOUNDARY_SINGLE_FILES.has(p)) return true;
+  if (BOUNDARY_GOVERNANCE_PATHS.has(p)) return true;
   const base = path.basename(p);
   if (BOUNDARY_ROOT_BASENAMES.has(base)) return true;
   if (BOUNDARY_CONFIG_BASENAMES.has(base)) return true;
