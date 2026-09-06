@@ -227,12 +227,19 @@ function flagValues(h: Harness, flag: string): string[] {
  * the review state — the two fields the shadow would have changed — and let the rest of
  * the policy move. Exactly one `--add-label` is still required: the shadow must not add
  * a second one.
+ *
+ * `hold:*` is pinned too, unlike the rest of the growing label set (#1526): it is one of
+ * the five fields the shadow verdict is compared on (`label, role, hold, tier,
+ * human_only`), and the whole point of this suite is that the shadow's `hold: none` must
+ * not displace the live `hold: human`. Without this, a change to the operand that
+ * authorises or withholds a human gate could land with no test noticing.
  */
 function expectLiveVerdictApplied(h: Harness): void {
   const applied = flagValues(h, '--add-label');
   expect(applied).toHaveLength(1);
   expect(applied[0]).toContain('role:architect');
   expect(applied[0]).toContain('needs-review');
+  expect(applied[0]).toContain('hold:human');
 }
 
 const ghArgs = (h: Harness): string[] =>
