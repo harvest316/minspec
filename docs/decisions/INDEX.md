@@ -714,4 +714,12 @@ The founder decided on 2026-08-23, answering #1481 (should implements: be part o
 <!-- dr-summary:DR-089 auto=e73452b46dc0 -->
 .minspec/generated-hashes.json decides, on every *Refresh Harness Files*, whether a section of a managed file is MinSpec's own output (safe to update from the template) or the project's content (must be preserved). #1697 established that it was answering that question wrongly in two independent ways, and that the wrong answer deleted a Principle's standing exception - a paragraph that authorised shipped code - from a live project.
 <!-- /dr-summary:DR-089 -->
+
+## [DR-090 — A wrong triage classification is a corrected INPUT, never an overridden output - the dispute lane declares the work TYPE the classifier misread, re-runs the same gate over it, and keeps the disagreement as a labelled corpus](DR-090.md)
+
+*Status: proposed · Date: 2026-09-02*
+
+<!-- dr-summary:DR-090 auto=c5ac0ec77f33 -->
+DR-072 gave a triage-held issue a human exit, but only for the tier hold: human_only is a content class, so no keystroke transfers authorship and the hold is absolute. That boundary is right. What it leaves open is the case where the classification itself is wrong — for which the only documented remedy today is to reword the issue body until the classifier changes its mind.
+<!-- /dr-summary:DR-090 -->
 <!-- minspec:dr-index:end -->
