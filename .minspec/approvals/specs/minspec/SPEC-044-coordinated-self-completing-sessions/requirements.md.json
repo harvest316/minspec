@@ -1,9 +1,9 @@
 {
   "specPath": "specs/minspec/SPEC-044-coordinated-self-completing-sessions/requirements.md",
-  "specHash": "c222906f948c463ea4503debcec81cbc70b240a4d298eebbc69108f8ce3077f8",
-  "approvedAt": "2026-07-26T08:16:39.787Z",
+  "specHash": "4f2a1270158bacce904aa9a706541f9639c40526f9fa03d008f5bc3ff9487f75",
+  "approvedAt": "2026-09-05T22:48:51.097Z",
   "approvedBy": "github@harvest316.com",
   "tier": "T4",
   "migrated": false,
-  "baselineBlob": "8514f003a6ef9183b57b94e169a1ee8226f2d47b"
+  "baselineBlob": "222cbf1e227a5fb5e34b24cca3dabec99d963bcc"
 }

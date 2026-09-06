@@ -1,14 +1,20 @@
 ---
 id: SPEC-062
 type: requirements
-status: planning
+status: specifying   # DERIVED, not a regression. `deriveStatus` (lifecycle.ts:140) returns
+  # 'specifying' whenever approvalState !== 'approved' — INV-1, and that guard fires BEFORE
+  # the phases are consulted. The 2026-09-05 approval was staled by the #1811 review fixes,
+  # so 'planning' here would be DRIFT (`facts status SPEC-062` confirms: MATCH on
+  # 'specifying'). Reading `plan: in-progress` below and concluding 'planning' applies
+  # `getSpecStatus` (lifecycle.ts:172), the phases-ONLY twin that DR-069 §3 says must NOT be
+  # aligned to deriveStatus. Re-approval flips this back to 'planning' automatically.
 tier: T4
 product: minspec
 epic: EPIC-007  # Agent Execute — the dev-time autonomous build/merge pipeline (this is its scheduling + PR-completeness layer)
 aspects: [autonomous-pipeline, drain, pull-request, auto-merge, scheduling, github-actions, signpost, hitl, sidecar-hash, git-recovery, tier-0, offline, no-silent-gate, blast-radius]
 depends_on: []  # see "Blocking dependencies" — #810/#811 (ready-to-merge gate) and #880 (docs-lane approvals) gate the fully-autonomous outcome, not this spec's authorship
 relates_to: [SPEC-044, SPEC-024, SPEC-050, SPEC-012, DR-057, DR-061, DR-067, DR-076, DR-015, DR-004]
-implements: [.github/workflows/drain.yml]  # NEW - the session-independent trigger (FR-1). D1 RESOLVED 2026-08-23 as Option A (the Action runs only the non-LLM steps), so this path is now settled rather than provisional. D2/D3/D4 remain open but none of them changes the owned set.
+implements: [.github/workflows/drain.yml]  # NEW - the session-independent trigger (FR-1). D1 RESOLVED 2026-08-23 as Option A (the Action runs only the non-LLM steps), so this path is settled. All four Clarify decisions are now resolved (D2/D3/D4 on 2026-09-05) — D3's routing rule is decided, its mechanism deferred to #1608; none of them changed the owned set.
 affects: [scripts/drain-inbox.sh, scripts/dispatch-issue.sh, scripts/remediate-pr.sh, scripts/auto-merge-gate.ts]  # drain-inbox/dispatch-issue/remediate-pr are OWNED by SPEC-044 via implements: - this spec modifies them, never owns them (INV: one owner per file). auto-merge-gate.ts is currently unowned; SPEC-024 owns the decideAutoMerge decision this spec only invokes.
 phases:
   specify: done
@@ -165,11 +171,22 @@ defined path into the human's one next-task signpost.
 - **FR-5 (held items feed the SPEC-012 signpost — no parallel surface).** Every item the drain
   cannot auto-decide — a machinery-gate merge (FR-6), a DR/spec **acceptance**, an invariant
   change, a merge conflict, a stale-approval HOLD (FR-3), anything irreversible — MUST become a
-  labelled entry in a **hold queue** that the existing **[SPEC-012](../SPEC-012-next-task-resolver/requirements.md)**
-  next-task resolver reads, so the signpost picks the single next human action. The drain MUST
-  NOT auto-decide these and MUST NOT invent a second surfacing mechanism (founder steer). The
-  precise queue representation the resolver consumes is a
-  **[Decision needed — D3](#d3--how-held-items-reach-the-spec-012-resolver)**.
+  labelled entry in a **hold queue**, routed by who can discharge it. A **human-dischargeable**
+  hold — which is every item enumerated above — goes to the
+  **[SPEC-012](../SPEC-012-next-task-resolver/requirements.md)** next-task resolver, so the
+  signpost picks the single next human action. A hold waiting on an **agent** goes to the
+  agent-queue surface instead; none exists in the list above today, but the routing rule is
+  stated so a future non-dischargeable hold cannot silently land on the human signpost. The
+  drain MUST NOT auto-decide these and MUST NOT invent a second surfacing mechanism (founder
+  steer). The
+  precise queue representation the resolver consumes is
+  **[D3](#d3--how-held-items-reach-the-spec-012-resolver), resolved 2026-09-05**: held items
+  split by who can discharge them — human-held to the SPEC-012 signpost, agent-held to the
+  agent-queue surface ([DR-085](../../../docs/decisions/DR-085.md) §1 membership test, §4 which establishes the surface) — with the queue
+  representation itself deferred to #1608 — verified 2026-09-05 as OPEN and titled *"feat(signpost):
+  split the signpost into human queue + agent queue (implements DR-085)"*, so the deferral has a
+  tracked owner. "No second surfacing
+  mechanism" is unchanged: the two surfaces are DR-085's mandated split, not a parallel signpost.
 - **FR-6 (machinery / governance hold).** The drain MUST **hold** (never auto-merge) any PR
   that touches machinery (`.github/`, `scripts/`, hooks, CI, branch-protection config) or that
   is a governance act (DR/spec/epic acceptance, constitution/invariant change). Held ⇒ FR-5.
@@ -216,6 +233,14 @@ These are the choices this spec deliberately does **not** make for the founder. 
 options and the trade-off; the human's one read resolves them. Resolving them may promote one or
 more into a Decision Record (see [DR note](#dr-note)).
 
+> **Clarify status: all four resolved** — D1 on 2026-08-23, D2/D3/D4 on 2026-09-05. Each keeps
+> its options below as the record of what was chosen between, per [DR-086](../../../docs/decisions/DR-086.md)
+> §4 (the rejected alternatives are the only review path once they are no longer seen live).
+>
+> **One residual:** D3's *mechanism* is deferred to #1608, so the Clarify pass is decided but
+> not fully discharged. That is a deliberate deferral, not an open question — the routing rule
+> is settled; only its representation waits on the surface split.
+
 ### D1 — What runs the loop when no session is alive?
 
 > **RESOLVED 2026-08-23 — Option A** (founder). The GitHub Action runs only the **non-LLM**
@@ -257,6 +282,21 @@ no PAYG secret to CI. Downside named: rework still needs a session, so a PR stuc
 `ai-review:changes` on a quiet day waits.
 
 ### D2 — Which identity/token merges, and how is INV-2 guaranteed?
+
+> **RESOLVED 2026-09-05 — default `GITHUB_TOKEN`** (founder). Implementation MUST pair it with a
+> test asserting it cannot merge past a required check; that test does not exist yet (this spec
+> is `implement: pending`). The point of choosing `GITHUB_TOKEN` is that INV-2 then rests on a
+> token that *structurally* cannot bypass the gate, rather than on the test alone.
+>
+> **Rejected:** a fine-grained PAT and a GitHub App installation token. Both buy a distinct
+> merger identity in the audit trail, and both are stored secrets that can be over-scoped. The
+> deciding factor is R1 — *"a scheduled unattended merger becomes a way to bypass review"*:
+> `GITHUB_TOKEN` cannot approve its own required checks, so it is the option that cannot bypass
+> the gate even if misconfigured. Least-privilege and self-installing beat a nicer audit line.
+>
+> **Cost accepted:** no distinct merger identity — every drain merge reads as GitHub itself.
+> Mitigated by the merge-reason comment named below.
+
 The scheduled Action needs a token that can merge. Options: the default `GITHUB_TOKEN`
 (cannot approve its own required checks; merges only if protection admits — good), a fine-grained
 PAT, or a GitHub App installation token. *Trade-off:* `GITHUB_TOKEN` is the least-privilege,
@@ -267,6 +307,27 @@ required check. Downside: no distinct merger identity in the audit trail — mit
 merge-reason comment.
 
 ### D3 — How do held items reach the SPEC-012 resolver?
+
+> **RESOLVED 2026-09-05 — the question splits first; the mechanism is deferred** (founder).
+>
+> [DR-085](../../../docs/decisions/DR-085.md) landed after this section was written and changes
+> its premise. The signpost now carries **only acts the human can discharge**. So "held items
+> feed the signpost" is no longer one routing rule but two:
+>
+> - a PR held for a **human decision** is dischargeable → it belongs on the SPEC-012 signpost;
+> - a PR held **waiting on an agent** is not → it belongs on the agent-queue surface (DR-085 §1).
+>
+> FR-5's "no parallel surface" requirement still holds — the two surfaces are the split DR-085
+> mandates, not a second signpost.
+>
+> **Mechanism (label vs hold-queue file vs extending SPEC-012's pending-item model) is deferred
+> to #1608**, which owns the surface split. Picking one now would route both kinds to one
+> surface and re-create exactly what DR-085 §1 removed.
+>
+> **Rejected:** choosing the label mechanism immediately. It is the cheapest and is visible on
+> GitHub, but it answers the pre-DR-085 question. **Cost accepted:** D3 is blocked behind #1608,
+> so this spec cannot fully close its Clarify pass until that lands.
+
 FR-5 requires held items to feed the existing signpost, not a parallel surface. Options:
 (a) a GitHub label (`needs-human-review` / a new `held:*`) the resolver already or newly reads;
 (b) a hold-queue file the resolver ingests; (c) extend SPEC-012's pending-item model with a
@@ -276,6 +337,18 @@ but is new state to keep in sync. **This is genuinely a SPEC-012 question** — 
 source lands here or in SPEC-012 is itself part of the decision.
 
 ### D4 — Cadence / cost of the scheduled cycle.
+
+> **RESOLVED 2026-09-05 — both** (founder). Event-driven (`pull_request`/`push`) for promptness,
+> plus a slow cron as the liveness floor, on a non-round minute to avoid the fleet-wide `:00`
+> spike. Cron interval matches the existing `MINSPEC_DRAIN_INTERVAL=1200` default.
+>
+> **Rejected:** event-driven only — near-zero idle cost, but misses time-based staleness, which
+> is the case the loop exists for (a PR that goes stale while nothing pushes). Cron only —
+> a liveness floor with no responsiveness.
+>
+> **Cost accepted:** Actions minutes burn on a quiet repo even when there is nothing to do. R6
+> carries it; the non-round minute and the 20-minute floor are the mitigation.
+
 `on: schedule` cadence trades responsiveness against Actions minutes and API rate limits.
 Options: event-driven only (`pull_request`/`push`, near-zero idle cost, misses time-based
 staleness), a slow cron (e.g. every ~20 min, matching the existing

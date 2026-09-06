@@ -162,6 +162,151 @@ No Clarify resolution blocks the Plan phase; all four resolve to a stated defaul
 | R9 | **Suspended-but-alive owner reclaimed on a lapsed heartbeat** — laptop sleep / renew-stall (all unbounded) makes the liveness predicate misjudge a live owner as dead, and the drain adopts its live PR (a partial #912 thrash return). | **FR-8:** two-phase grace-interval reclaim (post-notice → wait one renew → re-read → back off if the owner re-asserts) + owner **re-verify before every credentialed op**; the handshake, not TTL sizing, is the fix (no TTL bounds laptop sleep). INV-4 restated over the predicate's verdict (AC-3b). |
 | R10 | **Incomplete claim enumeration** — a paginated-short / rate-limited / truncated read omits an earlier competitor, so a loser computes a false `own`. | **INV-6/FR-2:** the verify-read must be provably complete (paginate to exhaustion; compare against served count; detect truncation) before honouring `own`; any read error or partial page ⇒ **stand-down** (AC-9). |
 
+## Amendment A (2026-09-05) - PROPOSED, not accepted
+
+**Splits FR-4. Ownership of a fix stays with the creator; ordering of the merge queue moves
+to a single central driver.** FR-4 as written makes the creating session responsible for
+both, and the two are different problems: it solved *who fixes this PR* and never addressed
+*which PR should move first*. Two measured holes follow, neither reachable by tuning the
+existing design. Recorded as `proposed` and held until the founder ratifies it; this is a
+T4 spec and acceptance is a separate human act. Triggered by [minspec #1750].
+
+### Hole 1 - shepherding is bounded to one hour and dies with its session
+
+`scripts/lib/shepherd-pr.sh:39` caps the whole loop at `MINSPEC_SHEPHERD_MAX_SECS` (default
+**3600**), and the loop is in-process, so it also ends when its session exits. After either
+limit, **nothing** drives that PR. FR-6 demoted the drain to orphan-fallback precisely
+because the creator was expected to be driving; when the creator's hour is up, the fallback
+is all that remains, and #1803 shows the fallback's classifier returns `skip-clean` on a
+cold `UNKNOWN` merge state - it declares the stale PR healthy.
+
+Measured 2026-09-05 on this repository:
+
+```
+$ pgrep -af "shepherd|dispatch-issue"
+(no output - zero shepherds running)
+
+$ gh pr list --state open --json number,createdAt,updatedAt,mergeStateStatus  # BEHIND only
+#1740 created 08-30   #1742 created 08-30   #1744 created 08-30
+#1748 created 08-30   #1760 created 08-31, last touched 08-31T03:45
+```
+
+Twenty-four PRs `BEHIND`, the oldest six days old, one untouched for five. Every shepherd
+that ever held them expired long ago. This is not sessions failing to honour FR-4 - it is
+FR-4 working exactly as specified and then stopping.
+
+### Hole 2 - FR-4 assigns an owner, never a priority
+
+A creator-shepherd sees one PR. It has no view of the queue, so it cannot know that landing
+#1813 unblocks every other PR while #1821 unblocks nothing. Ordering is therefore whatever
+order sessions happen to be alive in - first-in-best-dressed at best, and in practice
+whoever survived longest.
+
+Under `strict_required_status_checks_policy` (SPEC-065 DQ-1) ordering is not a nicety, it is
+the whole cost model: every merge to `main` puts every other open PR back to `BEHIND`.
+Updating N branches independently burns roughly **N²/2** CI runs plus review panels, because
+the first merge invalidates the rest; updating exactly one, letting it land, then the next,
+costs **N**. `scripts/lib/shepherd-pr.sh` cannot make that choice, because the information
+needed to make it is not in its scope. Nothing in SPEC-044 owns it.
+
+### What `skip-live-owned` does and does not cover
+
+FR-6's `skip-live-owned` token (`scripts/remediate-pr.sh:113,446`, seam at
+`scripts/lib/issue-lease.sh:360`, pinned by
+`packages/minspec/tests/remediate-pr-classify.test.ts:145`) is correct and stays. It prevents
+**two** drivers contending for one PR. It is silent on the case actually observed, which is
+**zero** drivers, and silent on ordering, which was never a contention question. An
+absent-owner case and a competing-owner case are different defects; only the second was
+specified against.
+
+### The change
+
+- **FR-4a (creator-owned FIXES - unchanged in substance).** The session that opened a PR
+  remains the owner of *fixing* it: on `ai-review:changes` or a failing check it reuses its
+  warm worktree and branch and dispatches a fresh, non-exhausted fix agent. This is FR-4's
+  real value and the reason not to move fixes centrally - the warm tree cannot be recreated
+  cheaply elsewhere. Conflicts are still surfaced to a human, never LLM-resolved.
+- **FR-4b (central merge ordering - new).** A single driver holds the queue view and owns
+  branch updates and merge confirmation. It picks the next PR to update, waits for it to
+  land, then picks the next - the serialisation that turns N²/2 into N. It is unbounded in
+  the sense that matters: it does not expire after an hour, and it does not vanish when a
+  build session exits.
+- **FR-6 (adjusted).** The drain stops being the only fallback for an expired creator, since
+  under FR-4b there is no gap to fall back from. It remains the reaper for expired *leases*.
+
+### The mechanism - capability REMOVED, not merely reassigned
+
+Saying "the driver owns ordering" changes nothing on its own. `shepherd_decide` can emit
+`do-rebase` today (`scripts/lib/shepherd-pr.sh:72-73`), so on any merge to `main` every live
+shepherd independently observes `BEHIND` and each one updates its own branch - N branch
+pushes, N CI runs, N full review panels, for a state that the next merge invalidates
+anyway. A rule telling shepherds to refrain is the exact "trust the model" shape the
+constitution names as the failure mode.
+
+So the amendment **removes the capability**: `do-rebase` leaves the shepherd's vocabulary
+and is replaced by a wait token. A shepherd that finds itself `BEHIND` does nothing and
+waits, because updating a branch is no longer something it can express. Only the driver
+can update, because only the driver *can*. This is checkable by a test over
+`shepherd_decide`'s output set, in the same shape as the existing
+`packages/minspec/tests/shepherd-decide.test.ts` priority-gate sweep.
+
+Note this is independent of who approves. A human keystroke on one PR puts every other PR
+`BEHIND` exactly as an unattended merge does, so the stampede is a property of `strict`
+plus N independent updaters, not of automation.
+
+### The driver may already exist - GitHub's native merge queue
+
+[SPEC-065](../SPEC-065-solo-mode-ceremony-cut/requirements.md) recorded both halves of this
+before the pain arrived: line 204 notes that `main` has **no merge queue** configured, and
+line 226 that "a merge queue (option (b)) remains the better" answer, deferred against a
+throughput trade. A merge queue does natively what FR-4b describes: it serialises, updates
+one branch at a time, and owns the order.
+
+Building a custom driver when a native one was already identified as the better answer
+needs a reason. The Clarify pass should compare them explicitly rather than assume the
+custom path.
+
+**UNVERIFIED and load-bearing for that comparison:** whether a machinery PR can enter a
+merge queue at all. A queue requires the PR to satisfy required checks, and
+`machinery-review-required` is `ACTION_REQUIRED` by design, so machinery may be
+unqueueable - which would leave exactly the PR class this spec most needs to move outside
+the native mechanism. Settle this before choosing.
+
+### What this does not change
+
+`INV-5` is untouched: the fix agent stays credential-free and the parent performs every
+credentialed op. `ai-review:*` labels remain CI-bot-owned. Merge conflicts are still surfaced
+to a human. The FR-12 absolute max-claim-lifetime still bounds the build phase. Nothing here
+grants a new merge authority - machinery PRs still require the founder's keystroke, because
+a gate cannot certify a change to itself.
+
+### Rejected alternatives
+
+- **Raise `MINSPEC_SHEPHERD_MAX_SECS`.** Rejected: it postpones hole 1 without touching it,
+  since the loop still dies with its session, and it does nothing at all for hole 2.
+- **Delete creator-shepherding entirely and centralise both halves.** Rejected: it discards
+  FR-4's warm worktree and non-exhausted fix agent, which is the part that measurably works
+  and the reason #912 was raised. Central fixing would re-clone and re-read from cold.
+- **Leave it and rely on the drain.** Rejected on the evidence above - the drain is the
+  fallback and it has not moved these PRs in six days, for a reason #1803 documents.
+
+### Open questions for Clarify
+
+1. **Where does the driver live?** It is machine-wide and long-lived, which sits awkwardly
+   with constitution invariant 3 (blast radius is the repo that opted in) and with the Tier-0
+   boundary, since driving merges is networked. Candidates: the Tier-1 `scripts/` harness, the
+   Execute ext (EPIC-007), or a supervisor session. This is the load-bearing question and
+   should be settled before Plan.
+2. **What is the priority function?** "Unblocks the most other PRs" is the obvious first
+   answer, but it needs a definition that is computable without an LLM, per the never-wrong
+   spine.
+3. **Exactly-one-driver.** The driver is a singleton and needs the same lease treatment as
+   every other claim in this spec, or it reintroduces the contention FR-6 removed.
+4. **Relationship to [minspec #1750] and [minspec #1803].** Both are in flight and both
+   overlap this; the amendment should say which of them it supersedes rather than leaving
+   three descriptions of one problem.
+
+
 ## Traceability
 
 - **Issue:** [#912](https://github.com/AIClarityAU/minspec/issues/912) (the drain-remediator crash-thrash outage that motivates creator-owned shepherding + orphan-fallback). Related: [#900](https://github.com/AIClarityAU/minspec/issues/900) (the stalled, unmerged PR carrying a prior "DR-067" draft — superseded by the on-`main` DR-067), [#888](https://github.com/AIClarityAU/minspec/issues/888) (the G-8 autonomous sync/merge loop — creator-owned shepherding is its "who drives each PR to merge" half).
