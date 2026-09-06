@@ -709,7 +709,7 @@ The founder decided on 2026-08-23, answering #1481 (should implements: be part o
 
 ## [DR-089 — The harness manifest records authorship, not disk - and carries a format version, because a poisoned manifest cannot be detected from its contents](DR-089.md)
 
-*Status: proposed · Date: 2026-08-31*
+*Status: accepted · Date: 2026-08-31*
 
 <!-- dr-summary:DR-089 auto=e73452b46dc0 -->
 .minspec/generated-hashes.json decides, on every *Refresh Harness Files*, whether a section of a managed file is MinSpec's own output (safe to update from the template) or the project's content (must be preserved). #1697 established that it was answering that question wrongly in two independent ways, and that the wrong answer deleted a Principle's standing exception - a paragraph that authorised shipped code - from a live project.
