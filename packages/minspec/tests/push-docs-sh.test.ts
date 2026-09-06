@@ -61,12 +61,32 @@ esac
   );
 }
 
+/** Parse a single-line `--flag <value>` out of the logged `gh pr create` argv lines. */
+function flagFromGhLog(callsLog: string, flag: string): string {
+  const lines = fs.readFileSync(callsLog, 'utf-8').split('\n');
+  const i = lines.indexOf(flag);
+  if (i === -1 || lines[i + 1] === undefined) throw new Error(`no ${flag} in gh log: ${lines.join('|')}`);
+  return lines[i + 1];
+}
+
+/**
+ * Parse the `--body <value>` out of the logged argv. Unlike the other flags,
+ * `--body`'s value is (legitimately) multi-line, and it's always the LAST
+ * argument `push-docs.sh` passes — so everything after the `--body` marker
+ * line, through the end of the log (minus the trailing newline the fake
+ * `gh`'s `printf '%s\n'` adds), is the body value verbatim.
+ */
+function bodyFromGhLog(callsLog: string): string {
+  const raw = fs.readFileSync(callsLog, 'utf-8');
+  const marker = '\n--body\n';
+  const i = raw.indexOf(marker);
+  if (i === -1) throw new Error(`no --body in gh log: ${raw}`);
+  return raw.slice(i + marker.length).replace(/\n$/, '');
+}
+
 /** Parse the `--head <branch>` value out of the logged `gh pr create` argv lines. */
 function branchFromGhLog(callsLog: string): string {
-  const lines = fs.readFileSync(callsLog, 'utf-8').split('\n');
-  const i = lines.indexOf('--head');
-  if (i === -1 || !lines[i + 1]) throw new Error(`no --head in gh log: ${lines.join('|')}`);
-  return lines[i + 1];
+  return flagFromGhLog(callsLog, '--head');
 }
 
 const roots: string[] = [];
@@ -140,6 +160,44 @@ describe('push-docs.sh — delete-only lane push (#798)', () => {
     const out = runPushDocs(primary, root, ['-m', 'docs: remove DR-101']);
     expect(out).not.toMatch(/no changed docs-corpus files found/);
     expect(out).toMatch(/push-docs: opened/);
+  });
+});
+
+describe('push-docs.sh — PR title/body split (#1508)', () => {
+  it('a multi-paragraph -m message produces a PR whose title is the subject alone', () => {
+    const { root, primary } = setupRepo({ 'docs/decisions/DR-102.md': 'seed\n' });
+    const callsLog = path.join(root, 'gh-calls.log');
+    fs.writeFileSync(path.join(primary, 'docs/decisions/DR-102.md'), 'updated\n');
+
+    const subject = 'docs(DR-102): wire note';
+    const bodyPara1 = 'This paragraph explains the rationale in more detail than fits on one line.';
+    const bodyPara2 = 'A second paragraph with further context, so the body is genuinely multi-paragraph.';
+    const msg = `${subject}\n\n${bodyPara1}\n\n${bodyPara2}`;
+
+    const out = runPushDocs(primary, root, ['-m', msg]);
+    expect(out).toMatch(/push-docs: opened/);
+
+    expect(flagFromGhLog(callsLog, '--title')).toBe(subject);
+    const body = bodyFromGhLog(callsLog);
+    expect(body).toContain(bodyPara1);
+    expect(body).toContain(bodyPara2);
+  });
+
+  it('a subject line over 256 chars fails before anything is pushed', () => {
+    const { root, origin, primary } = setupRepo({ 'docs/decisions/DR-103.md': 'seed\n' });
+    fs.writeFileSync(path.join(primary, 'docs/decisions/DR-103.md'), 'updated\n');
+
+    const longSubject = 'docs(DR-103): ' + 'x'.repeat(250); // > 256 chars total
+    const msg = `${longSubject}\n\nsome body text`;
+
+    expect(() => runPushDocs(primary, root, ['-m', msg])).toThrow(/PR title .* exceeds|Command failed/);
+
+    // Nothing was pushed: no docs-lane branch exists on the remote, and the
+    // primary checkout registered no leftover worktree.
+    const branches = git(origin, 'branch', '--list', 'docs-lane/*');
+    expect(branches).toBe('');
+    const worktrees = git(primary, 'worktree', 'list');
+    expect(worktrees.split('\n')).toHaveLength(1);
   });
 });
 

@@ -39,6 +39,30 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$msg" ] || { echo "push-docs: need -m <commit/PR message>" >&2; exit 2; }
 
+# Split $msg into a PR title + body BEFORE touching git at all (#1508). $msg is
+# a commit message, so it's legitimately multi-paragraph: subject line, blank
+# line, body. GitHub caps a PR title at 256 chars; passing the whole message as
+# --title made that cap a SERVER-side rejection that fired only after the
+# branch was already pushed, stranding it with no PR pointing at it. Computing
+# and validating the title here — before any git/gh command runs — means a bad
+# subject refuses cleanly instead of leaving a half-completed operation.
+pr_title="${msg%%$'\n'*}"
+if [[ "$msg" == *$'\n'* ]]; then
+  pr_body_extra="${msg#*$'\n'}"
+  # Conventional commit format separates subject from body with one blank
+  # line; strip exactly that one separator so the body doesn't start doubly
+  # blank. (If the message has no such separator, the remaining lines are
+  # still preserved verbatim — nothing is dropped.)
+  pr_body_extra="${pr_body_extra#$'\n'}"
+else
+  pr_body_extra=""
+fi
+if [ "${#pr_title}" -gt 256 ]; then
+  echo "push-docs: PR title (the -m subject line) is ${#pr_title} chars, exceeds GitHub's 256-char title cap. Refusing before pushing anything — shorten the subject line:" >&2
+  echo "  $pr_title" >&2
+  exit 1
+fi
+
 root="$(git rev-parse --show-toplevel)"
 slug="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 git -C "$root" fetch -q origin main
@@ -116,9 +140,15 @@ fi
 DR_INDEX_GATE_OFF=1 git -C "$wt" commit -q -m "$msg"
 git -C "$wt" push -q -u origin "$branch"
 
+pr_body="Docs-only change via the **docs-lane** (auto-merges once green; ai-review still runs). Files:
+$(printf -- '- \`%s\`\n' "${files[@]}")"
+if [ -n "$pr_body_extra" ]; then
+  pr_body="$pr_body
+
+$pr_body_extra"
+fi
 pr_url="$(gh pr create --repo "$slug" --base main --head "$branch" \
-  --title "$msg" --label docs-lane \
-  --body "Docs-only change via the **docs-lane** (auto-merges once green; ai-review still runs). Files:
-$(printf -- '- \`%s\`\n' "${files[@]}")")"
+  --title "$pr_title" --label docs-lane \
+  --body "$pr_body")"
 echo "push-docs: opened $pr_url"
 echo "push-docs: docs-lane workflow will verify docs-only + enable auto-merge."
