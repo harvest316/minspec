@@ -488,6 +488,77 @@ describe('#564 CI-review stack — scaffolding is dependency-complete', () => {
   });
 });
 
+// =============================================================================
+// #1144 — every managed-region GitHub Actions workflow template must pin its
+// marketplace actions to a commit SHA, never a moveable tag.
+//
+// Root cause: minspec-validate.yml (MANAGED_REGION_TEMPLATES[0]) tag-pinned
+// `actions/checkout@v4` / `actions/setup-node@v4` while ai-review.yml, in the
+// same managed set, SHA-pins its actions — and minspec-validate.yml runs `npm
+// ci` + `npm run validate` over the PR's OWN code (including any `postinstall`
+// script). A moveable tag is exactly the supply-chain hole a SHA pin exists to
+// close; nothing before this test enumerated every managed workflow template
+// and asserted the pin style agreed, so the two files could silently drift
+// apart again (same enumeration-drift family as #1098 and #1110).
+// =============================================================================
+describe('managed workflow templates SHA-pin every action (#1144)', () => {
+  // Every `uses:` value in a GitHub Actions workflow that refers to a
+  // marketplace/registry action or reusable workflow (never a local
+  // `./path/to/action` — those have no tag/SHA distinction to pin).
+  const USES_LINE_RE = /^\s*uses:\s*(\S+)\s*(?:#.*)?$/gm;
+  // A real commit SHA (not `main`/`v4`/`latest`/…): 40 lowercase hex chars.
+  const SHA_PIN_RE = /@[0-9a-f]{40}$/;
+
+  const workflowTemplates = MANAGED_REGION_TEMPLATES.filter((t) =>
+    t.outputPath.endsWith('.yml'),
+  );
+
+  // KNOWN, PRE-EXISTING debt this sweep surfaced but #1144 does not fix: two
+  // tag-pinned actions in ready-to-merge.yml (`actions/checkout@v5`,
+  // `actions/github-script@v7`). Its embedded copy is base64-generated from the
+  // real `.github/workflows/ready-to-merge.yml` (ci-review-templates.ts) via
+  // `scripts/gen-ci-templates.mjs`, and correctly re-pinning it needs the exact
+  // upstream commit SHA for each tag — not something to guess offline (invariant
+  // #1, no network calls). Left as `it.fails` rather than silently excluded: it
+  // documents the gap, keeps the failure visible in test output, and flips to a
+  // hard failure (an unexpected pass) the moment someone fixes the pins without
+  // updating this carve-out — forcing this line to be revisited. Track fixing it
+  // as a follow-up issue (out of scope for #1144, which is minspec-validate.yml
+  // vs ai-review.yml specifically).
+  const KNOWN_DEBT = new Set(['ready-to-merge-workflow']);
+
+  it('sanity: the workflow-template set is non-empty and includes validate-workflow', () => {
+    expect(workflowTemplates.length).toBeGreaterThan(0);
+    expect(workflowTemplates.map((t) => t.name)).toContain('validate-workflow');
+  });
+
+  for (const tpl of workflowTemplates) {
+    const check = () => {
+      const usesRefs: string[] = [];
+      let match: RegExpExecArray | null;
+      USES_LINE_RE.lastIndex = 0;
+      while ((match = USES_LINE_RE.exec(tpl.content)) !== null) {
+        usesRefs.push(match[1]);
+      }
+
+      const remoteRefs = usesRefs.filter((ref) => !ref.startsWith('./') && !ref.startsWith('../'));
+      const tagPinned = remoteRefs.filter((ref) => !SHA_PIN_RE.test(ref));
+
+      expect(
+        tagPinned,
+        `${tpl.outputPath} has action(s) not pinned to a 40-char commit SHA: ${tagPinned.join(', ')}`,
+      ).toEqual([]);
+    };
+
+    const title = `${tpl.outputPath} pins every action to a commit SHA (never a tag)`;
+    if (KNOWN_DEBT.has(tpl.name)) {
+      it.fails(`${title} [KNOWN DEBT — see comment above]`, check);
+    } else {
+      it(title, check);
+    }
+  }
+});
+
 /**
  * #604 — auto-heal: the reported real-world trigger is the two `minspec:managed:`
  * marker COMMENT LINES stripped (e.g. by a linter/hand-edit) while the MinSpec body
