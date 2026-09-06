@@ -327,6 +327,45 @@ describe('shadow-triage report — mixed models cannot PASS', () => {
     expect(r.overall).toBe('FAIL');
   });
 
+  // ── The printed explanation must match the printed verdict (#1737) ─────────
+  // The warning used to claim "the overall verdict is held at INSUFFICIENT" on EVERY
+  // mixed log, including ones printing OVERALL: FAIL six lines below it. A reader
+  // trusting the sentence concludes "keep collecting"; the verdict is a rollback
+  // signal. Opposite actions, and the reassuring one is the false one.
+
+  it('a mixed log that was genuinely HELD says so', () => {
+    const r = aggregate([...perfect('glm-5.2', 10), ...perfect('glm-5.3', 10)]);
+    expect(r.mixedModelHold).toBe(true);
+    expect(r.overall).toBe('INSUFFICIENT');
+    expect(formatReport(r)).toContain('held at INSUFFICIENT');
+  });
+
+  it('a mixed log that FAILED does NOT claim it was held', () => {
+    // The regression under test: mixed + FAIL must not print the hold sentence.
+    const bad = Array.from({ length: 10 }, () =>
+      row({ model: 'glm-5.3' }, { tier: false, all: false }),
+    );
+    const r = aggregate([...perfect('glm-5.2', 10), ...bad]);
+    expect(r.overall).toBe('FAIL');
+    expect(r.mixedModelHold).toBe(false);
+
+    const out = formatReport(r);
+    expect(out).not.toContain('held at INSUFFICIENT');
+    // …but it must still warn that the pooled figures span two targets, or the fix
+    // would have removed the warning instead of correcting it.
+    expect(out).toContain('mix targets');
+    expect(out).toContain('per-model split');
+  });
+
+  it('the hold flag is derived from the decision, not re-inferred from the model count', () => {
+    // Single-model logs can never be "held" by this rule, whatever their verdict.
+    expect(aggregate(perfect('glm-5.2', 20)).mixedModelHold).toBe(false);
+    const bad = Array.from({ length: 10 }, () =>
+      row({ model: 'glm-5.2' }, { tier: false, all: false }),
+    );
+    expect(aggregate(bad).mixedModelHold).toBe(false);
+  });
+
   it('byModel splits the sample so each target can be read on its own', () => {
     const mixed = [
       ...perfect('glm-5.2', 8),

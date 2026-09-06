@@ -117,6 +117,17 @@ export interface ShadowReport {
     malformed: { verdict: TriggerVerdict; value: number | null; threshold: number };
   };
   overall: TriggerVerdict;
+  /**
+   * True only when the mixed-model rule ACTUALLY downgraded the verdict — i.e. the
+   * triggers themselves would have said PASS and more than one model contributed.
+   *
+   * It exists so the printed explanation is derived from the same computation that
+   * made the decision, rather than re-inferred from `models.length > 1`. The earlier
+   * wording claimed "held at INSUFFICIENT" on every mixed log, including ones that
+   * printed OVERALL: FAIL six lines later (#1737) — one fact stated twice, with only
+   * one of the two computed.
+   */
+  mixedModelHold: boolean;
 }
 
 const pct = (num: number, den: number): number | null =>
@@ -212,7 +223,8 @@ export function aggregate(rows: ShadowRow[]): ShadowReport {
       : agreementVerdict === 'INSUFFICIENT' || malformedVerdict === 'INSUFFICIENT'
         ? 'INSUFFICIENT'
         : 'PASS';
-  const overall: TriggerVerdict = mixedModels && baseOverall === 'PASS' ? 'INSUFFICIENT' : baseOverall;
+  const mixedModelHold = mixedModels && baseOverall === 'PASS';
+  const overall: TriggerVerdict = mixedModelHold ? 'INSUFFICIENT' : baseOverall;
 
   return {
     n,
@@ -230,6 +242,7 @@ export function aggregate(rows: ShadowRow[]): ShadowReport {
       malformed: { verdict: malformedVerdict, value: malformedPct, threshold: MALFORMED_MAX_PCT },
     },
     overall,
+    mixedModelHold,
   };
 }
 
@@ -243,8 +256,12 @@ export function formatReport(r: ShadowReport, unparseable = 0): string {
   // measurement of anything (#1338: "any pilot must pin the model explicitly").
   lines.push(`  model(s)           ${r.models.length ? r.models.join(', ') : '(none)'}`);
   if (r.models.length > 1) {
-    lines.push('    ⚠ more than one model in this log — the POOLED figures below mix targets,');
-    lines.push('      so the overall verdict is held at INSUFFICIENT. Read the per-model split.');
+    lines.push('    ⚠ more than one model in this log — the POOLED figures below mix targets.');
+    lines.push(
+      r.mixedModelHold
+        ? '      The overall verdict is therefore held at INSUFFICIENT. Read the per-model split.'
+        : '      Read the per-model split; the pooled figures are not about any one model.',
+    );
   }
   // The per-model split is what makes a `latest`-resolved pilot readable. Printed
   // whenever more than one model contributed, because that is exactly when the
