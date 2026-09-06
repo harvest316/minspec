@@ -8,6 +8,32 @@ epic: EPIC-002  # Signpost Integrity
 aspects: [ux, data]
 depends_on: [DR-012]
 relates_to: [SPEC-014, SPEC-015, SPEC-004, SPEC-018]
+implements:
+  - packages/shared/src/rework.ts
+  - packages/shared/tests/rework.test.ts
+  - packages/shared/src/trust-model.ts
+  - packages/shared/tests/trust-model.test.ts
+  - packages/minspec/src/lib/trust-metrics.ts
+  - packages/minspec/tests/trust-metrics.test.ts
+  - packages/minspec/tests/trust-nondestructive.test.ts
+# PARTIAL: M1 (rework %, FR-1..FR-4), M2 (superseded wasted-review, FR-5/FR-6) and the chart host
+# (FR-10..FR-12) are built and tested across 783893ce, 3df7c0cb, c1460d22, b9621d2d, ac603194.
+# M3 (FR-7/7a/7b, FR-8, FR-9 — engagement telemetry, its opt-in, the rework-x-time scatter) is
+# NOT built: `reviewStart` is a reserved field with no writer and no reader (approval.ts:57,68,588
+# mark it "RESERVED for M3 … NOT populated"), `packages/minspec/package.json` contributes no
+# reading/telemetry/engagement setting, and `trust-model.ts` has no scatter/engaged symbol.
+# Ownership does not wait on every FR.
+# The seven files above are the ones whose entire history is SPEC-017 feat commits; the sole
+# foreign touch is 04efb1d8 adding the cross-cutting `useShellTimeout()` flake mixin to
+# trust-metrics.test.ts, which changes no trust logic.
+# No `affects:`, deliberately. SPEC-017 commits did touch canonical.ts (getSpecBodyOnly, 783893ce),
+# spec.ts / spec-tree-provider.ts / lifecycle.ts (the `superseded` status, c1460d22), spec-panel.ts
+# / spec-panel-html.ts (chart wiring, b9621d2d) and spec-validator.ts (ac603194) — but each is
+# core infra with 7-34 commits of which one is SPEC-017's, and `affects:` freezes a file exactly as
+# `implements:` does (spec-gate.py:350-352). Listing them would freeze the repo's hottest files on
+# one spec's approval state. Explicit exclusion criterion, NOT a claim nothing else was touched.
+# NOT `approval.ts` (SPEC-041 declares it) or `approval-diff.ts` (SPEC-029 declares it), though
+# SPEC-017 added `baselineBlob`/`reviewStart` and the Slice-3 blob mint to the former.
 ---
 
 # MinSpec — Trust Dashboard (Requirements)

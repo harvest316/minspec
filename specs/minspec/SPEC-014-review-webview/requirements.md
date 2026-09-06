@@ -8,6 +8,23 @@ epic: EPIC-002  # Signpost Integrity
 aspects: [ux]
 depends_on: [SPEC-012]
 relates_to: [SPEC-010, SPEC-006]
+implements: none
+implements_reason: >-
+  Specified, never built. Verified by positive absence, not by failing to find something: the
+  only `createWebviewPanel` in `packages/*/src` is `views/spec-panel.ts`, which this spec's own
+  Context section names as the pre-existing stepper it explicitly is NOT; there are zero hits for
+  `dispatchRevision`, no `.minspec/review/` directory has ever existed
+  (`git log --all --diff-filter=A -- '.minspec/review/*'` is empty), and no review/revise/explain
+  command is contributed in `packages/minspec/package.json`. `git log --follow` on this file
+  returns only docs, status and approval-sidecar commits — no implementation commit. Every other
+  in-tree `SPEC-014` mention is either a comment citing this spec as the RCDD false-claim case
+  study (spec-validator.ts:1407, reference-checker.ts:5) or an arbitrary fixture id in an
+  unrelated test. Declares its owned files at implementation, per the SPEC-034 precedent.
+# Fitting that this spec needs the escape: SPEC-014 IS the repo's cautionary example, after a
+# sibling spec's design doc falsely called this webview "implemented" while it was `specifying`
+# with zero code — the case CLAUDE.md's evidence-discipline section is written from.
+# The frontmatter `status: implementing` above is the pre-#1651 writer's default stamp and is not
+# evidence of anything.
 ---
 
 # MinSpec — Prettified Spec-Review Webview (Requirements)

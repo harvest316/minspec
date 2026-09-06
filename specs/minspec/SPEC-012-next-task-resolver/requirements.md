@@ -5,6 +5,31 @@ status: implementing
 tier: T4
 product: minspec
 epic: EPIC-002  # Signpost Integrity
+implements:
+  - packages/shared/src/next-task.ts
+  - packages/shared/tests/next-task.test.ts
+  - packages/minspec/src/commands/next-task.ts
+  - packages/minspec/tests/next-task-command.test.ts
+  - packages/minspec/src/lib/artifact-graph.ts
+  - packages/minspec/tests/artifact-graph-realdata.test.ts
+  - packages/minspec/tests/artifact-graph-degrade.test.ts
+  - packages/minspec/tests/artifact-graph-fidelity.test.ts
+  - packages/minspec/tests/implement-hole.test.ts
+# PARTIAL, and the partiality is first-party: next-task.ts:29-45 names FR-1/FR-2/FR-9/FR-11/FR-15
+# as shipped and FR-3b (MILESTONE-NNN), FR-15's LLM-escalation half, PR-review nodes and explorer
+# decoration as "out of this slice" (zero `MILESTONE` hits confirm). Ownership is not contingent
+# on every FR landing.
+# Resolver core + its test born in 1b7b90f8; the fs-adapter, command and four graph tests all in
+# 28bdd8ef ("signpost wiring … [SPEC-012]"); implement-hole.test.ts in 2eb4d4de (#1436/#1467).
+# artifact-graph.ts's own header names the SPEC-012 resolver as its sole purpose, and its only
+# non-test importer is commands/next-task.ts.
+# No `affects:`. `views/status-bar.ts` hosts three unrelated status bars (SPEC-012's signpost at
+# :21, harness-refresh #758 at :137, tidy-primary #1162 at :196); `extension.ts` (1025 lines) is
+# the shared activation entrypoint; `invariants.test.ts` predates this spec; `shared/src/index.ts`
+# is a 7-module barrel. Freezing any of them corpus-wide is not warranted — explicit exclusion,
+# not an assertion that nothing else was touched. SPEC-040/041/046/059 already list next-task.ts
+# and/or artifact-graph.ts under their own `affects:`, which is the correct shape: they touch what
+# this spec owns.
 ---
 
 # MinSpec — Next-Task Resolver (Requirements)
