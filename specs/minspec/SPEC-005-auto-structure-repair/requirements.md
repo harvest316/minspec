@@ -6,6 +6,20 @@ tier: T3
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
 status: implementing
 product: minspec
+implements: none
+implements_reason: >-
+  Specified, not built, and by its own design it creates no new source file. Every FR is an
+  additive edit to `auto-bootstrap.ts`, which DR-006 created in 062d2723 (2026-05-28) — before
+  this spec's first commit 5b6ec1bc (2026-05-30) — and which no spec's `implements:` claims.
+  Verified unbuilt: `isMinspecInitialized` is still the bare `.minspec/` existence check
+  (auto-bootstrap.ts:60-62), there is one `runBootstrap` call site, and there are zero hits for
+  any structure-repair symbol. Both Open questions (#139 required-artifact set, #140 watcher
+  debounce) are still open and marked pin-before-implement, and there is no plan.md/tasks.md, so
+  no new module path is decided. Declares its owned files at implementation, per the SPEC-034
+  precedent.
+affects:
+  - packages/minspec/src/lib/auto-bootstrap.ts
+  - packages/minspec/tests/auto-bootstrap.test.ts
 ---
 
 # MinSpec — Auto-Structure-Repair (Requirements)

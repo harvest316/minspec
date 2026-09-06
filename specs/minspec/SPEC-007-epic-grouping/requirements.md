@@ -6,6 +6,19 @@ tier: T4
 status: done
 product: minspec
 epic: EPIC-001  # Explorer Epic Grouping
+implements:
+  - packages/minspec/src/views/epic-grouping.ts
+  - packages/minspec/src/commands/epic.ts
+  - packages/minspec/tests/epic-manager.test.ts
+# NOT `epic-manager.ts`: SPEC-041 already declares it, and one-owner-per-file wins over
+# who-created-it (flagged separately — SPEC-007's commits created that file).
+# `affects:` is deliberately NARROW rather than complete. Six further files this spec's commits
+# touched (commands/approve.ts, commands/validate.ts, tests/backlog.test.ts,
+# tests/spec-tree-provider.test.ts, tests/frontmatter-completion.test.ts,
+# tests/spec-validator.test.ts) are omitted on the SPEC-060 precedent: listing a shared file
+# under `affects:` freezes it for every other spec's work, so only surfaces this spec is the
+# reason to touch are listed. This is an explicit exclusion criterion, NOT a claim that nothing
+# else was touched.
 ---
 
 # MinSpec — Registered Epics & Cross-Artifact Grouping (Requirements)

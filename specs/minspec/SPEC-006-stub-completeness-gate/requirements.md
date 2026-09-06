@@ -6,6 +6,14 @@ tier: T3
 # Editing voids approval (hash in .minspec/approvals.json → stale); re-run "MinSpec: Approve Spec". DR-012
 status: implementing
 product: minspec
+implements:
+  - packages/minspec/src/lib/test-scanner.ts
+  - packages/minspec/tests/test-scanner.test.ts
+# Both born in 5febfbb6 as pure additions (+585/+221) with no other file touched; `git log
+# --follow` returns that single commit for each, and a history-wide `*scanner*` glob finds no
+# earlier or deleted module, so nothing was moved in. Consumers (`auto-merge.ts:41`,
+# `scripts/auto-merge-gate.ts:48`) are untouched by that commit, hence no `affects:`.
+# FR-2..FR-5 remain unbuilt (zero `stubGate`/`scanStubs`/`minspec-stub-ok` hits).
 ---
 
 # MinSpec — Code-Completeness (Stub) Gate (Requirements)
