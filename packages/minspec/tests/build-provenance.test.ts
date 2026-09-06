@@ -120,4 +120,13 @@ describe('skewMessage', () => {
     expect(msg(5)).toContain('abcdef1');
     expect(msg(5)).toContain('5 commits');
   });
+
+  it('scopes the claim to the extension, not all gates (#1544)', () => {
+    // Only code compiled into the bundle goes stale with the build — repo-side gates
+    // (git hooks, spec-gate, CI) read the working tree directly and are unaffected. An
+    // unscoped "any gate added since is NOT running here" is false for those and teaches
+    // the reader to discount the warning, including the one case it is right about.
+    expect(msg(5)).toContain('extension');
+    expect(msg(5).toLowerCase()).not.toMatch(/\bany gate\b/);
+  });
 });

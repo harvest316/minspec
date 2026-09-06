@@ -147,11 +147,21 @@ export function detectBuildSkew(
 /**
  * The advisory text. Names the concrete consequence rather than "please update" — the whole
  * point is that the reader cannot otherwise tell a silent gate from a satisfied one.
+ *
+ * Scoped to what the build stamp actually governs (#1544): only code compiled into the
+ * extension bundle goes stale with the build. Most of this repo's gates are repo-side —
+ * git hooks, `spec-gate.sh`, CI — and are read off the working tree at invocation time, so
+ * they are current the moment a commit lands, no rebuild involved. An unqualified "any gate
+ * added since is NOT running here" is false for those, and being MORE alarming than the
+ * truth teaches the reader to discount the warning — including the one case it is exactly
+ * right about, the extension's pre-approval ownership guard (#1439).
  */
 export function skewMessage(v: Extract<SkewVerdict, { kind: 'stale' }>): string {
   return (
-    `MinSpec is running a build from ${v.sha.slice(0, 7)}, which is ${v.behind} commit${v.behind === 1 ? '' : 's'} ` +
-    `behind this checkout. Any gate added since is NOT running here — approvals and commits ` +
-    `may pass checks that main enforces. Rebuild to re-arm them.`
+    `MinSpec is running a build from ${v.sha.slice(0, 7)}, ${v.behind} commit${v.behind === 1 ? '' : 's'} ` +
+    `behind this checkout. Gates that live in the extension — including the pre-approval ` +
+    `ownership check — are NOT running the current code here, so an approval or commit may ` +
+    `pass a check main would refuse. Repo-side gates (git hooks, spec-gate, CI) are unaffected ` +
+    `— they read the working tree directly. Rebuild to re-arm the extension's gates.`
   );
 }
