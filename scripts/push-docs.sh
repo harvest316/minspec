@@ -116,9 +116,52 @@ fi
 DR_INDEX_GATE_OFF=1 git -C "$wt" commit -q -m "$msg"
 git -C "$wt" push -q -u origin "$branch"
 
-pr_url="$(gh pr create --repo "$slug" --base main --head "$branch" \
-  --title "$msg" --label docs-lane \
-  --body "Docs-only change via the **docs-lane** (auto-merges once green; ai-review still runs). Files:
-$(printf -- '- \`%s\`\n' "${files[@]}")")"
-echo "push-docs: opened $pr_url"
-echo "push-docs: docs-lane workflow will verify docs-only + enable auto-merge."
+# $msg is the FULL commit message (subject + body), and this repo's own
+# convention — a subject line, a blank line, then an explanatory body, which
+# the RCDD gate in .githooks/commit-msg actively requires for `fix:` commits —
+# routinely produces a message well past GitHub's 256-char PR title cap
+# ("Title is too long (maximum is 256 characters)"). Passing $msg verbatim as
+# --title therefore fails PR creation *after* the branch is already pushed
+# (#1606). Split it the same way git itself does: first line is the subject
+# (truncated on a word boundary if it alone exceeds 256 chars), and whatever
+# follows the first blank line is the body — carried into the PR body instead
+# of being discarded outright.
+pr_title="${msg%%$'\n'*}"
+if [ "$pr_title" = "$msg" ]; then
+  pr_rest=""
+else
+  pr_rest="${msg#*$'\n'}"
+  pr_rest="${pr_rest#$'\n'}"   # drop the single blank separator line, if present
+fi
+if [ "${#pr_title}" -gt 256 ]; then
+  truncated="${pr_title:0:256}"
+  [[ "$truncated" == *' '* ]] && truncated="${truncated% *}"
+  pr_title="$truncated"
+fi
+
+lane_note="Docs-only change via the **docs-lane** (auto-merges once green; ai-review still runs). Files:
+$(printf -- '- \`%s\`\n' "${files[@]}")"
+if [ -n "$pr_rest" ]; then
+  pr_body="$pr_rest
+
+$lane_note"
+else
+  pr_body="$lane_note"
+fi
+
+# Push and PR-creation are not transactional: the branch above is ALREADY on
+# origin by this point, so a failure here must not read as "nothing happened"
+# (constitution invariant 2 — no silent gate). Report the partial success
+# loudly and hand back the exact command to finish it by hand, rather than
+# `set -e` killing the script on a bare failed command substitution.
+if pr_url="$(gh pr create --repo "$slug" --base main --head "$branch" \
+  --title "$pr_title" --label docs-lane --body "$pr_body")"; then
+  echo "push-docs: opened $pr_url"
+  echo "push-docs: docs-lane workflow will verify docs-only + enable auto-merge."
+else
+  echo "push-docs: PR creation FAILED, but the branch was already pushed to origin — it is not lost, finish it by hand:" >&2
+  echo "push-docs:   branch: $branch" >&2
+  printf 'push-docs:   gh pr create --repo %q --base main --head %q --title %q --label docs-lane --body %q\n' \
+    "$slug" "$branch" "$pr_title" "$pr_body" >&2
+  exit 1
+fi
