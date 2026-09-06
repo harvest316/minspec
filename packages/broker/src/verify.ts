@@ -16,7 +16,7 @@
  * keys and no network at all — the tests sign real JWTs with a real keypair and verify
  * real signatures, so they exercise the actual crypto path rather than a mock of it.
  */
-import { jwtVerify, type JWTVerifyGetKey } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import type { VerifiedClaims } from './decide';
 
 /** GitHub's OIDC issuer. */
@@ -90,6 +90,5 @@ export async function verifyOidcToken(
 
 /** The default resolver: GitHub's live JWKS. Replaced in tests. */
 export async function defaultJwks(): Promise<JWTVerifyGetKey> {
-  const { createRemoteJWKSet } = await import('jose');
   return createRemoteJWKSet(new URL(GITHUB_OIDC_JWKS_URL));
 }

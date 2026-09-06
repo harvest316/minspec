@@ -13,6 +13,7 @@ import {
   GITHUB_OIDC_ISSUER,
 } from '../../broker/src/verify';
 import {
+  findWidening,
   mintScopedToken,
   clampExpiry,
   REVIEW_PERMISSIONS,
@@ -110,9 +111,10 @@ describe('AC-1 — OIDC verification', () => {
 });
 
 describe('AC-3 — scoped minting', () => {
-  const okFactory: InstallationTokenFactory = async () => ({
+  const okFactory: InstallationTokenFactory = async ({ permissions }) => ({
     token: 'ghs_test',
     expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(),
+    permissions,
   });
 
   it('scopes the token to exactly one repository — the CLAIM', async () => {
@@ -128,12 +130,77 @@ describe('AC-3 — scoped minting', () => {
     expect(Object.keys(REVIEW_PERMISSIONS)).not.toContain('administration');
   });
 
+  it('reports expires_at on the minted response, inside the ceiling', async () => {
+    // clampExpiry is unit-tested separately; this asserts the RESPONSE actually carries
+    // the clamped value, which is the field a caller trusts.
+    const r = await mintScopedToken({ repository: REPO, repository_owner: '' }, okFactory);
+    expect(r.ok).toBe(true);
+    const expiresAt = r.ok === true ? r.minted.expires_at : '';
+    expect(Number.isNaN(Date.parse(expiresAt))).toBe(false);
+    const ttlMs = Date.parse(expiresAt) - Date.now();
+    expect(ttlMs).toBeGreaterThan(0);
+    expect(ttlMs).toBeLessThanOrEqual(MAX_TTL_SECONDS * 1000);
+  });
+
+  describe('permission widening — the check mint.ts promises', () => {
+    const granting = (permissions: Record<string, string>): InstallationTokenFactory =>
+      async () => ({
+        token: 'ghs_test',
+        expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(),
+        permissions,
+      });
+
+    const mint = (f: InstallationTokenFactory) =>
+      mintScopedToken({ repository: REPO, repository_owner: '' }, f);
+
+    it('REFUSES a scope that was never requested', async () => {
+      const r = await mint(granting({ ...REVIEW_PERMISSIONS, contents: 'write' }));
+      expect(r.ok).toBe(false);
+      expect(JSON.stringify(r)).not.toContain('ghs_');
+    });
+
+    it('REFUSES a level wider than requested', async () => {
+      const r = await mint(granting({ ...REVIEW_PERMISSIONS, issues: 'admin' }));
+      expect(r.ok).toBe(false);
+      expect(JSON.stringify(r)).not.toContain('ghs_');
+    });
+
+    it('REFUSES a level it cannot rank, rather than waving it through', async () => {
+      const r = await mint(granting({ ...REVIEW_PERMISSIONS, issues: 'sudo' }));
+      expect(r.ok).toBe(false);
+    });
+
+    it('REFUSES when the provider reports no permissions at all', async () => {
+      // A token whose scope cannot be read cannot be vouched for (invariant 2).
+      const silent = (async () => ({
+        token: 'ghs_test',
+        expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(),
+      })) as unknown as InstallationTokenFactory;
+      const r = await mint(silent);
+      expect(r.ok).toBe(false);
+      expect(JSON.stringify(r)).not.toContain('ghs_');
+    });
+
+    it('ACCEPTS a NARROWER grant, and reports what was actually granted', async () => {
+      // Control for the four refusals above: the guard must not simply reject everything.
+      const narrow = { issues: 'write', pull_requests: 'write' };
+      const r = await mint(granting(narrow));
+      expect(r.ok).toBe(true);
+      expect(r.ok === true && r.minted.permissions).toEqual(narrow);
+    });
+
+    it('findWidening returns null for the exact review profile', () => {
+      expect(findWidening({ ...REVIEW_PERMISSIONS })).toBeNull();
+    });
+  });
+
   it('REFUSES a token whose TTL exceeds the ceiling', async () => {
     // GitHub's default is an hour. Minting it anyway would silently turn a 10-minute
     // credential into a 60-minute one — invisible until a leaked token still works.
-    const longLived: InstallationTokenFactory = async () => ({
+    const longLived: InstallationTokenFactory = async ({ permissions }) => ({
       token: 'ghs_test',
       expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+      permissions,
     });
     expect((await mintScopedToken({ repository: REPO, repository_owner: '' }, longLived)).ok).toBe(false);
   });

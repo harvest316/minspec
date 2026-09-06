@@ -1,7 +1,7 @@
 {
   "name": "minspec",
   "displayName": "MinSpec",
-  "description": "Complexity-adaptive specification-driven development. Classifies changes into tiers and applies proportional ceremony — a one-line fix needs one sentence of spec, an architecture rewrite gets the full treatment.",
+  "description": "Complexity-adaptive specification-driven development. Classifies changes into tiers and applies proportional ceremony \u2014 a one-line fix needs one sentence of spec, an architecture rewrite gets the full treatment.",
   "version": "0.1.26",
   "private": true,
   "publisher": "aiclarity",
@@ -139,7 +139,7 @@
       },
       {
         "command": "minspec.migrateLayout",
-        "title": "MinSpec: Migrate Spec Layout (Flat ↔ Spec Kit)"
+        "title": "MinSpec: Migrate Spec Layout (Flat \u2194 Spec Kit)"
       },
       {
         "command": "minspec.createAdr",
@@ -197,7 +197,7 @@
       },
       {
         "command": "minspec.setAdrStatus",
-        "title": "MinSpec: Set Decision Status…",
+        "title": "MinSpec: Set Decision Status\u2026",
         "icon": "$(circle-outline)"
       },
       {
@@ -307,7 +307,7 @@
     "submenus": [
       {
         "id": "minspec.createMenu",
-        "label": "MinSpec: Create…",
+        "label": "MinSpec: Create\u2026",
         "icon": "$(add)"
       }
     ],
@@ -460,7 +460,7 @@
             "spec-kit"
           ],
           "default": "flat",
-          "description": "How spec files are stored. 'flat': one file per spec (specs/SPEC-NNN-slug.md). 'spec-kit': one directory per spec with separate spec.md/plan.md/tasks.md — strict GitHub Spec Kit compatibility."
+          "description": "How spec files are stored. 'flat': one file per spec (specs/SPEC-NNN-slug.md). 'spec-kit': one directory per spec with separate spec.md/plan.md/tasks.md \u2014 strict GitHub Spec Kit compatibility."
         },
         "minspec.codelens.enabled": {
           "type": "boolean",
@@ -480,7 +480,7 @@
         "minspec.autoBootstrap.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Auto-detect missing initialization, harness drift, and unclassified changes — and offer to run setup/refresh/classify. Per-prompt 'Don't ask again' choices are persisted in .minspec/preferences.json."
+          "description": "Auto-detect missing initialization, harness drift, and unclassified changes \u2014 and offer to run setup/refresh/classify. Per-prompt 'Don't ask again' choices are persisted in .minspec/preferences.json."
         },
         "minspec.manualCreate.enabled": {
           "type": "boolean",
@@ -495,7 +495,7 @@
         "minspec.commitOnApprove": {
           "type": "boolean",
           "default": true,
-          "description": "When you approve a spec or accept a decision/epic (e.g. via Alt+A), commit the flipped document and the approval record together in one dedicated commit — so 'committed ground truth' is actually committed, never left sitting in the working tree. Pathspec-safe: only the approval's own files are committed, never other staged changes, and it refuses to commit in a detached HEAD. The commit runs your git hooks; it never pushes. Turn off to leave approvals staged for you to commit manually."
+          "description": "When you approve a spec or accept a decision/epic (e.g. via Alt+A), commit the flipped document and the approval record together in one dedicated commit \u2014 so 'committed ground truth' is actually committed, never left sitting in the working tree. Pathspec-safe: only the approval's own files are committed, never other staged changes, and it refuses to commit in a detached HEAD. The commit runs your git hooks; it never pushes. Turn off to leave approvals staged for you to commit manually."
         },
         "minspec.pushOnApprove": {
           "type": "string",
@@ -507,10 +507,10 @@
           "default": "prompt",
           "enumDescriptions": [
             "Never push. Approvals stay local until you push them yourself (fully offline).",
-            "Offer to push after each approval commit. Your click is the consent — nothing leaves the machine until you approve it.",
+            "Offer to push after each approval commit. Your click is the consent \u2014 nothing leaves the machine until you approve it.",
             "Push automatically after each approval commit. Choosing this setting is itself the consent."
           ],
-          "markdownDescription": "After an approval is committed (see `#minspec.commitOnApprove#`), get it to the remote so a sign-off cannot be stranded on one machine.\n\nIf the current branch is **protected** (see `#minspec.protectedBranches#`), a direct push would be rejected — so MinSpec instead creates a branch at the *same commit*, pushes that, and gives you a link to open the PR. Your checkout is never switched and no branch you are on is rewritten.\n\nA push is a network call, so the default is `prompt`: nothing is sent until you click."
+          "markdownDescription": "After an approval is committed (see `#minspec.commitOnApprove#`), get it to the remote so a sign-off cannot be stranded on one machine.\n\nIf the current branch is **protected** (see `#minspec.protectedBranches#`), a direct push would be rejected \u2014 so MinSpec instead creates a branch at the *same commit*, pushes that, and gives you a link to open the PR. Your checkout is never switched and no branch you are on is rewritten.\n\nA push is a network call, so the default is `prompt`: nothing is sent until you click."
         },
         "minspec.approvalPr": {
           "type": "string",
@@ -521,10 +521,10 @@
           ],
           "default": "auto",
           "enumDescriptions": [
-            "Open the pull request for you, labelled for the docs-lane so it auto-merges — the approval finishes with no extra click.",
+            "Open the pull request for you, labelled for the docs-lane so it auto-merges \u2014 the approval finishes with no extra click.",
             "Show a notification with an 'Open PR' link and the compare URL, and let you create the PR yourself. This is the behaviour from before this setting existed."
           ],
-          "markdownDescription": "What MinSpec does **after** an approval commit has already been pushed to a side branch because the current branch is protected (see `#minspec.pushOnApprove#` and `#minspec.protectedBranches#`).\n\n- `auto` (default) — MinSpec runs your own authenticated `gh` to open the PR and applies the `docs-lane` label, which is what lets the lane workflow auto-merge it. The label is applied **only** when every committed path is docs (specs/, docs/, .minspec/approvals/, skills/*.md, top-level *.md); the workflow re-verifies this independently and refuses loudly otherwise, so code can never ride the lane.\n- `manual` — the previous behaviour, exactly.\n\nThis setting **never causes a push of its own**: it only ever runs on a branch `#minspec.pushOnApprove#` already pushed with your consent, so with `pushOnApprove` at `never` — or a declined prompt — nothing here runs at all.\n\nIf `gh` is missing, not logged in, or GitHub is unreachable, `auto` degrades to exactly the `manual` notification with the reason appended. The approval is already committed and pushed either way."
+          "markdownDescription": "What MinSpec does **after** an approval commit has already been pushed to a side branch because the current branch is protected (see `#minspec.pushOnApprove#` and `#minspec.protectedBranches#`).\n\n- `auto` (default) \u2014 MinSpec runs your own authenticated `gh` to open the PR and applies the `docs-lane` label, which is what lets the lane workflow auto-merge it. The label is applied **only** when every committed path is docs (specs/, docs/, .minspec/approvals/, skills/*.md, top-level *.md); the workflow re-verifies this independently and refuses loudly otherwise, so code can never ride the lane.\n- `manual` \u2014 the previous behaviour, exactly.\n\nThis setting **never causes a push of its own**: it only ever runs on a branch `#minspec.pushOnApprove#` already pushed with your consent, so with `pushOnApprove` at `never` \u2014 or a declined prompt \u2014 nothing here runs at all.\n\nIf `gh` is missing, not logged in, or GitHub is unreachable, `auto` degrades to exactly the `manual` notification with the reason appended. The approval is already committed and pushed either way."
         },
         "minspec.protectedBranches": {
           "type": "array",
@@ -541,18 +541,18 @@
         "minspec.autoBackfillUseAi": {
           "type": "boolean",
           "default": false,
-          "description": "Always use the AI pass when backfilling epics (skips the per-run 'AI-enhanced?' prompt). Set globally by choosing 'Always' on that prompt — a personal preference that follows you across projects. Runs 'claude -p' locally; the extension makes no network calls. Off by default."
+          "description": "Always use the AI pass when backfilling epics (skips the per-run 'AI-enhanced?' prompt). Set globally by choosing 'Always' on that prompt \u2014 a personal preference that follows you across projects. Runs 'claude -p' locally; the extension makes no network calls. Off by default."
         },
         "minspec.advancePhaseOnApprove": {
           "type": "boolean",
           "default": false,
-          "description": "Always enqueue a phase-advance request when you approve a spec (skips the per-approval follow-up prompt). Set globally by choosing 'Always' on that prompt — a personal preference that follows you across projects. Enqueue-only: writes a request to .minspec/queue/ for a downstream consumer to dequeue; never runs 'claude -p' itself. Off by default."
+          "description": "Always enqueue a phase-advance request when you approve a spec (skips the per-approval follow-up prompt). Set globally by choosing 'Always' on that prompt \u2014 a personal preference that follows you across projects. Enqueue-only: writes a request to .minspec/queue/ for a downstream consumer to dequeue; never runs 'claude -p' itself. Off by default."
         },
         "minspec.approverEmail": {
           "type": "string",
           "default": "",
           "scope": "application",
-          "markdownDescription": "Your **explicit human identity** for recording approvals (DR-056). When set, approving a spec records this email as `approvedBy` instead of the ambient `git config user.email`. Use it when a checkout's git identity is an agent/bot (so approvals aren't refused as agent self-approval) while still attributing the human act to you. Leave blank to fall back to `git config user.email`. An agent/bot or blank identity is always refused — an approval must be an explicit human act. Personal preference; follows you across projects."
+          "markdownDescription": "Your **explicit human identity** for recording approvals (DR-056). When set, approving a spec records this email as `approvedBy` instead of the ambient `git config user.email`. Use it when a checkout's git identity is an agent/bot (so approvals aren't refused as agent self-approval) while still attributing the human act to you. Leave blank to fall back to `git config user.email`. An agent/bot or blank identity is always refused \u2014 an approval must be an explicit human act. Personal preference; follows you across projects."
         },
         "minspec.ruleset.requiredChecks": {
           "type": "array",
@@ -560,14 +560,14 @@
             "type": "string"
           },
           "default": [],
-          "description": "EXTRA status-check contexts the post-init branch-ruleset advisory requires, on top of the ones MinSpec resolves automatically. Empty by default: MinSpec already requires 'MinSpec SDD validation' (always produced by its own scaffolded CI), and adds 'ai-review'/'ready-to-merge' once their workflows and reviewer secrets are present, and 'lint'/'test'/'build' once package.json has a runnable script for them. Anything listed here is required VERBATIM and is never checked for producibility — a context no CI reports permanently blocks every PR on the default branch (#559)."
+          "description": "EXTRA status-check contexts the post-init branch-ruleset advisory requires, on top of the ones MinSpec resolves automatically. Empty by default: MinSpec already requires 'MinSpec SDD validation' (always produced by its own scaffolded CI), and adds 'ai-review'/'ready-to-merge' once their workflows and reviewer secrets are present, and 'lint'/'test'/'build' once package.json has a runnable script for them. Anything listed here is required VERBATIM and is never checked for producibility \u2014 a context no CI reports permanently blocks every PR on the default branch (#559)."
         },
         "minspec.coverage.minimumPercentage": {
           "type": "number",
           "minimum": 0,
           "maximum": 100,
           "default": 80,
-          "description": "Recommended minimum code coverage percentage. This setting only sets the pre-selected value in the 'MinSpec: Initialize SDD Structure' onboarding prompt (e.g. set it in a committed .vscode/settings.json to encode a team policy) — it does NOT itself change an already-initialized project's enforced threshold. The value CI and vitest actually enforce lives in .minspec/config.json's coverage.minimumPercentage; change an existing project by editing that file directly, or by re-running the onboarding prompt."
+          "description": "Recommended minimum code coverage percentage. This setting only sets the pre-selected value in the 'MinSpec: Initialize SDD Structure' onboarding prompt (e.g. set it in a committed .vscode/settings.json to encode a team policy) \u2014 it does NOT itself change an already-initialized project's enforced threshold. The value CI and vitest actually enforce lives in .minspec/config.json's coverage.minimumPercentage; change an existing project by editing that file directly, or by re-running the onboarding prompt."
         }
       }
     },
@@ -580,7 +580,7 @@
           {
             "id": "minspec.walkthrough.welcome",
             "title": "Welcome to MinSpec",
-            "description": "MinSpec brings Specification-Driven Development (SDD) to VS Code. Classify tasks by complexity, write just enough spec, and ship with confidence.\n\n**Ceremony proportional to complexity** — a one-line fix needs one sentence of spec. A new subsystem gets the full treatment.",
+            "description": "MinSpec brings Specification-Driven Development (SDD) to VS Code. Classify tasks by complexity, write just enough spec, and ship with confidence.\n\n**Ceremony proportional to complexity** \u2014 a one-line fix needs one sentence of spec. A new subsystem gets the full treatment.",
             "media": {
               "markdown": "media/walkthrough/welcome.md"
             }
@@ -599,7 +599,7 @@
           {
             "id": "minspec.walkthrough.classify",
             "title": "Classify Your First Task",
-            "description": "Every task gets a complexity tier (T1-T4) that determines how much spec to write. The classifier suggests — you decide.\n\n[Classify Task](command:minspec.classify)",
+            "description": "Every task gets a complexity tier (T1-T4) that determines how much spec to write. The classifier suggests \u2014 you decide.\n\n[Classify Task](command:minspec.classify)",
             "media": {
               "markdown": "media/walkthrough/classify-task.md"
             },
@@ -657,6 +657,7 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.28.1",
+    "jose": "^6.2.10",
     "mocha": "^11.3.0",
     "vitest": "4.1.7"
   }

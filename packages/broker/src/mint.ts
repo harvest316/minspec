@@ -42,7 +42,38 @@ export type MintResult =
 export type InstallationTokenFactory = (args: {
   repository: string;
   permissions: Record<string, string>;
-}) => Promise<{ token: string; expiresAt: string; permissions?: Record<string, string> }>;
+}) => Promise<{ token: string; expiresAt: string; permissions: Record<string, string> }>;
+
+/**
+ * Permission levels, least to most. `admin` is not in the `review` profile and never
+ * should be; it is ranked so that a provider handing one back is DETECTED rather than
+ * silently unrecognised.
+ */
+const LEVEL_RANK: Record<string, number> = { none: 0, read: 1, write: 2, admin: 3 };
+
+/**
+ * Name the first way `granted` exceeds `requested`, or null when it does not.
+ *
+ * Narrower is fine — GitHub may hand back less than asked, and less is safe. WIDER is the
+ * failure this exists to catch, and so is anything we cannot rank: an unrecognised level
+ * is treated as a widening rather than waved through, because a scope this code does not
+ * understand is exactly the one it must not vouch for (constitution invariant 2 — a
+ * missing or unreadable witness fails closed, it does not silently pass).
+ */
+export function findWidening(
+  granted: Record<string, string>,
+  requested: Record<string, string> = REVIEW_PERMISSIONS,
+): string | null {
+  for (const [scope, level] of Object.entries(granted)) {
+    const asked = requested[scope];
+    if (asked === undefined) return `granted an unrequested scope (${scope})`;
+    const got = LEVEL_RANK[level];
+    const want = LEVEL_RANK[asked];
+    if (got === undefined) return `granted an unrecognised level for ${scope}`;
+    if (want === undefined || got > want) return `granted ${scope} wider than requested`;
+  }
+  return null;
+}
 
 /**
  * Mint for the VERIFIED claim repository.
@@ -77,15 +108,27 @@ export async function mintScopedToken(
   const expiresAt = clampExpiry(raw.expiresAt);
   if (!expiresAt) return { ok: false, reason: 'auth returned an unusable expiry' };
 
+  // A token whose scope we cannot read is a token we cannot vouch for. Refuse rather
+  // than mint it and describe it with the profile we merely ASKED for — that would make
+  // the response understate a scope nobody checked.
+  if (!raw.permissions || typeof raw.permissions !== 'object') {
+    return { ok: false, reason: 'auth did not report granted permissions' };
+  }
+
+  // The real case: a provider that hands back MORE than the review profile. Refuse it;
+  // do not mint a wider credential and render it as though the broker sanctioned it.
+  const widening = findWidening(raw.permissions);
+  if (widening) return { ok: false, reason: `auth ${widening}` };
+
   return {
     ok: true,
     minted: {
       token: raw.token,
       expires_at: expiresAt,
-      // Report the profile we ASKED for, not whatever came back: a provider that
-      // silently widens permissions must not have that widening rendered as though the
-      // broker sanctioned it. The narrowing check below catches the real case.
-      permissions: { ...REVIEW_PERMISSIONS },
+      // Report what was ACTUALLY granted, having just proven it is not wider than the
+      // review profile. Narrower is possible and legitimate, so echoing the requested
+      // profile here would overstate the token's scope.
+      permissions: { ...raw.permissions },
       repositories: [repository],
     },
   };
