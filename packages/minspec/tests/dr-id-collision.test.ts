@@ -463,6 +463,22 @@ describe('B — decideDrIdCollision: fails closed on a taken id and names the ne
     expect(v.nextFreeId).toBe('DR-001');
   });
 
+  it('reports one collision once, even when the subject claims it under two filenames', () => {
+    // Both of the subject's files hit the same base holder. The collision is ONE
+    // fact; printing the holder line twice makes the message look like two problems.
+    const v = decideDrIdCollision({
+      decisionsDir: DIR,
+      baseRef: 'main',
+      basePaths: [`${DIR}/DR-077.md`],
+      subject: { pr: 1209, paths: [`${DIR}/DR-077.md`, `${DIR}/DR-077-take-two.md`] },
+      otherPrs: [],
+    });
+    expect(v.ok).toBe(false);
+    expect(v.findings).toHaveLength(1);
+    expect(v.findings[0]).toEqual({ id: 'DR-077', heldBy: 'main', file: `${DIR}/DR-077.md` });
+    expect(v.message.match(/DR-077 is already claimed/g)).toHaveLength(1);
+  });
+
   it('reports every colliding id, deterministically ordered', () => {
     const v = decideDrIdCollision({
       decisionsDir: DIR,

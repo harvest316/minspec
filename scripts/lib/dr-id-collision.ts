@@ -337,7 +337,19 @@ export function decideDrIdCollision(input: DrIdCollisionInput): DrIdCollisionVer
     }
   }
 
-  findings.sort((a, b) => a.id.localeCompare(b.id) || a.file.localeCompare(b.file));
+  // Dedupe: a subject that claims one id under TWO filenames while the base also
+  // holds it hits the `held` branch twice and would otherwise print the same holder
+  // line twice. The collision is one fact, so report it once.
+  const seenFinding = new Set<string>();
+  const unique = findings.filter((f) => {
+    const key = `${f.id}\x00${f.heldBy}\x00${f.file}`;
+    if (seenFinding.has(key)) return false;
+    seenFinding.add(key);
+    return true;
+  });
+  unique.sort((a, b) => a.id.localeCompare(b.id) || a.file.localeCompare(b.file));
+  findings.length = 0;
+  findings.push(...unique);
   claimed.sort();
 
   const nextFreeId = formatDrId(allNumbers.length === 0 ? 1 : Math.max(...allNumbers) + 1);

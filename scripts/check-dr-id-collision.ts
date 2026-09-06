@@ -264,7 +264,12 @@ function assertBaseListingPlausible(
   subject: PrClaims,
 ): void {
   if (found.length > 0) return;
-  const claimed = new Set(subject.paths.map((p) => formatDrId(drNumberFromPath(p) as number)));
+  const claimed = new Set(
+    subject.paths
+      .map((p) => drNumberFromPath(p))
+      .filter((n): n is number => n !== undefined)
+      .map(formatDrId),
+  );
   const unexplained = localDrIds(decisionsDir).filter((id) => !claimed.has(id));
   if (unexplained.length === 0) return;
   throw new GateError(
