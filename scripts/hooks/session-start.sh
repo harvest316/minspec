@@ -120,3 +120,9 @@ if [[ -x "$RADAR" ]] \
     fi
   fi
 fi
+
+# ── Autonomy state (DR-086) ──────────────────────────────────────────────────
+# Delegated to its own side-effect-free unit so it can be tested by EXECUTION
+# rather than by grepping this file (see session-autonomy.sh). Never fatal.
+_AUT=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/session-autonomy.sh
+[ -x "$_AUT" ] && "$_AUT" || true

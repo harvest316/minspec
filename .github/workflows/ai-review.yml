@@ -362,15 +362,20 @@ jobs:
           if [ "$CHANGED_OK" != "yes" ]; then
             SELF_EDIT=yes
             SELF_EDIT_KIND=indeterminate
-          # MACHINERY_PATHS_RE — the machinery path set (#1284). Gate-ness is a property of
-          # what the code DOES, not which directory it lives in: every entry here is code
-          # that decides whether some other change is allowed, so it cannot certify itself.
+          # MACHINERY_PATHS_RE — the machinery path set (#1284, reconciled #1758). Gate-ness
+          # is a property of what the code DOES, not which directory it lives in: every entry
+          # here is code that decides whether some other change is allowed, so it cannot
+          # certify itself.
           #   .github/   — the review workflows and their scripts
           #   scripts/   — dispatch, review, remediation, the lease
           #   .githooks/ — pre-commit (protected-branch #1041, RCDD DR-003), pre-push
           #                (workflow-file protection #1120), commit-msg. Added #1284 after
           #                PR #1273 changed the pre-push GATE and was classified "not
           #                machinery", so the review system certified a change to a gate.
+          #   .circleci/, .buildkite/, .husky/ — unused by this repo today, but
+          #                scripts/auto-merge-gate.ts's CI/build boundary detector (#422)
+          #                already treats them as machinery-class; folded in here so all
+          #                three consumers agree instead of silently disagreeing (#1758).
           #   template-registry.ts — GENERATES the .minspec/hooks/pre-commit gate that every
           #                MinSpec-initialised project runs. Its blast radius is strictly
           #                larger than .githooks/ (which is this repo only), so leaving it
@@ -387,9 +392,16 @@ jobs:
           # MEMBERSHIP TEST for anything added here: does this code decide whether some other
           # change is allowed — directly, or by generating the thing that decides? If yes it
           # cannot certify itself, and it belongs in this set.
-          # Read by packages/minspec/tests/machinery-paths.test.ts, which parses this line
-          # and runs the pattern against a path table — keep the marker comment above it.
-          elif printf '%s\n' "$CHANGED" | grep -qE '^(\.github/|scripts/|\.githooks/|packages/minspec/src/lib/(template-registry|ci-review-templates)\.ts$)'; then
+          # CANONICAL SOURCE: packages/minspec/src/lib/machinery-paths.ts. This line and
+          # scripts/dispatch-issue.sh's MACHINERY_PATH_RE are both hand-copies of that
+          # module's buildMachineryRegexSource() output — a shell string embedded in YAML
+          # cannot import a TS module — pinned character-for-character by
+          # packages/minspec/tests/machinery-paths.test.ts, which parses this line and runs
+          # the pattern against a path table shared with the other two definitions (#1758:
+          # a prior reconciliation, 01369b6b, updated only this file and a test that only
+          # read this file, leaving dispatch-issue.sh's copy narrower and its invariant-2
+          # second-witness inert for two paths). Keep the marker comment above it.
+          elif printf '%s\n' "$CHANGED" | grep -qE '^\.github/|^scripts/|^\.githooks/|^\.circleci/|^\.buildkite/|^\.husky/|^packages/minspec/src/lib/(template-registry|ci-review-templates)\.ts$'; then
             SELF_EDIT=yes
             SELF_EDIT_KIND=machinery
           fi

@@ -10,4 +10,4 @@ main = "src/index.ts"
 compatibility_date = "2026-08-16"
 
 [vars]
-MINSPEC_APP_ID = ""
+MINSPEC_APP_ID = "4212099"

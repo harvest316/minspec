@@ -11,10 +11,31 @@
  * resets_at locally, at the moment it matters.
  *
  * The load-bearing invariants, in priority order:
- *   INV-A  a missing / stale / unparseable reading FAILS OPEN (never wedges work)
- *   INV-B  failing open is AUDIBLE — it always names why (no silent throttle)
+ *   INV-A  a missing / stale / unparseable reading FAILS CLOSED (defers) — an
+ *          unknown budget must never read as permission to spend it (#1775;
+ *          constitution invariant 2). This inverted the ORIGINAL INV-A, which
+ *          read "FAILS OPEN (never wedges work)" — that was the bug: run_loop
+ *          already treats a 42 defer as a pause, not a wedge, so failing open
+ *          bought nothing but a silently-overspent quota.
+ *   INV-B  a defer is AUDIBLE — it always names why, and a fail-closed defer
+ *          also names the quota file, so a chronically-missing reading is
+ *          diagnosable from one log line (no silent throttle)
  *   INV-C  the gate needs no network: no gh, no curl, no claude
  *   INV-D  the sleep is derived from resets_at, never a fixed guess, never negative
+ *   INV-E  BOOTSTRAP is bounded, not fail-open reborn: a machine that has NEVER
+ *          produced a reading gets a small, EXPLICIT, ONE-TIME allowance
+ *          (QUOTA_BOOTSTRAP_ADMITS, default 3) to admit blind, because the only
+ *          reactive producer on a headless/VS Code machine (quota_publish_wall)
+ *          fires from INSIDE a dispatch this gate would otherwise prevent from
+ *          ever running — plain fail-closed here is a permanent deadlock, not
+ *          caution (#1775 review, BLOCKING). The instant a REAL reading is ever
+ *          observed, the allowance is pinned exhausted forever (graduation),
+ *          even if that reading later goes missing or stale again — "signal
+ *          lost" must still fail closed exactly like INV-A. Most of the INV-A/B
+ *          tests below pin MINSPEC_QUOTA_BOOTSTRAP_ADMITS=0 specifically so they
+ *          keep testing the pure fail-closed invariant in isolation from this
+ *          carve-out; the "bootstrap allowance" describe block below tests INV-E
+ *          on its own, at the real default.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
@@ -50,33 +71,70 @@ function write(q: Partial<{ used_percentage: number; resets_at: number; observed
   fs.writeFileSync(quotaFile, JSON.stringify({ observed_at: nowSec(), ...q }));
 }
 
-describe('drain-inbox.sh --quota-gate — INV-A/INV-B: unknown state fails OPEN, audibly', () => {
-  it('no file at all → open, and says why', () => {
-    const r = run(['--quota-gate']);
-    expect(r.code).toBe(0);
-    expect(r.out).toMatch(/^open:/);
+describe('drain-inbox.sh --quota-gate — INV-A/INV-B: unknown state fails CLOSED, audibly', () => {
+  // These four pin MINSPEC_QUOTA_BOOTSTRAP_ADMITS=0 to disable the INV-E carve-out
+  // (see the top doc comment) and test the pure fail-closed invariant in isolation.
+  // Without the override, a FRESH tmpDir has never produced a reading, so these
+  // would legitimately bootstrap-admit instead of defer — that behaviour has its
+  // own describe block below ("the bootstrap allowance") rather than being folded
+  // in here, so this block keeps testing exactly one thing.
+  const noBootstrap = { MINSPEC_QUOTA_BOOTSTRAP_ADMITS: '0' };
+
+  it('no file at all → DEFER (exit 42), says why, and names the quota file', () => {
+    const r = run(['--quota-gate'], noBootstrap);
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:/);
     expect(r.out).toMatch(/no-reading/);
+    expect(r.out).toContain(quotaFile);
   });
 
-  it('unparseable garbage → open, not a crash and not a silent throttle', () => {
+  it('an unreadable file (permission denied) → DEFER, same as missing', () => {
+    write({ used_percentage: 1, resets_at: nowSec() + 3600 });
+    fs.chmodSync(quotaFile, 0o000);
+    let readable = true;
+    try { fs.accessSync(quotaFile, fs.constants.R_OK); } catch { readable = false; }
+    try {
+      // Root (common in containers) ignores file permissions, so chmod cannot make
+      // the file unreadable to this process there — skip rather than assert nothing.
+      if (!readable) {
+        const r = run(['--quota-gate'], noBootstrap);
+        expect(r.code).toBe(42);
+        expect(r.out).toMatch(/^defer:/);
+        expect(r.out).toMatch(/no-reading/);
+      }
+    } finally {
+      fs.chmodSync(quotaFile, 0o644);
+    }
+  });
+
+  it('unparseable garbage → DEFER, not a crash and not a silent admit', () => {
     fs.writeFileSync(quotaFile, 'not json at all {{{');
-    const r = run(['--quota-gate']);
-    expect(r.code).toBe(0);
-    expect(r.out).toMatch(/^open:/);
+    const r = run(['--quota-gate'], noBootstrap);
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:/);
     expect(r.out).toMatch(/no-reading/);
   });
 
-  it('a reading with fields missing → open', () => {
+  it('a reading with fields missing → DEFER', () => {
     fs.writeFileSync(quotaFile, JSON.stringify({ observed_at: nowSec() }));
-    expect(run(['--quota-gate']).code).toBe(0);
+    expect(run(['--quota-gate'], noBootstrap).code).toBe(42);
   });
 
-  it('STALE reading → open even though the percentage is way over the bar', () => {
+  it('STALE reading → DEFER even though the percentage is way over the bar (the staleness, not the level, is what deferred it — see the control below)', () => {
     // 99% used, but observed hours ago: nobody has looked since, so it proves nothing.
     write({ used_percentage: 99, resets_at: nowSec() + 3600, observed_at: nowSec() - 86400 });
     const r = run(['--quota-gate']);
-    expect(r.code).toBe(0);
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:/);
     expect(r.out).toMatch(/stale/);
+    expect(r.out).toContain(quotaFile);
+  });
+
+  it('CONTROL: a fresh reading well under the bar still ADMITS — the gate is not simply denying everything', () => {
+    write({ used_percentage: 5, resets_at: nowSec() + 3600 });
+    const r = run(['--quota-gate']);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/^open:/);
   });
 
   it('resets_at already in the past → open (the window reset itself)', () => {
@@ -235,13 +293,18 @@ describe('drain-inbox.sh --quota-publish-wall — the reactive producer', () => 
 });
 
 describe('drain-inbox.sh --quota-health — an inert gate must not be silent', () => {
-  // Failing open on a missing reading is correct, but it makes a dead gate and a
-  // healthy one look identical. This is the seam that tells them apart.
-  it('says INERT when there is no reading, naming the fail-open', () => {
-    const r = run(['--quota-health'], { MINSPEC_QUOTA_FILE: '/nonexistent/x.json' });
+  // With the bootstrap allowance EXHAUSTED (or disabled — pinned here so this test
+  // is about the true fail-closed end state, not INV-E's bootstrap window; see the
+  // "bootstrap allowance" describe block below for that), a missing reading HOLDS
+  // the gate shut (fails closed, #1775) rather than admitting blind, but that hold
+  // is still uninformed — it isn't weighing a real usage number. A blind-and-holding
+  // gate and a healthy one still look identical from the outside; this is the seam
+  // that tells them apart.
+  it('says INERT when there is no reading and bootstrap is exhausted, naming that it fails CLOSED', () => {
+    const r = run(['--quota-health'], { MINSPEC_QUOTA_FILE: '/nonexistent/x.json', MINSPEC_QUOTA_BOOTSTRAP_ADMITS: '0' });
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/^inert:/);
-    expect(r.out).toMatch(/failing open/i);
+    expect(r.out).toMatch(/failing closed/i);
   });
 
   it('says INERT when the reading is stale rather than reporting a stale number as live', () => {
@@ -260,6 +323,99 @@ describe('drain-inbox.sh --quota-health — an inert gate must not be silent', (
     expect(run(['--quota-health'], { MINSPEC_QUOTA_FILE: '/nonexistent/x.json' }).code).toBe(0);
     write({ used_percentage: 99, resets_at: nowSec() + 3600 });
     expect(run(['--quota-health']).code).toBe(0);
+  });
+});
+
+describe('drain-inbox.sh --quota-gate — INV-E: the bootstrap allowance (a machine that has NEVER seen a reading)', () => {
+  // This is the #1775-review BLOCKING finding: plain fail-closed on "no reading"
+  // deadlocks a fresh machine forever, because the only producer that could break
+  // the tie on a headless/VS Code box (quota_publish_wall) fires from INSIDE a
+  // dispatch this gate would otherwise prevent from ever running. See quota_gate's
+  // doc comment ("WORST CASE while blind") for the exact bound this allowance puts
+  // on that blind spot.
+
+  it('a fresh environment that has NEVER had a reading ADMITS via the bounded bootstrap allowance — the drain can reach a first dispatch', () => {
+    const r = run(['--quota-gate']);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/^open:bootstrap 1\/3/);
+    expect(r.out).toContain(quotaFile);
+  });
+
+  it('grants exactly QUOTA_BOOTSTRAP_ADMITS admits, counting up, then refuses outright and names what to install', () => {
+    expect(run(['--quota-gate']).out).toMatch(/^open:bootstrap 1\/3/);
+    expect(run(['--quota-gate']).out).toMatch(/^open:bootstrap 2\/3/);
+    expect(run(['--quota-gate']).out).toMatch(/^open:bootstrap 3\/3/);
+    const r = run(['--quota-gate']);
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:no-reading/);
+    expect(r.out).toMatch(/bootstrap allowance is exhausted/);
+    expect(r.out).toMatch(/quota-publish-wall/); // names what to install, not just "install something"
+  });
+
+  it('the allowance is tunable, and 0 disables it entirely — pure fail-closed, the state before this fix', () => {
+    const r = run(['--quota-gate'], { MINSPEC_QUOTA_BOOTSTRAP_ADMITS: '0' });
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:no-reading/);
+  });
+
+  it('once a REAL reading has ever existed, the bootstrap allowance is retired FOREVER — it does not re-open when the reading is later lost', () => {
+    // Consume exactly ONE of the three admits.
+    expect(run(['--quota-gate']).out).toMatch(/^open:bootstrap 1\/3/);
+    // A real reading now appears — e.g. another session's statusline render, or
+    // this bootstrap dispatch's own eventual usage-limit hit via quota_publish_wall
+    // — with plenty of window left.
+    write({ used_percentage: 5, resets_at: nowSec() + 3600 });
+    expect(run(['--quota-gate']).out).toMatch(/^open:5% of the 5h window used/);
+    // The reading disappears again — #1775's actual "signal lost" scenario.
+    fs.rmSync(quotaFile, { force: true });
+    // TWO of the three bootstrap admits were never consumed. A naive "count
+    // successes, not attempts" design would let them be spent now — graduation
+    // must block that: this is exactly the state #1775 requires to fail closed.
+    const r = run(['--quota-gate']);
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:no-reading/);
+    expect(r.out).toMatch(/bootstrap allowance is exhausted/);
+  });
+
+  it('a STALE reading still DEFERS even on a machine that has never bootstrapped — staleness is a REAL reading, not the "never had one" state', () => {
+    // 99% used, but observed a day ago: _quota_read SUCCEEDS (this graduates the
+    // allowance) before staleness is even checked, so bootstrap never applies here.
+    write({ used_percentage: 99, resets_at: nowSec() + 3600, observed_at: nowSec() - 86400 });
+    const r = run(['--quota-gate']);
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:stale/);
+    expect(r.out).not.toMatch(/bootstrap/);
+  });
+
+  it('CONTROL: a fresh reading well under the bar still ADMITS normally, not via bootstrap', () => {
+    write({ used_percentage: 5, resets_at: nowSec() + 3600 });
+    const r = run(['--quota-gate']);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/^open:5% of the 5h window used/);
+    expect(r.out).not.toMatch(/bootstrap/);
+  });
+
+  it('a bootstrap sidecar that cannot be written REFUSES to admit, rather than granting an admit it cannot remember granting', () => {
+    // The directory itself does not exist, so "<quotaFile>.bootstrap" can never be
+    // created either — an unbounded free pass would be worse than no allowance at
+    // all, because it could never self-exhaust.
+    const r = run(['--quota-gate'], { MINSPEC_QUOTA_FILE: '/nonexistent/nowhere/quota.json' });
+    expect(r.code).toBe(42);
+    expect(r.out).toMatch(/^defer:no-reading/);
+  });
+
+  it('quota-health names the bootstrap counter and says NOT YET failing closed while admits remain', () => {
+    const r = run(['--quota-health']);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/^inert:/);
+    expect(r.out).toMatch(/0\/3/);
+    expect(r.out).toMatch(/NOT YET FAILING CLOSED/i);
+  });
+
+  it('quota-health switches to failing-closed once the allowance is actually exhausted', () => {
+    run(['--quota-gate']); run(['--quota-gate']); run(['--quota-gate']); // consume all 3
+    const r = run(['--quota-health']);
+    expect(r.out).toMatch(/BLIND and HOLDING \(failing closed\)/i);
   });
 });
 

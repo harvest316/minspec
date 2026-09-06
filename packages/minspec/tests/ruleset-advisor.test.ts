@@ -1195,3 +1195,97 @@ describe('ENFORCE: check-name constants bound to producers (#820)', () => {
     for (const lit of new Set(nameFilterLiterals)) expect(lit).toBe(AI_REVIEW_CHECK);
   });
 });
+
+/**
+ * The check-run name GitHub derives from each job in a workflow: the job's
+ * explicit `name:` when present, otherwise the job key itself.
+ *
+ * Deliberately a small hand parser rather than a YAML dep — this test exists to
+ * catch a rename, so it reads the same two tokens GitHub reads and nothing more.
+ * Top-level job keys sit at 2 spaces under `jobs:`; a job-level `name:` at 4.
+ */
+function jobCheckRunNames(yaml: string): string[] {
+  const lines = yaml.split('\n');
+  const start = lines.findIndex((l) => /^jobs:\s*$/.test(l));
+  if (start === -1) throw new Error('no top-level `jobs:` block found');
+  const names: string[] = [];
+  let jobKey: string | null = null;
+  let explicit: string | null = null;
+  const flush = () => {
+    if (jobKey) names.push(explicit ?? jobKey);
+    jobKey = null;
+    explicit = null;
+  };
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break; // dedent to column 0 ⇒ out of `jobs:`
+    const key = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
+    if (key) {
+      flush();
+      jobKey = key[1];
+      continue;
+    }
+    const name = line.match(/^ {4}name:\s*['"]?([^'"#]+?)['"]?\s*(?:#.*)?$/);
+    if (name && jobKey && explicit === null) explicit = name[1];
+  }
+  flush();
+  return names;
+}
+
+/**
+ * The authoritative gate name(s) each workflow is responsible for. Note the two
+ * gates publish through DIFFERENT channels and so declare their name in
+ * different places: ready-to-merge posts a commit status whose `context:` is a
+ * literal in the YAML, while ai-review posts a check-run whose name lives in
+ * ai-review-guard.js. Read each from its real producer, never from a copy.
+ */
+const GATE_WORKFLOWS: ReadonlyArray<{
+  file: string;
+  gateNames: (yaml: string, root: string) => string[];
+}> = [
+  { file: 'ready-to-merge.yml', gateNames: (yaml) => commitStatusContexts(yaml) },
+  { file: 'ai-review.yml', gateNames: (_yaml, root) => [producedAiReviewCheckName(root)] },
+];
+
+describe("INVARIANT: a gate workflow's job check-run never shadows its own gate name", () => {
+  const root = findCheckNameRepoRoot();
+
+  // Why this is a T0 and not a style nit: a required context is resolved BY NAME,
+  // and GitHub counts every object carrying that name. When a job's implicit
+  // "did it exit 0" check-run shares the name of the authoritative gate, the pair
+  // fails closed only while BOTH exist. Lose the authoritative one — its posting
+  // step is best-effort and permission-dependent, which is the #810 shape — and
+  // the always-green job check-run satisfies the required context on its own. The
+  // gate then passes with no verdict behind it, silently. Constitution invariant 2
+  // requires a missing witness to fail closed, so these names must never collide.
+  //
+  // Measured on AIClarityAU/memory-fabric PR #13 and on this repo's PR #1799:
+  // `ready-to-merge` appeared as BOTH a failing commit status and a passing job
+  // check-run on the same head. Green for ai-review.yml (job key `runner`) and RED
+  // for ready-to-merge.yml until that job was given a distinct `name:` — that
+  // asymmetry is what proves this test is not vacuous.
+  for (const { file, gateNames } of GATE_WORKFLOWS) {
+    it(`${file}: no job check-run name collides with the gate it publishes`, () => {
+      const yaml = fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8');
+      const jobNames = jobCheckRunNames(yaml);
+      const gates = gateNames(yaml, root);
+
+      // Guard against a vacuous pass: if either side parses empty, the collision
+      // check below would hold for the wrong reason.
+      expect(jobNames.length).toBeGreaterThan(0);
+      expect(gates.length).toBeGreaterThan(0);
+
+      expect(jobNames.filter((n) => gates.includes(n))).toEqual([]);
+    });
+  }
+
+  it('the ready-to-merge gate context is still posted by that workflow (rename did not move it)', () => {
+    // The companion assertion. Making the names distinct must NOT be achieved by
+    // renaming the status — that is the required branch-protection context, and
+    // renaming it deadlocks `main` in every adopter repo that requires it.
+    const yaml = fs.readFileSync(
+      path.join(root, '.github/workflows/ready-to-merge.yml'),
+      'utf8',
+    );
+    expect(commitStatusContexts(yaml)).toContain(READY_TO_MERGE_CHECK);
+  });
+});

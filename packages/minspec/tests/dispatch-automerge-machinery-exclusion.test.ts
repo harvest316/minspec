@@ -18,9 +18,15 @@
  * dispatch-automerge-publish-exclusion.test.ts, which asserted `arm` for
  * `scripts/dispatch-issue.sh` and `.github/workflows/ai-review.yml`.
  *
- * Scope note: `^\.githooks/` is included here although ai-review.yml's machinery
- * regex misses it (#1284) — the witnesses need not share blind spots. The whole
- * predicate narrows to gate-critical-only in lock-step with ai-review per #509.
+ * Scope note: `^\.githooks/` is included here, same as ai-review.yml's machinery regex —
+ * both sides gained it in #1284. (A prior version of this note said ai-review's regex was
+ * missing it; that was stale — see #1758, which reconciled all three machinery
+ * definitions — ai-review.yml, this file's MACHINERY_PATH_RE, and
+ * scripts/auto-merge-gate.ts's BOUNDARY_DIR_PREFIXES — against one canonical source,
+ * packages/minspec/src/lib/machinery-paths.ts, after finding they had silently drifted:
+ * this witness omitted two `.ts` generator paths ai-review.yml covered, so for a PR
+ * touching only one of them the second witness was inert.) The whole predicate narrows
+ * to gate-critical-only in lock-step with ai-review per #509.
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'child_process';
@@ -66,12 +72,19 @@ describe('dispatch-issue.sh — machinery auto-merge exclusion (#1264)', () => {
       // any workflow at all: every workflow file is repo-secrets surface
       '.github/workflows/ci.yml',
       '.github/ISSUE_TEMPLATE/agent-task.yml',
-      // .githooks/ — the arm ai-review's own regex misses (#1284)
       '.githooks/commit-msg',
       // scripts/, both gate-defining and (until #509 narrows) operational
       'scripts/dispatch-issue.sh',
       'scripts/drain-inbox.sh',
       'scripts/roles/dev.md',
+      // #1758: the exact regression — machinery to ai-review.yml, but NOT machinery to
+      // this witness's OLD MACHINERY_PATH_RE, so the second witness was inert for these.
+      'packages/minspec/src/lib/template-registry.ts',
+      'packages/minspec/src/lib/ci-review-templates.ts',
+      // unused by this repo today, but part of the canonical set (#1758) — zero-cost.
+      '.circleci/config.yml',
+      '.buildkite/pipeline.yml',
+      '.husky/pre-commit',
     ]) {
       it(`holds: ${p}`, () => {
         const r = classify(p + '\n');
@@ -144,7 +157,13 @@ describe('dispatch-issue.sh — machinery auto-merge exclusion (#1264)', () => {
       const machineryLine = m.find((s) => s.includes('\\.github/'));
       expect(machineryLine, 'ai-review.yml machinery regex not found').toBeDefined();
       const mine = content.match(/^MACHINERY_PATH_RE='([^']+)'/m)![1];
-      for (const probe of ['.github/workflows/x.yml', 'scripts/x.sh']) {
+      for (const probe of [
+        '.github/workflows/x.yml',
+        'scripts/x.sh',
+        // #1758: the two paths a prior reconciliation left this witness blind to.
+        'packages/minspec/src/lib/template-registry.ts',
+        'packages/minspec/src/lib/ci-review-templates.ts',
+      ]) {
         expect(new RegExp(mine).test(probe), `MACHINERY_PATH_RE misses ${probe}`).toBe(true);
       }
     });

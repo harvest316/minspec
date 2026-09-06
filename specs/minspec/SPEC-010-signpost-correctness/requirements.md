@@ -7,6 +7,15 @@ tier: T4  # foundational: 17 FRs, DAG model, shared multi-caller contract — fu
 product: minspec
 epic: EPIC-002  # Signpost Integrity
 relates_to: [SPEC-005, SPEC-006, SPEC-012, SPEC-013]  # repair trigger; predicate strength; global order (DR-019); traceability parse-grammar co-owner
+implements: none
+implements_reason: >-
+  Specified, not built. Verified by absence rather than inferred: zero `SPEC-010` citations
+  across packages/minspec/src, packages/shared/src, scripts, .github and .githooks; the spec
+  directory holds only requirements.md; `packages/shared/src` has no coverage/checker/DAG
+  module; and there are zero hits for the FR-17 command. The signpost headers that do exist
+  read `SPEC-012 / DR-019`, i.e. a sibling spec owns them. Declares its owned files at
+  implementation, per the SPEC-034 precedent.
+affects: []
 ---
 
 # MinSpec — Signpost Correctness (Requirements)

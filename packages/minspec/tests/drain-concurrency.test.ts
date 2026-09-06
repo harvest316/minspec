@@ -120,7 +120,7 @@ describe('#1208 fan-out drives the REAL loop', () => {
   // dispatcher, rather than re-implementing the launch/reap shape in the test. A
   // test that replays its own idea of the algorithm proves only that the test is
   // self-consistent - it would stay green while the shipped loop was broken.
-  interface Harness { dir: string; bin: string; log: (w: string) => string; flight: string }
+  interface Harness { dir: string; bin: string; log: (w: string) => string; flight: string; quota: string }
 
   function makeHarness(issues: number[], dispatchBody: string): Harness {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drain-conc-'));
@@ -135,16 +135,26 @@ exit 0
     fs.writeFileSync(path.join(bin, 'dispatch.sh'), dispatchBody.replace(/__DIR__/g, dir));
     fs.chmodSync(path.join(bin, 'gh'), 0o755);
     fs.chmodSync(path.join(bin, 'dispatch.sh'), 0o755);
-    return { dir, bin, log: (w) => path.join(dir, `log.${w}`), flight: path.join(dir, 'flight') };
+    const quota = path.join(dir, 'quota.json');
+    // A FRESH, well-under-the-bar reading — never a missing file. The gate now fails
+    // CLOSED on an absent/stale reading (#1775), so a missing file would defer every
+    // cycle before dispatch even starts, and every test below would see zero dispatches.
+    fs.writeFileSync(quota, JSON.stringify({
+      used_percentage: 1,
+      resets_at: Math.floor(Date.now() / 1000) + 3600,
+      observed_at: Math.floor(Date.now() / 1000),
+    }));
+    return { dir, bin, log: (w) => path.join(dir, `log.${w}`), flight: path.join(dir, 'flight'), quota };
   }
 
-  // MINSPEC_QUOTA_FILE must be isolated too, and pointed at a path that does NOT
-  // exist. The quota gate reads it before dispatching, so without this the suite reads
-  // the machine's REAL ~/.claude/quota.json and its result depends on how much of the
-  // human's 5h window happens to be spent: above the bar the drain correctly defers and
-  // dispatches nothing, and the test fails with `expected +0 to be 1`. Caught exactly
-  // that way at 95% used. A missing file means "no reading", which fails open and
-  // admits - the deterministic state these tests need.
+  // MINSPEC_QUOTA_FILE must be isolated too, and pointed at the FRESH reading makeHarness
+  // just wrote. The quota gate reads it before dispatching, so without this the suite
+  // reads the machine's REAL ~/.claude/quota.json and its result depends on how much of
+  // the human's 5h window happens to be spent: above the bar the drain correctly defers
+  // and dispatches nothing, and the test fails with `expected +0 to be 1`. Caught exactly
+  // that way at 95% used. Pointing at a file that does not exist would ALSO defer now
+  // (#1775: a missing or stale reading fails CLOSED, never open), so these tests need a
+  // real, current, low-usage reading to get the deterministic admit they need.
   // MINSPEC_DRAIN_LOCK must be isolated alongside MINSPEC_DRAIN_LOG. The drain is a
   // singleton keyed on that lock (drain-inbox.sh:110), so without the override these
   // tests contend with any real drain running on the machine — including the live
@@ -164,7 +174,7 @@ exit 0
         MINSPEC_DRAIN_PRIMARY_ROOT="${path.join(h.dir, 'root')}" \
         MINSPEC_DRAIN_LOG="${h.log(width)}" \
         MINSPEC_DRAIN_LOCK="${path.join(h.dir, 'lock')}" \
-        MINSPEC_QUOTA_FILE="${path.join(h.dir, 'no-quota.json')}" \
+        MINSPEC_QUOTA_FILE="${h.quota}" \
         bash "${DRAIN}" --once 2>&1 | grep -oP 'PID \\K[0-9]+')
       while kill -0 "$pid" 2>/dev/null; do sleep 0.05; done
     `], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });

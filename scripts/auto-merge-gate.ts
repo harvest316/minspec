@@ -49,6 +49,10 @@ import { scanTestSource, type TestFinding } from '../packages/minspec/src/lib/te
 import type { ClassificationSignal } from '../packages/minspec/src/lib/classifier';
 import { renderReviewSignals } from '../packages/shared/src/review-signals';
 import type { ReviewSignalsInput } from '../packages/shared/src/review-signals';
+import {
+  MACHINERY_DIR_PREFIXES,
+  MACHINERY_SINGLE_FILES,
+} from '../packages/minspec/src/lib/machinery-paths';
 
 // ─── Arg parsing ─────────────────────────────────────────────────────────────
 
@@ -543,22 +547,33 @@ export function detectManifestChange(
  * `main` under auto-merge. Git-hook dirs are the same class of blind spot: this
  * repo runs `core.hooksPath=.githooks` (`.githooks/commit-msg` is the RCDD gate),
  * so a poisoned hook script is arbitrary shell that also trips no sensitive term.
+ *
+ * `.github/` and `scripts/` are the FULL prefixes, sourced from
+ * {@link MACHINERY_DIR_PREFIXES} (packages/minspec/src/lib/machinery-paths.ts) rather
+ * than the narrower `.github/workflows/` + `.github/actions/` + `scripts/roles/` this
+ * set used to carry (#1758). This module, ai-review.yml's self-edit guard, and
+ * dispatch-issue.sh's `MACHINERY_PATH_RE` are three independent checks over
+ * conceptually the same "does this decide whether some other change is allowed"
+ * question; the narrower subdirectories here meant a PR touching, say,
+ * `.github/scripts/ai-review-guard.js` or `scripts/dispatch-issue.sh` itself could
+ * classify low-blast in THIS gate even though the other two already treat it as
+ * self-certifying machinery — a real (if narrower) instance of the same
+ * single-witness gap #1758 fixed for dispatch. `scripts/roles/*.md` (#490, agent
+ * governance prompts) is still covered — `scripts/` is a strict superset of
+ * `scripts/roles/`. Importing the shared array (rather than hand-copying it again)
+ * means THIS consumer's agreement with the other two is enforced by the import graph,
+ * not just by a test.
  */
-const BOUNDARY_DIR_PREFIXES: readonly string[] = [
-  '.github/workflows/', // GitHub Actions workflows
-  '.github/actions/', // local/composite actions (arbitrary code in CI)
-  '.circleci/', // CircleCI pipeline config
-  '.buildkite/', // Buildkite pipeline config
-  '.githooks/', // git hooks run arbitrary shell on commit/push (this repo: core.hooksPath=.githooks)
-  '.husky/', // husky-managed git hooks — same arbitrary-shell-on-commit/push surface
-  // #490 review (2nd): dispatch AGENT-GOVERNANCE prompts (DR-008). scripts/roles/*.md
-  // define agent permissions + "MUST NOT" constraints and are loaded by
-  // dispatch-issue.sh to drive the security/merge/reviewer agents. They are `.md`
-  // but they are POLICY, not documentation — a role-prompt-only PR weakening the
-  // security or merge role must classify HIGH so it can never auto-merge unseen
-  // (the identical governance hole this PR closed for CODEOWNERS).
-  'scripts/roles/',
-];
+const BOUNDARY_DIR_PREFIXES: readonly string[] = [...MACHINERY_DIR_PREFIXES];
+
+/**
+ * Individual files that are boundary despite not living under a boundary directory —
+ * sourced from {@link MACHINERY_SINGLE_FILES} for the same reason as the dir prefixes
+ * above (#1758): both GENERATE machinery (the shipped CI-review stack, the scaffolded
+ * pre-commit gate) with a blast radius that reaches every downstream MinSpec-initialised
+ * repo, not just this one.
+ */
+const BOUNDARY_SINGLE_FILES: ReadonlySet<string> = new Set(MACHINERY_SINGLE_FILES);
 
 /**
  * Root CI-provider configs matched by basename (not tied to a directory prefix).
@@ -599,6 +614,7 @@ const BOUNDARY_CONFIG_BASENAMES: ReadonlySet<string> = new Set(['.npmrc', '.yarn
  *
  *   - anything under a {@link BOUNDARY_DIR_PREFIXES} directory (CI pipelines,
  *     plus `.githooks/`/`.husky/` — git hooks run arbitrary shell on commit/push);
+ *   - one of the {@link BOUNDARY_SINGLE_FILES} machinery generators;
  *   - a root CI-provider config by basename ({@link BOUNDARY_ROOT_BASENAMES});
  *   - package-manager config: `.npmrc`, `.yarnrc`, `.yarnrc.yml` (registry / auth
  *     / scripts → supply-chain surface);
@@ -614,6 +630,7 @@ export function isBoundaryPath(rawPath: string): boolean {
   for (const prefix of BOUNDARY_DIR_PREFIXES) {
     if (p === prefix.slice(0, -1) || p.startsWith(prefix) || p.includes('/' + prefix)) return true;
   }
+  if (BOUNDARY_SINGLE_FILES.has(p)) return true;
   const base = path.basename(p);
   if (BOUNDARY_ROOT_BASENAMES.has(base)) return true;
   if (BOUNDARY_CONFIG_BASENAMES.has(base)) return true;

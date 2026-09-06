@@ -211,3 +211,140 @@ export function readAutonomy(repoRoot: string, env: NodeJS.ProcessEnv = process.
   }
   return typeof raw === 'string' ? resolveAutonomy(raw) : 'ask';
 }
+
+// ─── the CLI seam (#1614) ────────────────────────────────────────────────────
+//
+// WHY A CLI AND NOT A BASH COPY OF THE RULE. The actors that must ask "may I
+// act?" before an unattended merge are bash (`scripts/dispatch-issue.sh`).
+// Re-expressing `mayProceed` in bash would give this repo TWO authorities for
+// the same question, and the one nobody is looking at is the one that drifts —
+// the failure this file's own header names. So bash asks THIS module, through
+// the seam shape the repo already uses for its other pure deciders
+// (`dispatch-issue.sh --paths-have-approvable-doc`, `remediate-pr.sh
+// --classify`, `dispatch-ready-check.sh --may-approve`).
+//
+//   npx tsx scripts/lib/autonomy.ts --may-proceed \
+//     --repo-root <abs path> \
+//     --summary <what the caller proposes to do> \
+//     [--stop-classes <comma-separated>] \
+//     [--rejected-alternatives <newline-separated>] \
+//     [--verification-pending true|false]
+//
+// stdout: ONE line of JSON — the `Verdict`, plus the resolved `autonomy` for the
+// record. Exit 0 = proceed, exit 1 = deny.
+//
+// FAIL-CLOSED AT EVERY EDGE, because a gate that cannot run must not admit:
+// an unrecognised flag, a flag with no value, a missing `--repo-root`, a
+// non-boolean `--verification-pending`, an unreadable config — every one exits 1
+// with a deny verdict. `readAutonomy` already fails closed on the config side,
+// and the invocation edges (no node_modules, no tsx, non-zero exit, unparseable
+// stdout) are the CALLER's to fail closed on: see `scripts/lib/autonomy.sh`.
+
+/** The CLI's answer. `line` is exactly what gets printed, verbatim. */
+export interface AutonomyCliResult {
+  readonly exitCode: number;
+  readonly line: string;
+}
+
+/**
+ * Reasons the CLI can report that `mayProceed` cannot, because they are about the
+ * INVOCATION rather than the decision. Kept a named union so the bash side and the
+ * tests share one vocabulary.
+ */
+export type AutonomyCliReason = 'cli-usage';
+
+/**
+ * Pure: argv in, `{exitCode, line}` out. No process access, no exit, so the
+ * argv-edge cases are unit-testable without spawning anything.
+ */
+export function runAutonomyCli(
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): AutonomyCliResult {
+  const deny = (reason: AutonomyCliReason, detail: string): AutonomyCliResult => ({
+    exitCode: 1,
+    line: JSON.stringify({ proceed: false, reason, detail, autonomy: 'ask' as Autonomy }),
+  });
+
+  const raw: Record<string, string> = {};
+  for (let i = 0; i < argv.length; i++) {
+    const key = argv[i];
+    if (key === '--may-proceed') continue; // the verb; kept so the call site reads
+    if (!key.startsWith('--')) return deny('cli-usage', `unexpected argument: ${key}`);
+    const value = argv[i + 1];
+    // A value that itself looks like a flag means the PREVIOUS flag was given no
+    // value, and silently shifting would build a DIFFERENT action than the caller
+    // described. Refusing is the only fail-closed reading.
+    if (value === undefined || value.startsWith('--')) {
+      return deny('cli-usage', `${key} needs a value`);
+    }
+    raw[key.slice(2)] = value;
+    i++;
+  }
+
+  const repoRoot = (raw['repo-root'] ?? '').trim();
+  if (repoRoot === '') {
+    return deny(
+      'cli-usage',
+      '--repo-root is required — the setting is read from <repo-root>/.minspec/config.json, ' +
+        'and guessing the root could read a DIFFERENT repo’s policy.',
+    );
+  }
+
+  const summary = (raw.summary ?? '').trim();
+  if (summary === '') {
+    return deny(
+      'cli-usage',
+      '--summary is required — an act-mode decision with no stated action cannot be reviewed afterwards (DR-086 §4).',
+    );
+  }
+
+  // Exact-token, like resolveAutonomy: anything that is not literally `true` or
+  // `false` is a value we cannot read, and an unreadable input is not permission.
+  const pendingRaw = (raw['verification-pending'] ?? 'false').trim();
+  if (pendingRaw !== 'true' && pendingRaw !== 'false') {
+    return deny('cli-usage', `--verification-pending must be exactly true or false, got "${pendingRaw}"`);
+  }
+
+  // Unrecognised class tokens are deliberately NOT filtered out. `mayProceed`
+  // denies on any non-empty list and renders an unknown id as `(UNKNOWN CLASS)`;
+  // dropping one here would silently turn a stop into a proceed.
+  const stopClasses = (raw['stop-classes'] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0) as StopClass[];
+
+  // Newline-separated, not comma-separated: a rejected alternative is prose and
+  // prose contains commas, so splitting on `,` would shred one reason into two.
+  const rejectedAlternatives = (raw['rejected-alternatives'] ?? '')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  const autonomy = readAutonomy(repoRoot, env);
+  const verdict = mayProceed(autonomy, {
+    summary,
+    stopClasses,
+    verificationPending: pendingRaw === 'true',
+    rejectedAlternatives,
+  });
+
+  return {
+    exitCode: verdict.proceed ? 0 : 1,
+    line: JSON.stringify({ ...verdict, autonomy }),
+  };
+}
+
+// Run ONLY when this file is the process entry point.
+//
+// Keyed on argv[1] rather than `import.meta.url` or `require.main`, because this
+// module is loaded two ways and only the argv check is correct under both: vitest
+// imports it as ESM (where `require.main` does not exist), and `npx tsx` runs it
+// as CJS (the root package.json has no `"type": "module"`, where `import.meta` is
+// not reliably available). Under vitest argv[1] is the vitest binary, so importing
+// this file executes nothing.
+if (/(^|[\\/])autonomy\.ts$/.test(process.argv[1] ?? '')) {
+  const result = runAutonomyCli(process.argv.slice(2));
+  console.log(result.line);
+  process.exit(result.exitCode);
+}

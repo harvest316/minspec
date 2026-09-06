@@ -51,5 +51,6 @@
   "autoMerge": {
     "native": true
   },
-  "ownershipDeclaration": "error"
+  "ownershipDeclaration": "error",
+  "autonomy": "act"
 }

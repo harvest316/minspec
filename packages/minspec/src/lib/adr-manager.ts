@@ -621,6 +621,51 @@ function synthesizeAdrFrontmatter(filePath: string, content: string, status: Adr
  * `unparseable` lines are returned untouched, because silently rewording a hand-authored
  * rationale is a worse failure than a caught parity error.
  */
+/**
+ * A status line whose PROSE negates a status word — `**Proposed** … Not accepted …`.
+ *
+ * `reconcileBodyStatus` swaps the token and cannot see the rest of the sentence. When
+ * that sentence was written to explain the OLD value, swapping inverts its meaning and
+ * produces a line asserting both, which is what accepting DR-088 did (#1833):
+ *
+ *     **Accepted** 2026-08-24. Not accepted, and an agent must never mint that.
+ *
+ * `npm run validate` PASSES on that text — the #626 parity rule compares the token to
+ * the frontmatter and both say `accepted`; nothing reads the clause after it. So the
+ * mechanism that keeps the gate green produced the exact false signpost the gate exists
+ * to prevent, silently.
+ *
+ * Deliberately narrow: NEGATION, not mere mention. Measured across the corpus, mere
+ * mention fires on 9 of 27 DRs — nearly all benign history ("Accepted 2026-08-05.
+ * Proposed 2026-06-23"), where swapping the token is correct. Negation fires on
+ * exactly 1: DR-088, the real defect. A rule that refused all 9 would block acceptance
+ * on a third of the corpus to catch one case.
+ *
+ * Returns the offending line (1-based) and its text, or null when safe to rewrite.
+ */
+export function statusProseWouldInvert(
+  content: string,
+  _status: AdrStatus,
+): { line: number; text: string } | null {
+  const NEGATED =
+    /\b(not|never|no longer|neither|isn't|is not)\s+(yet\s+)?(proposed|accepted|deprecated|superseded)\b/i;
+  const lines = content.split('\n');
+  for (const c of inspectAllStatusClaims(content, 'dr')) {
+    if (c.kind !== 'comparable') continue;
+    const raw = lines[c.line - 1] ?? '';
+    // Strip the way the READER identifies the token: blockquote / `Status:` prefix,
+    // leading emphasis, then the first word. What remains is the prose.
+    const stripped = raw
+      .replace(/^>\s*/, '')
+      .replace(/^[*_]{0,2}Status:\s*/i, '')
+      .replace(/^[*_]+/, '');
+    const m = stripped.match(/^([A-Za-z]+)/);
+    const rest = m ? stripped.slice(m[0].length) : stripped;
+    if (NEGATED.test(rest)) return { line: c.line, text: raw.trim() };
+  }
+  return null;
+}
+
 export function reconcileBodyStatus(content: string, status: AdrStatus): string {
   const claims = inspectAllStatusClaims(content, 'dr');
   const targets = claims.filter((c): c is { kind: 'comparable'; token: string; line: number } =>
@@ -631,7 +676,12 @@ export function reconcileBodyStatus(content: string, status: AdrStatus): string 
   const lines = content.split('\n');
   const known = new RegExp(`\\b(${[...ADR_STATUSES].join('|')})\\b`, 'i');
 
+  const unsafe = statusProseWouldInvert(content, status);
   for (const t of targets) {
+    // Never rewrite a line whose prose negates a status word — swapping the token
+    // there inverts the sentence (#1833). setAdrStatus refuses loudly before any
+    // write; this keeps the pure function honest if it is called directly.
+    if (unsafe && unsafe.line === t.line) continue;
     const idx = t.line - 1;
     if (idx < 0 || idx >= lines.length) continue;
     const m = known.exec(lines[idx]);
@@ -659,6 +709,21 @@ export function setAdrStatus(filePath: string, status: AdrStatus): AdrStatus {
     const block = `---\n${synthesizeAdrFrontmatter(filePath, content, status)}\n---`;
     fs.writeFileSync(filePath, `${block}\n\n${content.replace(/^\s*\n+/, '')}`, 'utf-8');
     return status;
+  }
+
+  // #1833 — check BEFORE writing anything. Refusing after the frontmatter write would
+  // leave the file asserting two statuses, which is the state this whole mechanism
+  // exists to prevent.
+  const inverts = statusProseWouldInvert(content, status);
+  if (inverts) {
+    throw new Error(
+      `Refusing to set ${path.basename(filePath)} to "${status}": its body status line ` +
+        `negates a status word, so rewriting the token would invert the sentence.\n\n` +
+        `  line ${inverts.line}: ${inverts.text}\n\n` +
+        `Reword that line so it reads correctly under the new status, then retry. ` +
+        `(Accepting DR-088 produced "**Accepted** … Not accepted …" this way — validation ` +
+        `passes on it, because the parity rule reads only the token.)`,
+    );
   }
 
   const yaml = fmMatch[1];

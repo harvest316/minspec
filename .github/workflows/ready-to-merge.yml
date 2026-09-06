@@ -97,7 +97,7 @@ permissions:
   contents: read         # checkout the trusted base commit + read the head commit's timestamp
 
 jobs:
-  ready-to-merge:
+  gate:
     runs-on: ubuntu-latest
     steps:
       # ── Fail closed if we cannot pin the checkout to a trusted base commit ──

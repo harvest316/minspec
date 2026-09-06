@@ -47,7 +47,11 @@
 #                  reset time, the loop sleeps to that instead of guessing.
 #   MINSPEC_QUOTA_FILE=~/.claude/quota.json — the published 5h window deadline.
 #   MINSPEC_QUOTA_ADMIT_PCT=90     — defer a cycle at/above this %% of the window.
-#   MINSPEC_QUOTA_STALE_SEC=900    — ignore a reading older than this (fails open).
+#   MINSPEC_QUOTA_STALE_SEC=900    — ignore a reading older than this (fails CLOSED — defers).
+#   MINSPEC_QUOTA_BOOTSTRAP_ADMITS=3 — admits granted while NO reading has EVER existed,
+#                                    before the gate refuses outright (#1775 bootstrap
+#                                    carve-out; see quota_gate). 0 disables bootstrap
+#                                    entirely (pure fail-closed on every unknown).
 #   MINSPEC_DRAIN_POLL=30          — session-liveness poll granularity while waiting.
 #   MINSPEC_DRAIN_MAX_LIFETIME=28800 — hard wall-clock cap on a loop (8 h backstop).
 #   MINSPEC_DRAIN_MAX_FAILURES=3   — stop after N consecutive non-quota cycle errors.
@@ -155,10 +159,19 @@ MAX_CONSEC_FAIL="${MINSPEC_DRAIN_MAX_FAILURES:-3}"   # stop after N straight err
 # nobody: we compare `now` to resets_at right here, at the moment it matters, and
 # the gate opens because time passed. There is no resume path to get wrong.
 #
-# Fails OPEN on every unknown — missing, stale, unparseable, or no jq. A reading
-# we do not have must never wedge the queue. It always names WHICH unknown,
-# because a silent throttle is indistinguishable from a quiet week (constitution
-# invariant 2: no silent gate).
+# Fails CLOSED on every unknown — missing, stale, unparseable, or no jq (#1775,
+# reversing this gate's original fail-OPEN design). A reading we do not have
+# must never read as permission to spend a build agent's quota; it always
+# names WHICH unknown, because a silent throttle is indistinguishable from a
+# quiet week (constitution invariant 2: no silent gate).
+#
+# The one carve-out is BOOTSTRAP, not fail-open: a machine that has NEVER once
+# produced a reading is a different state from one whose signal went missing or
+# stale, because the only reactive producer for a headless/VS Code machine
+# (quota_publish_wall, below) fires from INSIDE a dispatch that fail-closed
+# would otherwise prevent from ever running — a permanent deadlock, not caution.
+# See QUOTA_BOOTSTRAP_ADMITS and quota_gate's "no reading" arm for the small,
+# explicit, one-time allowance and its worst case.
 QUOTA_FILE="${MINSPEC_QUOTA_FILE:-$HOME/.claude/quota.json}"
 QUOTA_ADMIT_PCT="${MINSPEC_QUOTA_ADMIT_PCT:-90}"     # defer at/above this % used
 QUOTA_ADMIT_PCT_7D="${MINSPEC_QUOTA_ADMIT_PCT_7D:-95}"  # same, for the WEEKLY window.
@@ -170,6 +183,15 @@ QUOTA_STALE_SEC="${MINSPEC_QUOTA_STALE_SEC:-900}"    # older reading proves noth
 QUOTA_SLEEP_MAX="${MINSPEC_QUOTA_SLEEP_MAX:-21600}"  # 6 h clamp vs a corrupt epoch
 QUOTA_SLEEP_MIN="${MINSPEC_QUOTA_SLEEP_MIN:-60}"     # never spin
 QUOTA_SLEEP_MARGIN="${MINSPEC_QUOTA_SLEEP_MARGIN:-15}"  # settle past the boundary
+
+# The bootstrap allowance (see quota_gate's "no reading" arm, below). Default 3
+# matches this file's other small-and-bounded defaults (MAX_CONSEC_FAIL, the
+# autocompact ac_halt) — not a magic number, a reused convention. Sidecar
+# defaults next to QUOTA_FILE so it inherits the same per-environment isolation
+# (tests point MINSPEC_QUOTA_FILE at a fresh tmp dir; production writes beside
+# ~/.claude/quota.json, which is already writable by the statusline).
+QUOTA_BOOTSTRAP_ADMITS="${MINSPEC_QUOTA_BOOTSTRAP_ADMITS:-3}"
+QUOTA_BOOTSTRAP_FILE="${MINSPEC_QUOTA_BOOTSTRAP_FILE:-${QUOTA_FILE}.bootstrap}"
 
 # Dispatch fan-out (#1208). Default 1 = the historical strictly-sequential walk,
 # byte-for-byte: parallelism is OPT-IN, never inherited. >1 dispatches up to N
@@ -838,6 +860,51 @@ run_cycle() {
   return 0
 }
 
+# _quota_bootstrap_count: bootstrap admits already granted at QUOTA_BOOTSTRAP_FILE
+# (0 if the file is absent/unparseable — never fatal, matches every other reader
+# in this file). Once a real reading has ever been observed, _quota_read (below)
+# pins this at QUOTA_BOOTSTRAP_ADMITS forever, so it reads as "exhausted" even if
+# QUOTA_BOOTSTRAP_FILE itself is later lost — re-derived from empty by design.
+_quota_bootstrap_count() {
+  local n
+  n=$(cat "$QUOTA_BOOTSTRAP_FILE" 2>/dev/null || true)
+  [[ "$n" =~ ^[0-9]+$ ]] && printf '%s\n' "$n" || printf '0\n'
+}
+
+# _quota_bootstrap_consume <want>: try to persist that <want> admits have now been
+# granted. Write-then-VERIFY, not fire-and-forget: if the sidecar can't be written
+# (read-only dir, full disk), the count never advances and every future call keeps
+# recomputing the same low <want> — the allowance only ever shrinks on a write
+# failure, never grows past QUOTA_BOOTSTRAP_ADMITS. Returns 1 on a failed/unverified
+# write so the caller can refuse to admit rather than hand out an admit it cannot
+# remember granting (which would be unbounded, not bootstrap).
+_quota_bootstrap_consume() {
+  local want="$1" tmp
+  tmp="${QUOTA_BOOTSTRAP_FILE}.$$.tmp"
+  # Braced so 2>/dev/null covers a FAILED redirect too (e.g. the dir doesn't
+  # exist): bash reports that error on the original stderr before a trailing
+  # `2>/dev/null` on the same simple command ever takes effect, so an unbraced
+  # `printf ... > "$tmp" 2>/dev/null` still leaks "No such file or directory".
+  { printf '%s\n' "$want" > "$tmp" && mv -f "$tmp" "$QUOTA_BOOTSTRAP_FILE"; } 2>/dev/null \
+    || { rm -f "$tmp" 2>/dev/null; return 1; }
+  [[ "$(_quota_bootstrap_count)" == "$want" ]]
+}
+
+# _quota_bootstrap_graduate: called the instant _quota_read observes a REAL reading
+# (below). Pins the counter at the cap so bootstrap can never reopen for this
+# QUOTA_FILE — including later, if that reading goes missing or stale again. That
+# "signal lost" state is exactly what #1775's fail-closed protects; bootstrap only
+# ever covers "never had a signal at all". Best-effort: a failed write here just
+# means the next successful read tries again, which self-heals as soon as the
+# sidecar is writable — it can only delay graduation, never un-graduate.
+_quota_bootstrap_graduate() {
+  local tmp="${QUOTA_BOOTSTRAP_FILE}.$$.tmp"
+  # See _quota_bootstrap_consume above for why this is braced before 2>/dev/null.
+  { printf '%s\n' "$QUOTA_BOOTSTRAP_ADMITS" > "$tmp" && mv -f "$tmp" "$QUOTA_BOOTSTRAP_FILE"; } 2>/dev/null \
+    || rm -f "$tmp" 2>/dev/null
+  return 0
+}
+
 # _quota_read: print "<pct_int> <resets_at> <observed_at> <7d_pct> <7d_resets_at>", or
 # fail if there is no usable reading. Every caller treats failure as "unknown" and
 # proceeds. The two weekly fields are -1 when the producer could not see that window.
@@ -852,24 +919,60 @@ _quota_read() {
         "$QUOTA_FILE" 2>/dev/null) || return 1
   IFS=$'\t' read -r p r o wp wr <<<"$raw"
   [[ -n "$p" && -n "$r" && -n "$o" ]] || return 1
+  # A real reading exists: retire the bootstrap allowance for good (see
+  # _quota_bootstrap_graduate). Runs on EVERY successful read, not just quota_gate's,
+  # so quota_health/quota_sleep_secs graduate it just as fast.
+  _quota_bootstrap_graduate
   # Truncate any fractional part: these are fed to integer arithmetic below.
   printf '%s %s %s %s %s\n' "${p%%.*}" "${r%%.*}" "${o%%.*}" "${wp%%.*}" "${wr%%.*}"
 }
 
 # quota_gate: exit 0 = admit, 42 = defer. Prints the verdict AND its reason, so a
-# deferral and a fail-open are never silent. 42 is deliberate: run_loop already
-# treats it as "pause, not a failure", so admission control needs no new branch.
+# deferral is never silent. An UNKNOWN budget (no reading, or a stale one) DEFERS
+# rather than admits — a missing or expired witness must read as "hold", never as
+# permission to spend a build agent's quota (constitution invariant 2; #1775). 42
+# is deliberate: run_loop already treats it as "pause, not a failure", so admission
+# control needs no new branch — a denied cycle here is a sleep-and-retry, not an
+# outage.
+#
+# The "no reading" arm below is NOT plain fail-closed — it is fail-closed WITH a
+# bounded bootstrap carve-out (see QUOTA_BOOTSTRAP_ADMITS above). Plain fail-closed
+# deadlocks a machine that has never produced a reading: quota_publish_wall (the
+# only reactive producer on a headless/VS Code machine) fires from INSIDE a
+# dispatch, and this gate runs BEFORE every dispatch — so a machine that starts
+# with no reading and no external poller would defer every cycle forever, and the
+# one producer that could break the tie would never get to run. The allowance
+# grants up to QUOTA_BOOTSTRAP_ADMITS admits (default 3) while _quota_read has
+# NEVER once succeeded at this path, then refuses outright and names what to
+# install.
+#
+# WORST CASE while blind: up to QUOTA_BOOTSTRAP_ADMITS admitted decisions, each
+# with the SAME blast radius as any ordinary admitted cycle (this allowance does
+# not widen what one admit can do, only how many blind ones are handed out). In
+# the default serial dispatch mode (DISPATCH_CONCURRENCY=1) that means up to
+# QUOTA_BOOTSTRAP_ADMITS cycles, each free to dispatch the ENTIRE agent-ready
+# backlog with no further quota check until a real usage-limit hit ends it — no
+# different from any single legitimately-admitted cycle today. In parallel mode
+# (DISPATCH_CONCURRENCY>1), quota_gate is re-consulted per LAUNCH (see the
+# `qv=$(quota_gate)` call in run_cycle's parallel path), so the allowance caps at
+# exactly QUOTA_BOOTSTRAP_ADMITS concurrent launches before the rest of the queue
+# holds for the window.
 quota_gate() {
   local vals p r o wp wr now
   now=$(date +%s)
   if ! vals=$(_quota_read); then
-    echo "open:no-reading (no usable $QUOTA_FILE — proceeding)"
-    return 0
+    local bc="$(_quota_bootstrap_count)"
+    if (( bc < QUOTA_BOOTSTRAP_ADMITS )) && _quota_bootstrap_consume "$(( bc + 1 ))"; then
+      echo "open:bootstrap $(( bc + 1 ))/${QUOTA_BOOTSTRAP_ADMITS} (no reading has ever existed at $QUOTA_FILE — admitting a bounded bootstrap cycle so the drain can reach a first reading; install a quota producer before this allowance runs out)"
+      return 0
+    fi
+    echo "defer:no-reading (no usable $QUOTA_FILE, and the ${QUOTA_BOOTSTRAP_ADMITS}-admit bootstrap allowance is exhausted or unrecordable — refusing to run further blind. Install a quota producer: run a session whose statusline renders on this machine, or pipe a wall message into '$0 --quota-publish-wall'.)"
+    return 42
   fi
   read -r p r o wp wr <<<"$vals"
   if (( now - o > QUOTA_STALE_SEC )); then
-    echo "open:stale (reading is $(( now - o ))s old, limit ${QUOTA_STALE_SEC}s — proceeding)"
-    return 0
+    echo "defer:stale (reading is $(( now - o ))s old, limit ${QUOTA_STALE_SEC}s, $QUOTA_FILE — holding until refreshed)"
+    return 42
   fi
   # The WEEKLY ceiling is checked before anything to do with the 5h window, because the
   # two are INDEPENDENT: the 5h window turning over does not refill the weekly one. This
@@ -925,20 +1028,32 @@ quota_sleep_secs() {
 }
 
 # quota_health: one line, once per loop, saying whether admission control is actually
-# LIVE. Failing open on a missing reading is correct, but it is also invisible — an
-# inert gate and a healthy one both look like silence, so the drain would report a quiet
-# window either way (constitution invariant 2: no silent gate). This is the difference
-# between installed and adopted: say out loud when the gate cannot see anything.
+# SEEING DATA. A STALE reading, or a MISSING one whose bootstrap allowance is
+# exhausted, correctly HOLDS the gate shut (defers every cycle, #1775) rather than
+# admitting blind — but that hold is still uninformed, not weighing a real usage
+# number, just refusing on principle until one exists. A MISSING reading with
+# bootstrap admits still available is a THIRD state, distinct from both: not yet
+# failing closed, still admitting blind on a small bounded budget (see
+# QUOTA_BOOTSTRAP_ADMITS / quota_gate). An inert gate and a healthy one still look
+# identical from the outside otherwise (constitution invariant 2: no silent gate).
+# This is the difference between installed and adopted: say out loud when the gate
+# cannot see anything, and which of the three states it is actually in — never
+# consumes a bootstrap admit itself, this only READS the counter (_quota_bootstrap_count).
 quota_health() {
   local vals p r o wp wr now
   now=$(date +%s)
   if ! vals=$(_quota_read); then
-    echo "inert: no reading at $QUOTA_FILE — admission control is OFF (failing open). The statusline publisher only runs when a statusline renders, which VS Code and headless sessions never do; the wall-message producer will populate it on the next quota hit."
+    local bc; bc=$(_quota_bootstrap_count)
+    if (( bc < QUOTA_BOOTSTRAP_ADMITS )); then
+      echo "inert: no reading at $QUOTA_FILE — admission control is BLIND but NOT YET FAILING CLOSED: bootstrap allowance ${bc}/${QUOTA_BOOTSTRAP_ADMITS} recorded, and the gate still attempts a bounded blind admit until it is exhausted, a real reading appears, or $QUOTA_BOOTSTRAP_FILE turns out to be unwritable (an attempt that can't be recorded is refused rather than granted uncounted — this reports the counter, not writability). Install a quota producer before it runs out."
+    else
+      echo "inert: no reading at $QUOTA_FILE, and the ${QUOTA_BOOTSTRAP_ADMITS}-admit bootstrap allowance is exhausted — admission control is BLIND and HOLDING (failing closed). Install a quota producer: run a session whose statusline renders on this machine, or pipe a wall message into '--quota-publish-wall'."
+    fi
     return 0
   fi
   read -r p r o wp wr <<<"$vals"
   if (( now - o > QUOTA_STALE_SEC )); then
-    echo "inert: reading is $(( (now - o) / 60 )) min old (limit $(( QUOTA_STALE_SEC / 60 )) min) — admission control is OFF (failing open)."
+    echo "inert: reading is $(( (now - o) / 60 )) min old (limit $(( QUOTA_STALE_SEC / 60 )) min) — admission control is BLIND and HOLDING (failing closed) at $QUOTA_FILE."
     return 0
   fi
   if (( wp >= 0 )); then
@@ -951,10 +1066,16 @@ quota_health() {
 # quota_publish_wall: the REACTIVE producer, reading the wall message on stdin.
 #
 # The statusline publisher only runs when a statusline RENDERS. VS Code and headless
-# sessions never render one, so on those machines nothing is ever published and the
-# gate sits permanently inert — failing open forever, which is correct behaviour and
-# therefore invisible. This is the reading that is always available: it arrives at the
-# exact moment the window is exhausted.
+# sessions never render one, so on those machines nothing is ever published — and this
+# producer only ever fires from INSIDE a dispatch (classify_dispatch calls it after a
+# dispatch reports a usage-limit hit). On a machine that has never had a reading, that
+# is exactly what quota_gate's bootstrap allowance exists to unblock: without it, no
+# dispatch could ever run, so this producer could never run either — a permanent
+# deadlock, not a hold (#1775 review, BLOCKING). The bootstrap allowance is small and
+# self-exhausting (QUOTA_BOOTSTRAP_ADMITS); once it runs out with still no reading, the
+# gate HOLDS every cycle closed for real, loud not invisible: quota_gate prints why on
+# every deferred cycle. This is the reading that is always available once a dispatch
+# CAN run: it arrives at the exact moment the window is exhausted.
 #
 # It is strictly worse than the statusline reading (no percentage, so no PREDICTIVE
 # admission — only the deadline) but it needs no credentials and makes no network call,
@@ -1112,7 +1233,8 @@ case "$1" in
     ;;
   --quota-gate)
     # Pure seam: would the drain admit a cycle right now? exit 0 admit / 42 defer,
-    # with the reason on stdout. Offline by construction — reads one local file.
+    # with the reason on stdout. Offline by construction — reads local files only
+    # (QUOTA_FILE, and its QUOTA_BOOTSTRAP_FILE sidecar on a "no reading" verdict).
     quota_gate; exit $?
     ;;
   --quota-sleep)
