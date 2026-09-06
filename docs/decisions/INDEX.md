@@ -714,4 +714,12 @@ The founder decided on 2026-08-23, answering #1481 (should implements: be part o
 <!-- dr-summary:DR-089 auto=e73452b46dc0 -->
 .minspec/generated-hashes.json decides, on every *Refresh Harness Files*, whether a section of a managed file is MinSpec's own output (safe to update from the template) or the project's content (must be preserved). #1697 established that it was answering that question wrongly in two independent ways, and that the wrong answer deleted a Principle's standing exception - a paragraph that authorised shipped code - from a live project.
 <!-- /dr-summary:DR-089 -->
+
+## [DR-090 — Prose inside a managed file is shipped code — it must hold in the repo that receives it, or name the minspec repo as its subject](DR-090.md)
+
+*Status: proposed · Date: 2026-09-02*
+
+<!-- dr-summary:DR-090 auto=24731184e6a8 -->
+`MANAGED_REGION_TEMPLATES` is the set of files MinSpec scaffolds byte-for-byte into every repo that inits it. The bytes are held identical by construction, which has a consequence nobody wrote down: a false sentence in a managed file cannot be corrected downstream. #1108 was filed after the skeptic voter on AIClarityAU/sealbox#32 read one such sentence.
+<!-- /dr-summary:DR-090 -->
 <!-- minspec:dr-index:end -->
