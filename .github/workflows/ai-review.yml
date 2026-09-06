@@ -838,6 +838,10 @@ jobs:
           # divergent definition. Empty/missing (review step never completed)
           # defaults to "false" below, never a false machinery exemption.
           IS_MACHINERY: ${{ steps.review.outputs.is_machinery }}
+          # #1728 — the two SHAs the three-dot patch is computed from. GitHub-assigned,
+          # never PR-controlled text.
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -uo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
@@ -850,6 +854,13 @@ jobs:
           # expression — injection-safe.
           # (NB: an Actions expression written literally here would be evaluated even
           # inside this shell comment — an empty one fails workflow load; #486.)
+          # #1728 — the patch this verdict is ABOUT. Written to a file, not an env var:
+          # a diff can exceed the environment size limit, and a truncated patch would
+          # fingerprint as a different one. Failure here just yields no marker, which
+          # degrades to today's behaviour (always re-review) rather than a wrong match.
+          PATCH_FILE="$RUNNER_TEMP/ai-review-patch.txt"
+          git diff "$PR_BASE_SHA...$PR_HEAD_SHA" > "$PATCH_FILE" 2>/dev/null || : > "$PATCH_FILE"
+          export PATCH_FILE
           BODY="$RUNNER_TEMP/ai-review-check.json"
           # BODY MUST be an ENV var (prefix), not a trailing arg: `node -e '…' BODY=x`
           # makes BODY a positional argv, so `process.env.BODY` is undefined and
@@ -859,12 +870,21 @@ jobs:
             const g = require(process.env.GITHUB_WORKSPACE + "/.github/scripts/ai-review-guard.js");
             const c = g.decideReviewCheck(process.env.VERDICT_LABEL || "", process.env.IS_MACHINERY === "true");
             const fs = require("fs");
+            // #1728 — record the THREE-DOT patch fingerprint on the check-run so a
+            // later run can tell "this SHA is new" from "this PATCH is new". A
+            // forward-merge under `strict` changes the former and not the latter.
+            // Recorded here, in App-authored output, for the same reason the witness
+            // lives here: it is server-attested provenance, not a mutable comment (#397).
+            const fp = g.patchFingerprint(
+              (() => { try { return fs.readFileSync(process.env.PATCH_FILE, "utf8"); } catch { return ""; } })(),
+            );
+            const marker = fp ? "\n\n" + g.renderPatchFingerprint(fp) : "";
             fs.writeFileSync(process.env.BODY, JSON.stringify({
               name: c.name,
               head_sha: process.env.HEAD_SHA,
               status: "completed",
               conclusion: c.conclusion,
-              output: { title: c.title, summary: c.summary },
+              output: { title: c.title, summary: c.summary + marker },
             }));
             process.stderr.write("ai-review verdict=" + (process.env.VERDICT_LABEL || "<none>") + " machinery=" + (process.env.IS_MACHINERY || "false") + " → conclusion=" + c.conclusion + "\n");
           '; then

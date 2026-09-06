@@ -1018,3 +1018,80 @@ test('verdictLabelFault: exactly the decided verdict is clean', () => {
     assert.equal(parseResetInstant('resets 8:40am (UTC)', NaN), null);
   });
 }
+
+// ─── #1728: patch-fingerprint re-attestation ────────────────────────────────
+// Under `strict` a forward-merge leaves the three-dot patch byte-identical but
+// re-triggers a full four-voter review. These pin that a re-attestation is only
+// ever offered under the SAME provenance strictness as the witness itself.
+{
+  const {
+    patchFingerprint, renderPatchFingerprint, parsePatchFingerprint,
+    findReattestableVerdict, CHECK_NAME,
+  } = require('./ai-review-guard.js');
+
+  const ALLOW = ['minspec-sdd', 'minspec-sdd[bot]'];
+  const PATCH = 'diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n';
+  const fp = patchFingerprint(PATCH);
+  const run = (o = {}) => ({
+    name: CHECK_NAME, status: 'completed', conclusion: 'success',
+    head_sha: 'aaaaaaaaaaaa', app: { slug: 'minspec-sdd' },
+    output: { title: 'ok', summary: renderPatchFingerprint(fp) }, ...o,
+  });
+
+  test('patchFingerprint: stable, and ignores only cosmetic trailing whitespace', () => {
+    assert.equal(patchFingerprint(PATCH), patchFingerprint(PATCH.replace(/\n$/, '\n\n')));
+    assert.equal(patchFingerprint(PATCH), patchFingerprint(PATCH.replace(/\n/g, '\r\n')));
+  });
+
+  test('patchFingerprint: any real content change changes the digest', () => {
+    assert.notEqual(patchFingerprint(PATCH), patchFingerprint(PATCH.replace('+b', '+c')));
+  });
+
+  test('patchFingerprint: an EMPTY patch is never fingerprinted (never re-attestable)', () => {
+    // An empty diff is #1680's case and must go nowhere near this path.
+    assert.equal(patchFingerprint(''), null);
+    assert.equal(patchFingerprint(null), null);
+    assert.equal(findReattestableVerdict({ checkRuns: [run()], patchHash: null, allowlist: ALLOW }).ok, false);
+  });
+
+  test('THE #1728 CASE: an unchanged patch re-attests from the prior SHA', () => {
+    const r = findReattestableVerdict({ checkRuns: [run()], patchHash: fp, allowlist: ALLOW });
+    assert.equal(r.ok, true);
+    assert.equal(r.sourceSha, 'aaaaaaaaaaaa');
+  });
+
+  test('a DIFFERENT patch never re-attests', () => {
+    const other = patchFingerprint(PATCH.replace('+b', '+c'));
+    assert.equal(findReattestableVerdict({ checkRuns: [run()], patchHash: other, allowlist: ALLOW }).ok, false);
+  });
+
+  // Provenance: the same strictness as the witness. A softer door here would be a
+  // second, weaker entrance to the same gate.
+  test('refuses a non-success, non-completed, or wrong-named prior run', () => {
+    for (const bad of [{ conclusion: 'failure' }, { conclusion: 'neutral' }, { status: 'in_progress' }, { name: 'other' }]) {
+      assert.equal(findReattestableVerdict({ checkRuns: [run(bad)], patchHash: fp, allowlist: ALLOW }).ok, false);
+    }
+  });
+
+  test('refuses a run posted by an app OUTSIDE the allowlist', () => {
+    const impostor = run({ app: { slug: 'somebody-else' } });
+    assert.equal(findReattestableVerdict({ checkRuns: [impostor], patchHash: fp, allowlist: ALLOW }).ok, false);
+  });
+
+  test('refuses when the allowlist is empty — never re-attest with no trusted producer', () => {
+    assert.equal(findReattestableVerdict({ checkRuns: [run()], patchHash: fp, allowlist: [] }).ok, false);
+    assert.equal(findReattestableVerdict({ checkRuns: [run()], patchHash: fp }).ok, false);
+  });
+
+  test('fails safe on missing/garbage input rather than throwing', () => {
+    for (const bad of [undefined, {}, { checkRuns: null, patchHash: fp, allowlist: ALLOW }, { checkRuns: [null], patchHash: fp, allowlist: ALLOW }]) {
+      assert.equal(findReattestableVerdict(bad).ok, false);
+    }
+  });
+
+  test('the fingerprint round-trips through the check-run output text', () => {
+    assert.equal(parsePatchFingerprint(renderPatchFingerprint(fp)), fp);
+    assert.equal(parsePatchFingerprint('no marker here'), null);
+    assert.equal(parsePatchFingerprint('patch-fingerprint:short'), null);
+  });
+}

@@ -363,6 +363,82 @@ function parseResetInstant(text, nowMs) {
   return new Date(cand).toISOString();
 }
 
+// ─── Patch-fingerprint re-attestation (#1728) ────────────────────────────────
+//
+// Under `strict` branch protection every merge puts every other open PR BEHIND, and
+// the branch update re-triggers a full four-voter review — of a patch that did not
+// change. The reviewer reads the THREE-DOT patch (`base...head`), and a forward-merge
+// leaves that patch byte-identical, so the previous verdict is still a true statement
+// about exactly this content.
+//
+// What this does NOT do is reuse an old witness. The SHA-binding in
+// verifyHeadPassCheckRun (#466/#810) is load-bearing: a witness must correspond to the
+// CURRENT head. So a re-attestation posts a FRESH check-run on the new SHA, carrying
+// the same verdict and the same fingerprint. The claim changes from "four voters
+// reviewed this SHA" to "four voters reviewed this patch, and this SHA has that patch"
+// — still true, and stated rather than implied.
+//
+// HONEST LIMIT, and the reason this is opt-in: an identical patch can produce a
+// DIFFERENT merge result, because the base moved. That is the #1394 semantic-conflict
+// class. `strict` narrows it (the branch must be current) but does not remove it, so
+// re-attestation trades back a little of what `strict` buys.
+
+const PATCH_FINGERPRINT_PREFIX = 'patch-fingerprint:';
+
+/**
+ * Stable fingerprint of a three-dot patch. Normalises line endings and trailing
+ * whitespace-only difference so a cosmetic re-render is not read as a new patch,
+ * but nothing else — any real content change must produce a different digest.
+ */
+function patchFingerprint(diffText) {
+  const norm = String(diffText == null ? '' : diffText).replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+  if (norm === '') return null; // an empty patch is never re-attestable (see #1680)
+  return require('crypto').createHash('sha256').update(norm, 'utf8').digest('hex');
+}
+
+/** Render the marker embedded in a check-run's output so a later run can read it. */
+function renderPatchFingerprint(fp) {
+  return fp ? `${PATCH_FINGERPRINT_PREFIX}${fp}` : '';
+}
+
+/** Read the fingerprint back out of a check-run's output text. */
+function parsePatchFingerprint(text) {
+  const m = String(text == null ? '' : text).match(/patch-fingerprint:([0-9a-f]{64})\b/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Is there a prior, provenance-verified PASS for this exact patch?
+ *
+ * Deliberately reuses the SAME strictness as verifyHeadPassCheckRun — completed +
+ * success + an allowlisted App slug — because a weaker check here would be a second,
+ * softer door into the same gate. The only thing it does NOT require is head_sha
+ * equality, which is precisely what makes it a re-attestation rather than a witness.
+ */
+function findReattestableVerdict({ checkRuns, patchHash, allowlist } = {}) {
+  if (!patchHash) return { ok: false, reason: 'no patch fingerprint (empty or unreadable diff)' };
+  if (!Array.isArray(checkRuns) || checkRuns.length === 0) {
+    return { ok: false, reason: 'no prior check-runs to re-attest from' };
+  }
+  const allowed = Array.isArray(allowlist) ? allowlist : [];
+  if (allowed.length === 0) return { ok: false, reason: 'empty reviewer allowlist — refusing to re-attest' };
+
+  for (const c of checkRuns) {
+    if (!c || c.name !== CHECK_NAME) continue;
+    if (c.status !== 'completed' || c.conclusion !== 'success') continue;
+    const slug = c.app && c.app.slug;
+    const identities = [slug, slug ? `${slug}[bot]` : null].filter(Boolean);
+    if (!identities.some((i) => allowed.includes(i))) continue;
+    const text = [c.output && c.output.title, c.output && c.output.summary, c.output && c.output.text]
+      .filter(Boolean)
+      .join('\n');
+    if (parsePatchFingerprint(text) === patchHash) {
+      return { ok: true, sourceSha: c.head_sha, reason: `patch unchanged since ${String(c.head_sha).slice(0, 8)}` };
+    }
+  }
+  return { ok: false, reason: 'no prior passing review of this exact patch' };
+}
+
 // GitHub truncates commit-status descriptions at 140 chars; keep ours within it
 // even when a description carries a (potentially long) provenance reason.
 const MAX_DESCRIPTION = 140;
@@ -994,6 +1070,11 @@ module.exports = {
   shouldSummonHumanReview,
   isQuotaExhaustion,
   isQuotaExhaustionStrict,
+  patchFingerprint,
+  renderPatchFingerprint,
+  parsePatchFingerprint,
+  findReattestableVerdict,
+  PATCH_FINGERPRINT_PREFIX,
   parseResetInstant,
   VERDICT_SCHEMA,
   defangProtocolTokens,
