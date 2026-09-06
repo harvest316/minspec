@@ -38,7 +38,8 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 # checksum-pinned SHA = immutable + GOSUMDB-verified, #850-intent-safe). DR-005/#866.
 BUMBLEBEE_VERSION="${BUMBLEBEE_VERSION:-4a02b80aaca86641767c0d6cbe77c6856e4b481b}"
 BUMBLEBEE_BIN="${BUMBLEBEE_BIN:-$HOME/go/bin/bumblebee}"
-GO_BIN="${GO_BIN:-$HOME/.local/opt/go1.26.3/bin/go}"
+# GO_BIN is deliberately NOT defaulted here — resolve_go_bin() below searches for a
+# toolchain, so an explicitly-set $GO_BIN stays distinguishable from an unset one (#1506).
 CATALOG_DIR="${BUMBLEBEE_CATALOGS:-$HOME/.cache/bumblebee/catalogs}"
 OUT_DIR="$REPO_ROOT/.cache/supply-chain"
 OUT_FILE="$OUT_DIR/$(date +%Y%m%d-%H%M%S).ndjson"
@@ -86,19 +87,55 @@ prune_bumblebee_cache() {
   fi
   return 0
 }
+# Resolve the Go toolchain used to install bumblebee (#1506). Search order, first hit
+# wins:
+#   1. $GO_BIN, if the caller set it AND it is executable — an explicit override wins
+#   2. `command -v go` — the ordinary case: respects PATH, survives a Go upgrade
+#   3. the legacy $HOME/.local/opt/go*/bin/go location, so setups that relied on the
+#      old hardcoded default do not regress (globbed, so it is not version-pinned)
+# Prints the resolved path and returns 0, or prints nothing and returns 1.
+#
+# Why this exists: the previous single hardcoded default made a toolchain that was
+# present, correct, and on PATH invisible to this gate. The gate then exited 2
+# ("could not run") on a correctly-provisioned machine, and the script's own header
+# advertises SKIP_SUPPLY_CHAIN_CHECK=1 — so a misfire here trains operators to
+# disable a supply-chain check. That is the real cost, not the lost minute.
+resolve_go_bin() {
+  if [ -n "${GO_BIN:-}" ] && [ -x "${GO_BIN:-}" ]; then
+    printf '%s\n' "$GO_BIN"
+    return 0
+  fi
+  if command -v go >/dev/null 2>&1; then
+    command -v go
+    return 0
+  fi
+  for _cand in "$HOME"/.local/opt/go*/bin/go; do
+    if [ -x "$_cand" ]; then
+      printf '%s\n' "$_cand"
+      return 0
+    fi
+  done
+  return 1
+}
 # ----------------------------------------------------------------------------
 
 # Self-install bumblebee on first run. A missing toolchain or a failed install is a
 # scan-COULD-NOT-RUN condition (exit 2), never a finding — the scan never happened.
 if [ ! -x "$BUMBLEBEE_BIN" ]; then
-  if [ ! -x "$GO_BIN" ]; then
-    echo "check-supply-chain: Go toolchain not found at $GO_BIN" >&2
+  # Not `if ! GO_RESOLVED=$(...)` — under `set -e` that form is fine, but keeping the
+  # assignment separate makes the failure branch explicit and the exit code readable.
+  GO_RESOLVED="$(resolve_go_bin || true)"
+  if [ -z "$GO_RESOLVED" ]; then
+    echo "check-supply-chain: no Go toolchain found. Tried, in order:" >&2
+    echo "    1. \$GO_BIN                       ${GO_BIN:-(unset)}" >&2
+    echo "    2. go on \$PATH                   $(command -v go 2>/dev/null || echo '(not found)')" >&2
+    echo "    3. \$HOME/.local/opt/go*/bin/go   (no executable match)" >&2
     echo "  required for bumblebee install. Set GO_BIN or install Go 1.25+." >&2
     echo "  (exit 2: could not run — not a threat finding)" >&2
     exit 2
   fi
-  echo "check-supply-chain: installing bumblebee $BUMBLEBEE_VERSION..." >&2
-  if ! GOBIN="$HOME/go/bin" "$GO_BIN" install "github.com/perplexityai/bumblebee/cmd/bumblebee@$BUMBLEBEE_VERSION"; then
+  echo "check-supply-chain: installing bumblebee $BUMBLEBEE_VERSION using $GO_RESOLVED..." >&2
+  if ! GOBIN="$HOME/go/bin" "$GO_RESOLVED" install "github.com/perplexityai/bumblebee/cmd/bumblebee@$BUMBLEBEE_VERSION"; then
     echo "check-supply-chain: bumblebee@$BUMBLEBEE_VERSION install failed" >&2
     echo "  (exit 2: could not run — not a threat finding; the pinned install target may be unreachable)" >&2
     exit 2

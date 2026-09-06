@@ -20,7 +20,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 
 const FETCH_SCRIPT = path.resolve(__dirname, '../../../scripts/fetch-bumblebee-catalogs.sh');
 
@@ -262,12 +262,12 @@ esac
     expect(runCheck('clean')).toBe(0);
   });
 
-  const runInstallCase = (goBin: string): number => {
+  const runInstallCase = (goBin: string, overrides?: { PATH?: string; HOME?: string }): number => {
     try {
       execFileSync('sh', [CHECK_SCRIPT], {
         env: {
-          PATH: process.env.PATH,
-          HOME: process.env.HOME,
+          PATH: overrides?.PATH ?? process.env.PATH,
+          HOME: overrides?.HOME ?? process.env.HOME,
           BUMBLEBEE_BIN: path.join(scratch, 'no-such-bumblebee'),
           GO_BIN: goBin,
           BUMBLEBEE_CATALOGS: catDir,
@@ -282,6 +282,29 @@ esac
     }
   };
 
+  /**
+   * A PATH carrying only what the script needs before it looks for Go — deliberately no
+   * `go`. Needed since #1506: resolution now consults `command -v go`, so inheriting the
+   * real PATH means "no toolchain" is only true on a machine that happens to lack one.
+   * That is exactly how this suite passed locally and failed on CI, where the runner has
+   * Go installed: the script resolved it and went on to a real `go install`, which hung
+   * past the 5s timeout instead of exiting 2.
+   */
+  const pathWithoutGo = (): string => {
+    const dir = fs.mkdtempSync(path.join(scratch, 'nogo-bin-'));
+    for (const tool of ['git', 'date', 'sh', 'mkdir', 'ls', 'rm', 'sort', 'tail', 'uname']) {
+      const found = spawnSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf-8' }).stdout.trim();
+      if (found) {
+        try {
+          fs.symlinkSync(found, path.join(dir, tool));
+        } catch {
+          /* already linked */
+        }
+      }
+    }
+    return dir;
+  };
+
   it('missing bumblebee + FAILING Go install → exit 2 (could-not-run, not a finding)', () => {
     const goFail = path.join(binDir, 'go');
     fs.writeFileSync(goFail, '#!/usr/bin/env bash\nexit 1\n');
@@ -290,6 +313,15 @@ esac
   });
 
   it('missing bumblebee + MISSING Go toolchain → exit 2', () => {
-    expect(runInstallCase(path.join(scratch, 'no-such-go'))).toBe(2);
+    // "Missing" must now mean missing EVERYWHERE the resolver looks (#1506): an
+    // unusable $GO_BIN, no `go` on PATH, and no legacy $HOME/.local/opt/go*/bin/go.
+    // A scratch HOME covers the third.
+    const emptyHome = fs.mkdtempSync(path.join(scratch, 'nogo-home-'));
+    expect(
+      runInstallCase(path.join(scratch, 'no-such-go'), {
+        PATH: pathWithoutGo(),
+        HOME: emptyHome,
+      }),
+    ).toBe(2);
   });
 });
