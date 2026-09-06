@@ -20,8 +20,9 @@ PreToolUse deny blocks the tool call before permission rules.
     - STRUCTURED: a frontmatter `implements:`/`affects:` list. Matched WITHOUT an
       existence filter, so a `Write` to a declared-but-not-yet-existing file is
       DENIED — i.e. this signal blocks CREATION of an unapproved spec's impl code,
-      not merely edits to code that already landed. (No spec in the corpus declares
-      this yet — see below.)
+      not merely edits to code that already landed. (The primary signal — specs
+      across the corpus declare it; see below for the phases gap that still keeps
+      some declarations inert.)
     - FUZZY: backtick code-span paths in the spec's own `tasks.md`. Matched ONLY IF
       the file already exists, because a bare backtick token can be prose /
       placeholder / example; the existence filter is what keeps those from widening
@@ -45,13 +46,20 @@ PreToolUse deny blocks the tool call before permission rules.
   creation of a spec's STRUCTURALLY-declared (`implements:`/`affects:`) impl files.
   Code an unapproved spec does NOT declare structurally — one that describes its work
   only in prose `tasks.md`, or greenfield code it never names — is NOT gated, because
-  the fuzzy `tasks.md` signal is existence-filtered and no spec in the corpus carries
-  a structured `implements:` list yet. That is a DELIBERATE, DISCLOSED tradeoff to
-  unblock unrelated work per DR-047 §3, NOT a claim that DR-362's enforcement hole is
-  fully closed for greenfield/undeclared code. The durable fix — a first-class
-  `implements:`/`affects:` convention plus a validator that requires/derives it
-  across the corpus — is tracked as #460 (follows up #426); until specs declare their
-  impl files structurally, the gate cannot block creation of undeclared impl code.
+  the fuzzy `tasks.md` signal is existence-filtered. That is a DELIBERATE, DISCLOSED
+  tradeoff to unblock unrelated work per DR-047 §3, NOT a claim that DR-362's
+  enforcement hole is fully closed for greenfield/undeclared code.
+
+  The durable fix landed: SPEC-038 / #460 made `implements:`/`affects:` a first-class
+  convention, and `validateOwnership` (spec-validator.ts) now REQUIRES a declaration
+  from every primary T3/T4 spec whose `plan` phase has started. Specs across the
+  corpus carry one, so the STRUCTURED signal below is the primary one — not, as this
+  docstring said until #1848, a path nothing exercises.
+
+  The gap that remains is PHASES, not declaration: a spec carrying no `phases:` block
+  never reaches the owned-set computation at all (the `phase_intent_status` `continue`
+  further down runs BEFORE `owned_file_set`), so its declaration arms nothing. That
+  backfill is #1543 / #1649.
 
 SPEC-022 changes:
   - Approval ground truth is COMMITTED, path-keyed sidecars under
@@ -308,7 +316,11 @@ def declared_impl_files(cwd, fm, spec_dir_abs):
         `Write` to a declared-but-not-yet-created file is blocked. This is what
         makes the gate block CREATION of an unapproved spec's impl code, not only
         edits to code that already landed (#426 review fix; durable convention +
-        validator tracked as #460). No spec in the corpus declares this yet.
+        validator LANDED as SPEC-038 / #460). This is the primary ownership signal:
+        specs across the corpus declare it, and the validator requires it of every
+        primary T3/T4 spec whose `plan` phase has started. A declaration on a
+        PHASELESS spec still arms nothing — see the module docstring — but that is a
+        phases gap (#1543), not an unused code path.
       - FUZZY backtick code-span paths in the spec's own `tasks.md`
         (`require_exists=True`): a bare backtick token can be prose / example /
         placeholder, so it only counts when it RESOLVES TO AN EXISTING FILE. That
