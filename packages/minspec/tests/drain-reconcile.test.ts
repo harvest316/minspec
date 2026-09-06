@@ -176,6 +176,45 @@ describe('#1322 — an open agent-done issue is reconciled against its PR', () =
   });
 });
 
+describe('#1628 — the close path is symmetric about label hygiene', () => {
+  it('strips agent-done after closing a merged issue, same as the no-PR branch does', () => {
+    const out = runReconciler('reconcile_done_issues', { done: '1068\n', pr: '1230\n', timeline: 'no' });
+    expect(out).toContain('closing #1068');
+    const calls = ghCalls();
+    expect(calls).toContain('issue close 1068');
+    expect(calls).toContain('issue edit 1068 --repo owner/repo --remove-label agent-done');
+  });
+});
+
+describe('#1628 — a reopen after an automated close vetoes re-closing', () => {
+  it('does NOT re-close an issue whose most recent reopen is after its most recent close', () => {
+    // Reproduces #897: closed by the reconciler, then reopened with evidence the
+    // inferred completion was wrong. The branch is still (the same) merged PR — the
+    // reconciler must not re-derive "closed" from that alone once history shows a
+    // human rejected it.
+    const out = runReconciler('reconcile_done_issues', { done: '897\n', pr: '900\n', timeline: 'yes' });
+    expect(out).toContain('skipping #897');
+    expect(out).toContain('reopened after a prior automated close');
+    const calls = ghCalls();
+    expect(calls).not.toContain('issue close 897');
+    expect(calls).not.toContain('issue edit 897');
+  });
+
+  it('DOES close when the issue was never reopened (no veto signal)', () => {
+    const out = runReconciler('reconcile_done_issues', { done: '1068\n', pr: '1230\n', timeline: 'no' });
+    expect(out).toContain('closing #1068');
+    expect(ghCalls()).toContain('issue close 1068');
+  });
+
+  it('the close comment states an observation, not a completion claim', () => {
+    const out = runReconciler('reconcile_done_issues', { done: '1068\n', pr: '1230\n', timeline: 'no' });
+    const calls = ghCalls();
+    expect(calls).toContain('a branch named for this issue');
+    expect(calls).toContain('not a verification that the');
+    expect(calls).not.toContain('this issue was stamped');
+  });
+});
+
 describe('#1352 (T3) — the liveness witness actually matches a live dispatch', () => {
   // `pgrep -f` matches with ERE. The pattern shipped here was BRE-escaped, so `\+`,
   // `\(`, `\|` and `\)` were LITERAL characters in ERE and the pattern could never

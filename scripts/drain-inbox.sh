@@ -583,10 +583,41 @@ reconcile_stale_claims() {
   done <<< "$running"
 }
 
+# #1628 — was <issue>'s most recent `reopened` event LATER than its most recent
+# `closed` event? A reopen after an automated close is the strongest signal
+# available that the close's inference was wrong: a human or agent looked at the
+# conclusion and rejected it. Reuses the exact `gh api .../timeline --paginate`
+# shape `claim_applied_at` above already relies on — REST timeline events carry
+# `.event` ("closed"/"reopened"/…) and `.created_at`, both proven-working here
+# already, rather than guessing at `gh issue view --json timelineItems`'s GraphQL
+# field/type-discriminator shape untested elsewhere in this script. `.created_at`
+# is ISO-8601 zero-padded UTC, so it sorts correctly as a plain string — no date
+# parsing needed. Fails toward "no veto" (never blocks a close) so an API hiccup
+# degrades to #1322's pre-#1628 behavior rather than wedging every candidate open
+# forever.
+reopened_after_close() {
+  local n="$1" verdict
+  # NOTE: the `// ""` fallbacks are deliberately an empty STRING, not jq's `empty`
+  # generator — `last` on a filtered-to-nothing array is `null`, and `null // empty`
+  # produces ZERO output values, which makes the `as $r`/`as $c` bindings run zero
+  # times and the whole filter print nothing at all (silently, for the exact "never
+  # reopened" case this function exists to rule out as a veto). `// ""` keeps the
+  # binding real so the trailing `if` always runs and always prints yes/no.
+  verdict=$(gh api "repos/${REPO}/issues/$1/timeline" --paginate \
+    --jq '([.[] | select(.event=="reopened") | .created_at] | last // "") as $r
+          | ([.[] | select(.event=="closed") | .created_at] | last // "") as $c
+          | if ($r != "" and ($c == "" or $r > $c)) then "yes" else "no" end' \
+    2>/dev/null) || return 1
+  [[ "$verdict" == "yes" ]]
+}
+
 # #1322 — an OPEN issue stamped `agent-done` is a contradiction. Resolve it against
 # the one observable fact that settles it: did the work actually land?
 #
-#   merged PR on agent/issue-<N>  → the work landed; close the issue, citing the PR.
+#   merged PR on agent/issue-<N>  → a branch named for the issue merged; close it,
+#                                   citing the PR — but only if the issue's history
+#                                   doesn't already contain a human's rejection of
+#                                   that exact inference (#1628 reopen veto below).
 #   no merged PR                  → `agent-done` is unearned. Strip it and surface,
 #                                   because "we recorded completion but nothing
 #                                   merged" is a real failure a human should see.
@@ -594,6 +625,15 @@ reconcile_stale_claims() {
 # The second branch is the valuable one: it is the only check anywhere that would
 # catch a FALSE agent-done. Branch naming is deterministic (the dispatcher creates
 # `agent/issue-<N>`), so the join needs no heuristics.
+#
+# #1628: the close branch used to leave `agent-done` in place, so a reopened issue
+# landed straight back in the `--label agent-done` selector above and was re-closed
+# on the next cycle — forever, with the identical comment, no matter how many times
+# a human corrected it. Two independent fixes here: (a) strip the label on the close
+# path too, so the two branches are symmetric about label hygiene; (b) skip closing
+# outright when the issue's own history shows a reopen after the last close — that
+# is a standing human veto on the merged-branch inference, and re-deriving the same
+# conclusion from the same branch state on every cycle cannot see it otherwise.
 reconcile_done_issues() {
   local done_issues n pr
   done_issues=$(gh issue list --repo "$REPO" --state open --label "agent-done" \
@@ -605,10 +645,19 @@ reconcile_done_issues() {
     pr=$(gh pr list --repo "$REPO" --state merged --head "agent/issue-${n}" \
       --json number --jq '.[0].number // empty' 2>/dev/null || true)
     if [[ -n "$pr" ]]; then
-      echo "[drain] reconcile: closing #$n — its work merged in #$pr but nothing ever closed it (#1322)."
-      gh issue close "$n" --repo "$REPO" \
-        --comment "Closed by the drain reconciler: this issue was stamped \`agent-done\` and its branch \`agent/issue-${n}\` merged in #${pr}, but no closing trailer ever linked the two, so it stayed open and queued. See #1322 for the root cause and the deterministic \`Closes #N\` trailer that prevents it going forward." \
-        2>/dev/null || echo "[drain] reconcile: could not close #$n — left open."
+      if reopened_after_close "$n"; then
+        echo "[drain] reconcile: skipping #$n — it was reopened after a prior automated close, which vetoes the merged-branch inference; a human or agent rejected this exact conclusion once already (#1628). Leaving agent-done in place for a human to clear."
+        continue
+      fi
+      echo "[drain] reconcile: closing #$n — a branch named for it, agent/issue-${n}, merged in #$pr and nothing ever closed it (#1322)."
+      if gh issue close "$n" --repo "$REPO" \
+        --comment "Closed by the drain reconciler: a branch named for this issue, \`agent/issue-${n}\`, merged in #${pr}. That is an observation, not a verification that the issue's full scope is covered — a branch can merge having done only part of the work. If this doesn't fully cover the issue, reopen it; a reopen is treated as a veto and this reconciler will not re-close it (#1628). See #1322 for the root cause and the deterministic \`Closes #N\` trailer that prevents the guess going forward." \
+        2>/dev/null; then
+        gh issue edit "$n" --repo "$REPO" --remove-label "agent-done" 2>/dev/null \
+          || echo "[drain] reconcile: closed #$n but could not strip agent-done — it may re-select next cycle unless the reopen veto (#1628) catches it first."
+      else
+        echo "[drain] reconcile: could not close #$n — left open."
+      fi
     else
       echo "[drain] reconcile: #$n is labelled agent-done but NO merged PR exists for agent/issue-${n} — stripping the stamp and surfacing (#1322)."
       gh issue edit "$n" --repo "$REPO" \
