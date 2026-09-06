@@ -107,6 +107,18 @@ describe('the scaffolded hook scripts actually enforce the SDD gates', () => {
     expect(c).toContain('follow-up gate');
   });
 
+  it('pre-commit gates author identity ONLY when an allowlist is configured (#1114)', () => {
+    const c = byPath(PRE_COMMIT).content;
+    // Opt-in config key + the documented bypass.
+    expect(c).toContain('minspec.allowedCommitEmails');
+    expect(c).toContain('EMAIL_GATE_OFF');
+    // Reads the live identity, not a cached/assumed one.
+    expect(c).toContain('git config --get user.email');
+    // Names the actual symptom this gate exists to prevent, so the refusal is
+    // self-explanatory rather than a bare "not allowed".
+    expect(c).toMatch(/ghost/i);
+  });
+
   it('pre-commit runs gitleaks but degrades to a WARNING when absent (#244)', () => {
     const c = byPath(PRE_COMMIT).content;
     expect(c).toContain('command -v gitleaks');
