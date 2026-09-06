@@ -8,6 +8,28 @@ product: minspec
 epic: EPIC-003  # SDD Core Methodology
 depends_on: [DR-029, DR-020, DR-026, DR-028, DR-030, DR-022]  # DR-029 keystone; DR-020(+addendum) policy; DR-026 offer-not-silent; DR-028 cross-cutting; DR-030 untrusted-input; DR-022 future re-scope
 relates_to: [SPEC-010, SPEC-006, SPEC-015]
+implements: none
+implements_reason: >-
+  Its central mechanism is unbuilt. FR-1's section registry, FR-2's single shared `hasSection`
+  predicate, FR-3's per-FR disposition coverage, FR-4's Consequences polarity check, FR-6's
+  detect-and-offer validator over the Risks/Consequences/Assumptions family, FR-8's
+  `minspec:core-end` divider and Zone A/B split, FR-9's L0-L3 floor, FR-10's coreHash freshness
+  and FR-12's parse contract have zero implementation: `core-end`, `coreHash`, `SECTION_REGISTRY`
+  and a polarity cue set return no hits across packages/minspec/src, packages/shared/src and
+  scripts. The `hasSection` that does exist (spec-validator.ts:222) is a different, narrower
+  predicate over mockup/API/acceptance-criteria names, not this spec's section family. Two
+  commits did land a thin slice of FR-1's Zone-A placement in files other specs own, recorded
+  below. Declares its owned files at implementation, per the SPEC-034 precedent.
+# The two real touch points, recorded here rather than as `affects:` entries:
+#   - adr-manager.ts:496 — 8b6afbf7 "feat(adr): emit 'Costly to Refactor' in new DRs (SPEC-013)"
+#     added the DR-template stub. SPEC-041 declares that file.
+#   - slash-commands.ts:135 — 0fd3a471 added the matching /specify guidance four minutes later.
+# NO `affects:` deliberately, on two grounds. (1) `affects:` freezes a file exactly as
+# `implements:` does (spec-gate.py:350-352), and under DR-088 §2 the freeze widens to the union
+# of approved and current owned sets — so a spec whose mechanism is entirely unbuilt would pin
+# two of the repo's hottest shared files to its own approval state. (2) The slash-commands.ts
+# attribution is inference, not record: that commit never names SPEC-013, and the link rests on
+# the sibling commit's prose plus a four-minute gap. Thin evidence is excluded, not rounded up.
 ---
 
 # MinSpec — Self-Audit Section Enforcement — Deterministic Floor (Slice 1)

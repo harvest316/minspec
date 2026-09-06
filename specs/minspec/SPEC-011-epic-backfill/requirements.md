@@ -6,6 +6,22 @@ tier: T3
 status: implementing  # built: epic-backfill.ts (478 lines, both engines) + 40 tests pass (epic-backfill.test.ts 16 + epic-backfill-extra.test.ts 24); command minspec.backfillEpics wired
 product: minspec
 epic: EPIC-001  # Explorer Epic Grouping
+implements:
+  - packages/minspec/src/lib/epic-backfill.ts
+  - packages/minspec/src/commands/backfill-epics.ts
+  - packages/minspec/tests/epic-backfill.test.ts
+  - packages/minspec/tests/epic-backfill-extra.test.ts
+# `epic-backfill.ts` and `epic-backfill.test.ts` were born in 7d95f974 (the spec's founding
+# commit); `backfill-epics.ts` in ce6748f6; `epic-backfill-extra.test.ts` in be916a7f. Two carry
+# in-file provenance (epic-backfill.ts:595 "SPEC-011 FR-3", backfill-epics.ts:232 "DR-016 /
+# SPEC-011"), and the command is wired end-to-end (extension.ts:387 → package.json:167).
+# NOT `epic-manager.ts`, though 7d95f974 added the `setArtifactEpic`/`readArtifactEpic` helpers
+# FR-6/FR-7 name to it: SPEC-041 already declares that file. Tracked as #1822 — SPEC-007 created
+# it and SPEC-011 grew it, so three specs have a functional claim on one file.
+# No `affects:`. `auto-bootstrap.ts` (FR-8 detector), `extension.ts` and `package.json` are
+# multi-tenant hub files touched by every command-adding spec; the gate treats `affects:` exactly
+# like `implements:` (spec-gate.py:350-352), so listing them would freeze them corpus-wide. This
+# is an explicit exclusion criterion, NOT a claim that nothing else was touched.
 ---
 
 # MinSpec — AI-assisted Epic Backfill (Requirements)
