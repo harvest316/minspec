@@ -154,6 +154,38 @@ fi
 # marker to echo — see the pattern at dispatch-ready-check.sh:396.
 BEGIN_COUNT="$(printf '%s\n' "$INPUT" | grep -c 'REVIEW_VERDICT_BEGIN' || true)"
 if [[ "$BEGIN_COUNT" -ne 1 ]]; then
+  # Show the evidence this decision was made on (#1157).
+  #
+  # This branch is the single most confusing outcome the gate produces: the posted
+  # comment displays `verdict: pass, blocking: 0` while the LABEL says changes, because
+  # the count is taken over the voter's RAW output and the comment never shows it. A
+  # reviewer looking at the PR sees a contradiction with no way to resolve it, and the
+  # only honest diagnosis available today is "cannot tell".
+  #
+  # Measured on AIClarityAU/voip-sms-inbox#28: four voters each posted
+  # `pass, blocking: 0`; Architect's label came back `changes`; and the raw output that
+  # would explain it is written to a file the run log never captures. The cause could
+  # not be established at all — so no fix could be designed for it.
+  #
+  # Diagnostics go to STDERR, never stdout: stdout is the label contract
+  # (`ai-review:pass` | `ai-review:changes`) and callers parse it. The decision itself
+  # is unchanged — this is evidence, not a behaviour change.
+  #
+  # Context is REDACTED to marker lines plus their line numbers. The raw output can
+  # quote an untrusted diff, so echoing it wholesale into a public CI log would leak
+  # exactly the artifact content the reviewer was reading. Line numbers plus the marker
+  # line are enough to find the echo without reproducing what was reviewed.
+  {
+    echo "review-decide: refusing — expected exactly 1 REVIEW_VERDICT_BEGIN, found ${BEGIN_COUNT}."
+    echo "  >1 means it is ambiguous WHICH block is the verdict: an injected block, a"
+    echo "  double-emit, or an honest reviewer that quoted the marker in prose (#1157)."
+    echo "  (A count of 0 cannot reach here — the no-parseable-verdict path exits earlier.)"
+    echo "  Marker lines in the voter's raw output:"
+    printf '%s\n' "$INPUT" \
+      | grep -n 'REVIEW_VERDICT_BEGIN' \
+      | head -20 \
+      | sed 's/^/    /'
+  } >&2
   echo "ai-review:changes"   # >1 verdict block → ambiguous/injected → fail closed
   exit 0
 fi

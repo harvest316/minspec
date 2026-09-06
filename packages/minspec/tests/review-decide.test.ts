@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 
 const GATE = path.resolve(__dirname, '../../../scripts/review-decide.sh');
 
@@ -255,5 +255,57 @@ describe('#1204 — unwrapped quota text is an outage, not a verdict', () => {
   it('genuine garbage with no quota signal still fails closed to changes', () => {
     expect(decide('some crash text with no markers')).toBe(CHANGES);
     expect(decide('')).toBe(CHANGES);
+  });
+});
+
+describe('#1157 — the ambiguity guard shows its evidence', () => {
+  /** Run review-decide.sh with `input` on stdin; capture both streams separately. */
+  function run(input: string): { label: string; err: string } {
+    // spawnSync, not the file's execFileSync helper: this suite needs stderr, and the
+    // guard exits non-zero on every path under test.
+    const r = spawnSync('bash', [GATE], { input, encoding: 'utf-8' });
+    return { label: (r.stdout || '').trim(), err: r.stderr || '' };
+  }
+
+  const TWO_BLOCKS =
+    'REVIEW_VERDICT_BEGIN\nverdict: pass\nblocking: 0\nREVIEW_VERDICT_END\n' +
+    'REVIEW_VERDICT_BEGIN\nverdict: pass\nREVIEW_VERDICT_END\n';
+
+  it('explains WHY it refused, on stderr', () => {
+    // The state this fixes: a posted comment showing `pass, blocking: 0` beside a
+    // `changes` label, with nothing anywhere saying why. Measured on a real PR where
+    // four voters passed and the cause could not be established at all, because the
+    // raw output that would explain it is written to a file the run log never captures.
+    const { err } = run(TWO_BLOCKS);
+    expect(err).toContain('expected exactly 1 REVIEW_VERDICT_BEGIN, found 2');
+  });
+
+  it('names the marker LINE NUMBERS so the echo can be found', () => {
+    const { err } = run(TWO_BLOCKS);
+    expect(err).toMatch(/^\s+1:REVIEW_VERDICT_BEGIN/m);
+    expect(err).toMatch(/^\s+5:REVIEW_VERDICT_BEGIN/m);
+  });
+
+  it('keeps stdout to the label contract — diagnostics never pollute it', () => {
+    // Callers parse stdout. A diagnostic leaking there would break every consumer.
+    const { label } = run(TWO_BLOCKS);
+    expect(label).toBe('ai-review:changes');
+    expect(label.split('\n')).toHaveLength(1);
+  });
+
+  it('stays silent on the happy path', () => {
+    // Evidence belongs on the failure branch only; noise on every clean run is how a
+    // log stops being read.
+    const { label, err } = run('REVIEW_VERDICT_BEGIN\nverdict: pass\nblocking: 0\nREVIEW_VERDICT_END\n');
+    expect(label).toBe('ai-review:pass');
+    expect(err).not.toContain('review-decide: refusing');
+  });
+
+  it('does not dump the whole raw output — only marker lines', () => {
+    // The raw output can quote an untrusted diff, so echoing it wholesale into a public
+    // CI log would leak the very artifact content the reviewer was reading.
+    const secret = 'SUPER_SECRET_DIFF_CONTENT';
+    const { err } = run(`${secret}\n${TWO_BLOCKS}`);
+    expect(err).not.toContain(secret);
   });
 });
